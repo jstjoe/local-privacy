@@ -22,6 +22,9 @@ RUN pip install --upgrade pip uv
 WORKDIR /app
 
 # Build context = repo root: `docker build -f api/Dockerfile -t privacy-api .`
+# Copy the workspace root pyproject so uv resolves `workspace = true` sources
+# in eval/ and api/ instead of falling back to PyPI for `opf`/`opf-eval`.
+COPY pyproject.toml ./
 COPY privacy-filter ./privacy-filter
 COPY eval ./eval
 COPY api ./api
