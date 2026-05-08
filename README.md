@@ -99,6 +99,31 @@ python -m opf_eval.runner \
 | `skyflow_minimal` | Skyflow with the empirically-tuned entity allowlist |
 | `skyflow_constrained` | Alias for `skyflow` |
 
+## Category coverage
+
+The harness projects each detector's native entity vocabulary into a 10-label canonical taxonomy ([eval/src/opf_eval/taxonomy.py](eval/src/opf_eval/taxonomy.py)) so detectors can be compared on equal footing. The canonical labels are: PERSON, EMAIL, PHONE, ADDRESS, URL, DATE, ACCOUNT, SECRET, USERNAME, DEMOGRAPHIC.
+
+| canonical | OPF | Skyflow Detect | Presidio | GLiNER |
+| --- | --- | --- | --- | --- |
+| PERSON | `private_person` | `NAME`, `NAME_GIVEN`, `NAME_FAMILY`, `NAME_MEDICAL_PROFESSIONAL` | `PERSON` | `person` |
+| EMAIL | `private_email` | `EMAIL_ADDRESS` | `EMAIL_ADDRESS` | `email` |
+| PHONE | `private_phone` | `PHONE_NUMBER` | `PHONE_NUMBER` | `phone number` |
+| ADDRESS | `private_address` | `LOCATION`, `LOCATION_ADDRESS`, `LOCATION_ADDRESS_STREET`, `LOCATION_CITY`, `LOCATION_STATE`, `LOCATION_ZIP`, `LOCATION_COUNTRY`, `LOCATION_COORDINATE` | `LOCATION` | `address`, `location`, `city`, `country`, `postal code` |
+| URL | `private_url` | `URL`, `IP_ADDRESS` | `URL`, `IP_ADDRESS` | `url`, `ip address` |
+| DATE | `private_date` | `DATE`, `DATE_INTERVAL`, `DOB`, `TIME`, `DAY`, `MONTH`, `YEAR` | `DATE_TIME` | `date`, `date of birth`, `time` |
+| ACCOUNT | `account_number` | `ACCOUNT_NUMBER`, `BANK_ACCOUNT`, `CREDIT_CARD`, `ROUTING_NUMBER`, `NUMERICAL_PII`, `SSN`, `PASSPORT_NUMBER`, `DRIVER_LICENSE`, `HEALTHCARE_NUMBER` | `CREDIT_CARD`, `IBAN_CODE`, `US_SSN`, `US_PASSPORT`, `US_DRIVER_LICENSE`, `US_BANK_NUMBER`, `US_ITIN`, `UK_NHS`, `UK_NINO`, `ES_NIE`, `ES_NIF`, `IT_DRIVER_LICENSE`, `IT_FISCAL_CODE`, `IT_IDENTITY_CARD`, `IT_PASSPORT`, `IT_VAT_CODE`, `AU_ABN`, `AU_ACN`, `AU_MEDICARE`, `AU_TFN`, `IN_AADHAAR`, `IN_PAN`, `IN_VEHICLE_REGISTRATION`, `MEDICAL_LICENSE`, `CRYPTO` | `social security number`, `passport`, `passport number`, `driver license`, `driver's license`, `credit card`, `credit card number`, `account number`, `bank account`, `national id`, `id number`, `tax id` |
+| SECRET | `secret` | `PASSWORD` | — | `password` |
+| USERNAME | — | `USERNAME` | — | `username` |
+| DEMOGRAPHIC | — | `GENDER`, `AGE`, `GENDER_SEXUALITY`, `MARITAL_STATUS` | `NRP` | — |
+
+Notes:
+
+- **OPF** has 8 native categories — fixed at training time, not configurable. No native USERNAME or DEMOGRAPHIC support.
+- **Skyflow Detect** exposes ~70 entity types in total. The list above is what the harness asks for via the `entity_types` request parameter. The `skyflow_minimal` detector config (recommended) sends a tuned subset that drops bare `name` / `location` / `location_address` (low gold-hit rate per `eval/scripts/analyze_skyflow_hitrate.py`).
+- **Presidio** entries are the default English recognizers. Multilingual Presidio adds language-specific spaCy NER, not new entity types. No native SECRET or USERNAME recognizer.
+- **GLiNER** is zero-shot and accepts any natural-language prompt. The vocabulary above is what the harness sends to the `urchade/gliner_multi_pii-v1` checkpoint; tuning the prompts is one of the easier ways to move GLiNER's per-category numbers.
+- **Categories not in this table** (OCCUPATION, ORGANIZATION, MEDICAL_PROCESS, etc. that Skyflow detects) are out of scope for this benchmark — PII-Masking-300k doesn't label them.
+
 ## Fixtures and reports
 
 - `python -m opf_eval.fixtures --n N --out path` — materialize N examples, deterministic seed
