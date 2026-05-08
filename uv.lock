@@ -1308,6 +1308,15 @@ wheels = [
 ]
 
 [[package]]
+name = "nervaluate"
+version = "0.2.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/aa/5b/676f6d6713b35ccb0c88d0c50200408ede1405c72c726f9c9a7c0604492f/nervaluate-0.2.0.tar.gz", hash = "sha256:12c14bb3943f3fb20d1af3508e920a7baa33702ed2a8d29715d94684bcf44664", size = 31156 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4b/b7/0a3752f076d592082cf42956dc9d2a45006a2247f56207380ce377623efb/nervaluate-0.2.0-py3-none-any.whl", hash = "sha256:346a4e1ba383e3164b4cfb79a1cb7745b0400e4fe7e13122835ef3b11e263c87", size = 13803 },
+]
+
+[[package]]
 name = "networkx"
 version = "3.4.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1795,6 +1804,7 @@ dependencies = [
     { name = "datasets" },
     { name = "gliner" },
     { name = "httpx" },
+    { name = "nervaluate" },
     { name = "opf" },
     { name = "presidio-analyzer" },
     { name = "psutil" },
@@ -1806,6 +1816,7 @@ requires-dist = [
     { name = "datasets", specifier = ">=2.20" },
     { name = "gliner", specifier = ">=0.2.13" },
     { name = "httpx", specifier = ">=0.27" },
+    { name = "nervaluate", specifier = ">=0.2,<0.3" },
     { name = "opf", editable = "privacy-filter" },
     { name = "presidio-analyzer", specifier = ">=2.2" },
     { name = "psutil", specifier = ">=5.9" },

@@ -11,6 +11,8 @@ import json
 from pathlib import Path
 
 from .metrics import PRF, latency_summary, score
+from .nervaluate_metrics import SemEvalResult
+from .nervaluate_metrics import score as semeval_score
 from .taxonomy import OPF_CANONICAL_LABELS
 
 
@@ -42,27 +44,31 @@ def _filter_spans(spans: list[dict], allow: set[str] | None) -> list[dict]:
     return [s for s in spans if s["label"] in allow]
 
 
-def _merge_adjacent(spans: list[dict], gap_tolerance: int = 2) -> list[dict]:
-    """Coalesce adjacent same-canonical-label spans into one.
-
-    Two spans are merged when:
-      - same canonical label
-      - the second starts within `gap_tolerance` chars of where the first ended
-        (allows for a comma, space, or "and" between them)
-    Removes granularity bias before scoring.
-    """
-    if not spans:
-        return spans
-    sorted_spans = sorted(spans, key=lambda s: (s["start"], s["end"]))
-    merged: list[dict] = [dict(sorted_spans[0])]
-    for s in sorted_spans[1:]:
-        prev = merged[-1]
-        if s["label"] == prev["label"] and s["start"] <= prev["end"] + gap_tolerance:
-            prev["end"] = max(prev["end"], s["end"])
-            prev["text"] = (prev.get("text") or "") + (s.get("text") or "")
-        else:
-            merged.append(dict(s))
-    return merged
+def _build_pairs(
+    detector: str,
+    fixture_records: list[dict],
+    detector_records: dict[str, dict[str, dict]],
+    *,
+    allow: set[str] | None,
+    language_filter: str | None = None,
+) -> tuple[list[tuple[list[dict], list[dict]]], list[float], int]:
+    pairs: list[tuple[list[dict], list[dict]]] = []
+    latencies: list[float] = []
+    errors = 0
+    for ex in fixture_records:
+        if language_filter and ex.get("language") != language_filter:
+            continue
+        rec = detector_records[detector].get(ex["id"])
+        if rec is None:
+            continue
+        if rec.get("error"):
+            errors += 1
+            continue
+        pred = _filter_spans(rec["spans"], allow)
+        gold = _filter_spans(ex["gold_spans"], allow)
+        pairs.append((pred, gold))
+        latencies.append(rec["latency_ms"])
+    return pairs, latencies, errors
 
 
 def _compute_scores(
@@ -71,33 +77,17 @@ def _compute_scores(
     detector_records: dict[str, dict[str, dict]],
     *,
     allow: set[str] | None,
-    merge_adjacent: bool = False,
     language_filter: str | None = None,
 ) -> tuple[dict[str, object], dict[str, dict[str, float]], dict[str, int]]:
-    """Returns (score_by_det, latency_by_det, error_count_by_det)."""
+    """Returns (greedy_score_by_det, latency_by_det, error_count_by_det)."""
     score_by_det: dict[str, object] = {}
     latency_by_det: dict[str, dict[str, float]] = {}
     errors_by_det: dict[str, int] = {}
     for det in detectors:
-        pairs: list[tuple[list[dict], list[dict]]] = []
-        latencies: list[float] = []
-        errors = 0
-        for ex in fixture_records:
-            if language_filter and ex.get("language") != language_filter:
-                continue
-            rec = detector_records[det].get(ex["id"])
-            if rec is None:
-                continue
-            if rec.get("error"):
-                errors += 1
-                continue
-            pred = _filter_spans(rec["spans"], allow)
-            gold = _filter_spans(ex["gold_spans"], allow)
-            if merge_adjacent:
-                pred = _merge_adjacent(pred)
-                gold = _merge_adjacent(gold)
-            pairs.append((pred, gold))
-            latencies.append(rec["latency_ms"])
+        pairs, latencies, errors = _build_pairs(
+            det, fixture_records, detector_records,
+            allow=allow, language_filter=language_filter,
+        )
         score_by_det[det] = score(pairs)
         latency_by_det[det] = latency_summary(latencies)
         errors_by_det[det] = errors
@@ -111,16 +101,11 @@ def _scoring_section(
     detector_records: dict[str, dict[str, dict]],
     *,
     allow: set[str] | None,
-    merge_adjacent: bool = False,
     language_filter: str | None = None,
 ) -> tuple[list[str], dict[str, object]]:
     score_by_det, _, _ = _compute_scores(
-        detectors,
-        fixture_records,
-        detector_records,
-        allow=allow,
-        merge_adjacent=merge_adjacent,
-        language_filter=language_filter,
+        detectors, fixture_records, detector_records,
+        allow=allow, language_filter=language_filter,
     )
     lines: list[str] = [f"## {title}", ""]
     lines.append("| detector | exact P/R/F1 | partial P/R/F1 |")
@@ -151,6 +136,71 @@ def _per_label_section(
             p = score_by_det[det].per_label_partial.get(lbl)  # type: ignore[union-attr]
             row.append(_fmt_prf(p) if p else "—")
         lines.append("| " + " | ".join(row) + " |")
+    lines.append("")
+    return lines
+
+
+def _semeval_section(
+    detectors: list[str],
+    fixture_records: list[dict],
+    detector_records: dict[str, dict[str, dict]],
+    *,
+    allow: set[str],
+) -> list[str]:
+    """SemEval 2013 9.1 scoring via nervaluate.
+
+    Schema F1 across all four schemas, plus the per-detector COR/INC/PAR/MIS/SPU
+    breakdown under the Strict schema (the most diagnostic).
+    """
+    tags = sorted(allow)
+    results: dict[str, SemEvalResult] = {}
+    for det in detectors:
+        pairs, _, _ = _build_pairs(det, fixture_records, detector_records, allow=allow)
+        results[det] = semeval_score(detector=det, pairs=pairs, tags=tags)
+
+    lines: list[str] = [
+        "## SemEval (nervaluate) — restricted to OPF categories",
+        "",
+        "Schema definitions: **Strict** = exact boundary + label. **Exact** = exact"
+        " boundary, ignore label. **Partial** = any overlap, ignore label. **Type**"
+        " = any overlap + matching label. Type and Partial give partial credit for"
+        " boundary mismatches (e.g. OPF labelling `2040-06-02 00:00:00` as one"
+        " DATE when gold splits it).",
+        "",
+        "### Headline F1 by schema",
+        "",
+        "| detector | strict | exact | partial | type |",
+        "|---|---|---|---|---|",
+    ]
+    for det in detectors:
+        r = results[det]
+        lines.append(
+            "| {det} | {strict:.3f} | {exact:.3f} | {partial:.3f} | {ent:.3f} |".format(
+                det=det,
+                strict=r.by_schema["strict"]["f1"],
+                exact=r.by_schema["exact"]["f1"],
+                partial=r.by_schema["partial"]["f1"],
+                ent=r.by_schema["ent_type"]["f1"],
+            )
+        )
+    lines.append("")
+
+    # COR/INC/PAR/MIS/SPU under the Strict schema — the diagnostic table.
+    lines.extend([
+        "### Error decomposition (Strict schema)",
+        "",
+        "| detector | COR | INC | PAR | MIS | SPU |",
+        "|---|---|---|---|---|---|",
+    ])
+    for det in detectors:
+        m = results[det].by_schema["strict"]
+        lines.append(
+            "| {det} | {c} | {i} | {p} | {ms} | {sp} |".format(
+                det=det,
+                c=m["correct"], i=m["incorrect"], p=m["partial"],
+                ms=m["missed"], sp=m["spurious"],
+            )
+        )
     lines.append("")
     return lines
 
@@ -200,15 +250,9 @@ def build_report(
             score_restricted,
         ))
 
-        h_merged, _ = _scoring_section(
-            "Headline — restricted + merged-adjacent (granularity-neutral)",
-            detectors,
-            fixture_records,
-            detector_records,
-            allow=allow,
-            merge_adjacent=True,
-        )
-        lines.extend(h_merged)
+        lines.extend(_semeval_section(
+            detectors, fixture_records, detector_records, allow=allow,
+        ))
 
     # Per-language slicing (only if the fixtures carry a language field)
     languages = sorted({
@@ -269,11 +313,11 @@ def main() -> None:
         "--canonical-labels",
         default=",".join(OPF_CANONICAL_LABELS),
         help=(
-            "Comma-separated canonical labels for the restricted, merged-adjacent, "
-            "and per-language sections. Default = OPF's 8 categories. Single labels "
-            "(e.g. 'DATE') give a tight signal for one-category experiments. "
-            "Empty string disables the restricted view entirely. "
-            f"Available: {', '.join(OPF_CANONICAL_LABELS)}."
+            "Comma-separated canonical labels for the restricted view, SemEval"
+            " section, and per-language sections. Default = OPF's 8 categories."
+            " Single labels (e.g. 'DATE') give a tight signal for one-category"
+            " experiments. Empty string disables the restricted view entirely."
+            f" Available: {', '.join(OPF_CANONICAL_LABELS)}."
         ),
     )
     args = ap.parse_args()
