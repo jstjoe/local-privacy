@@ -1749,22 +1749,43 @@ requires-dist = [
 
 [[package]]
 name = "opf-api"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "api" }
 dependencies = [
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "opf" },
+    { name = "opf-eval" },
     { name = "pydantic" },
     { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.optional-dependencies]
+all = [
+    { name = "gliner" },
+    { name = "presidio-analyzer" },
+]
+gliner = [
+    { name = "gliner" },
+]
+presidio = [
+    { name = "presidio-analyzer" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.110" },
+    { name = "gliner", marker = "extra == 'all'", specifier = ">=0.2.13" },
+    { name = "gliner", marker = "extra == 'gliner'", specifier = ">=0.2.13" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "opf", editable = "privacy-filter" },
+    { name = "opf-eval", editable = "eval" },
+    { name = "presidio-analyzer", marker = "extra == 'all'", specifier = ">=2.2" },
+    { name = "presidio-analyzer", marker = "extra == 'presidio'", specifier = ">=2.2" },
     { name = "pydantic", specifier = ">=2.6" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
 ]
+provides-extras = ["gliner", "presidio", "all"]
 
 [[package]]
 name = "opf-eval"
