@@ -119,10 +119,21 @@ The harness projects each detector's native entity vocabulary into a 10-label ca
 Notes:
 
 - **OPF** has 8 native categories — fixed at training time, not configurable. No native USERNAME or DEMOGRAPHIC support.
-- **Skyflow Detect** exposes ~70 entity types in total. The list above is what the harness asks for via the `entity_types` request parameter. The `skyflow_minimal` detector config (recommended) sends a tuned subset that drops bare `name` / `location` / `location_address` (low gold-hit rate per `eval/scripts/analyze_skyflow_hitrate.py`).
+- **Skyflow Detect** exposes 69 entity types in total (plus an `all` meta-value). The 38 mapped above are what the harness asks for via the `entity_types` request parameter. The `skyflow_minimal` detector config (recommended) sends a tuned subset that drops bare `name` / `location` / `location_address` (low gold-hit rate per `eval/scripts/analyze_skyflow_hitrate.py`). The other 31 entity types are listed below.
 - **Presidio** entries are the default English recognizers. Multilingual Presidio adds language-specific spaCy NER, not new entity types. No native SECRET or USERNAME recognizer.
 - **GLiNER** is zero-shot and accepts any natural-language prompt. The vocabulary above is what the harness sends to the `urchade/gliner_multi_pii-v1` checkpoint; tuning the prompts is one of the easier ways to move GLiNER's per-category numbers.
-- **Categories not in this table** (OCCUPATION, ORGANIZATION, MEDICAL_PROCESS, etc. that Skyflow detects) are out of scope for this benchmark — PII-Masking-300k doesn't label them.
+
+### Additional Skyflow categories (out of scope for this benchmark)
+
+PII-Masking-300k doesn't label these, so the harness doesn't grade them — but Skyflow detects them and they're worth knowing about when sizing the platform for use cases beyond what this benchmark covers.
+
+- **Health / medical:** `BLOOD_TYPE`, `CONDITION`, `DOSE`, `DRUG`, `EFFECT`, `INJURY`, `MEDICAL_CODE`, `MEDICAL_PROCESS`, `ORGANIZATION_MEDICAL_FACILITY`
+- **Personal characteristics:** `ORIGIN`, `PHYSICAL_ATTRIBUTE`, `POLITICAL_AFFILIATION`, `RELIGION`, `SEXUALITY`, `ZODIAC_SIGN`
+- **Financial / market:** `CORPORATE_ACTION`, `CREDIT_CARD_EXPIRATION`, `CVV`, `FINANCIAL_METRIC`, `MONEY`, `STATISTICS`, `TREND`
+- **Organization / work:** `EVENT`, `OCCUPATION`, `ORGANIZATION`, `ORGANIZATION_ID`, `PROJECT`
+- **Other:** `DURATION`, `FILENAME`, `LANGUAGE`, `PRODUCT`, `VEHICLE_ID`
+
+Source: `DeidentifyStringRequest.entity_types` enum in [detect.openapi.json](detect.openapi.json).
 
 ## Fixtures and reports
 
