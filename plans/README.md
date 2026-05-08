@@ -4,11 +4,12 @@ Side-quest specs for extending the OPF vs Skyflow benchmark. Each plan is brief
 (roughly one Pomodoro to read), self-contained, and implementable independently.
 
 | # | plan | effort | unblocks |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 01 | [Presidio baseline](01-presidio-baseline.md) | ~2h | "is the ML detector worth it vs free regex+NER?" |
 | 02 | [Fine-tune OPF](02-finetune-opf.md) | ~1 day (cloud GPU) | "can OPF beat Skyflow if trained on this data?" |
 | 03 | [GLiNER baseline](03-gliner-baseline.md) | ~3-4h | "is OPF the right open-weight choice or would GLiNER do as well?" |
 | 04 | [LLM-as-detector via LM Studio](04-llm-detector-lmstudio.md) | ~3-4h | "what's the quality ceiling of a generative model on this task?" |
+| 05 | [Additional PII-focused models](05-additional-models.md) | ~½–1 day | "does any other open-weight PII model beat what we have?" |
 
 ## Suggested order
 
