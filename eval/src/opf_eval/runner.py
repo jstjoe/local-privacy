@@ -1,0 +1,254 @@
+"""Iterate fixtures, call each detector, stream JSONL results.
+
+Output:
+    <out_dir>/raw_<detector>.jsonl   one line per example: {id, detector, spans, latency_ms, error}
+    <out_dir>/manifest.json          run config snapshot
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import shutil
+import time
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
+from pathlib import Path
+
+from .detectors import GLiNERDetector, OPFDetector, PresidioDetector, SkyflowDetector
+from .detectors.base import Detector
+from .taxonomy import OPF_CANONICAL_LABELS, canonical_to_skyflow_request_types
+
+
+def _build_detector(
+    name: str,
+    *,
+    skyflow_entity_types: list[str] | None = None,
+    opf_calibration_path: str | None = None,
+) -> Detector:
+    if name == "opf":
+        return OPFDetector(viterbi_calibration_path=opf_calibration_path)
+    if name == "presidio":
+        return PresidioDetector()
+    if name == "presidio_multilang":
+        # All 6 spaCy models — needs each `<lang>_core_news_lg` installed.
+        from .detectors.presidio import LANGUAGE_MODELS
+        return PresidioDetector(languages=list(LANGUAGE_MODELS.keys()))
+    if name == "gliner":
+        return GLiNERDetector()
+    if name == "opf_calibrated":
+        # Convenience: assumes a calibration path was passed via opf_calibration_path.
+        if not opf_calibration_path:
+            raise ValueError(
+                "opf_calibrated requires --opf-calibration-path"
+            )
+        return OPFDetector(viterbi_calibration_path=opf_calibration_path)
+    if name == "skyflow":
+        # Default to OPF-coverage entity types — fairer comparison and what we'd
+        # actually deploy. Override via --skyflow-entities or use 'skyflow_full'
+        # to get the unconstrained behavior.
+        types = skyflow_entity_types or canonical_to_skyflow_request_types(OPF_CANONICAL_LABELS)
+        return SkyflowDetector(entity_types=types)
+    if name == "skyflow_full":
+        # Original unconstrained Skyflow — returns all ~70 entity types.
+        return SkyflowDetector(entity_types=skyflow_entity_types)
+    if name == "skyflow_constrained":
+        # Backward-compat alias for skyflow (now identical).
+        return SkyflowDetector(
+            entity_types=canonical_to_skyflow_request_types(OPF_CANONICAL_LABELS)
+        )
+    if name == "skyflow_minimal":
+        # Reduced entity set: only general-level Skyflow types, no granular
+        # subcomponents (e.g. 'location' yes, 'location_city' no).
+        from .taxonomy import SKYFLOW_MINIMAL_ENTITY_TYPES
+        return SkyflowDetector(entity_types=list(SKYFLOW_MINIMAL_ENTITY_TYPES))
+    raise ValueError(f"unknown detector: {name}")
+
+
+def _read_fixtures(path: Path):
+    with path.open() as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            yield json.loads(line)
+
+
+def _copy_reused_raw_files(
+    reuse_from: Path | None, out_dir: Path
+) -> tuple[list[str], list[str]]:
+    """Copy raw_<detector>.jsonl files from `reuse_from` into out_dir.
+
+    Files already present in out_dir are not overwritten.
+
+    Returns (present, copied):
+      present — every detector that has a raw file in out_dir after copy
+      copied — detectors whose raw file was copied this call (for logging)
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    pre_existing = {p.stem.removeprefix("raw_") for p in out_dir.glob("raw_*.jsonl")}
+    copied: list[str] = []
+    if reuse_from and reuse_from.exists():
+        for src in sorted(reuse_from.glob("raw_*.jsonl")):
+            det = src.stem.removeprefix("raw_")
+            if det in pre_existing:
+                continue
+            shutil.copy2(src, out_dir / src.name)
+            copied.append(det)
+    present = sorted({p.stem.removeprefix("raw_") for p in out_dir.glob("raw_*.jsonl")})
+    return present, sorted(copied)
+
+
+def run(
+    fixtures: Path,
+    detector_names: list[str],
+    out_dir: Path,
+    *,
+    skyflow_workers: int = 1,
+    skyflow_min_interval_ms: float = 0.0,
+    skyflow_entity_types: list[str] | None = None,
+    opf_calibration_path: str | None = None,
+    reuse_from: Path | None = None,
+) -> None:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    examples = list(_read_fixtures(fixtures))
+
+    # Pull in raw files from a previous run before building the manifest.
+    present_detectors, copied = _copy_reused_raw_files(reuse_from, out_dir)
+    if copied:
+        print(f"[reuse] copied {copied} from {reuse_from}")
+
+    # Merge: existing raw files + previously-recorded manifest + this run.
+    manifest_path = out_dir / "manifest.json"
+    existing: dict = {}
+    if manifest_path.exists():
+        try:
+            existing = json.loads(manifest_path.read_text())
+        except json.JSONDecodeError:
+            existing = {}
+    merged_detectors = sorted(
+        set(existing.get("detectors") or []) | set(present_detectors) | set(detector_names)
+    )
+    manifest = {
+        "started_at": existing.get("started_at") or datetime.now(timezone.utc).isoformat(),
+        "fixtures": str(fixtures),
+        "n_examples": len(examples),
+        "detectors": merged_detectors,
+    }
+    manifest_path.write_text(json.dumps(manifest, indent=2))
+
+    for name in detector_names:
+        det = _build_detector(
+            name,
+            skyflow_entity_types=skyflow_entity_types,
+            opf_calibration_path=opf_calibration_path,
+        )
+        out_path = out_dir / f"raw_{name}.jsonl"
+        t0 = time.perf_counter()
+        with out_path.open("w") as f:
+            if name.startswith("skyflow") and skyflow_workers > 1:
+                with ThreadPoolExecutor(max_workers=skyflow_workers) as ex:
+                    futures = {
+                        ex.submit(det.detect, ex_["text"], language=ex_.get("language")): ex_
+                        for ex_ in examples
+                    }
+                    for fut in futures:
+                        ex_ = futures[fut]
+                        result = fut.result()
+                        f.write(
+                            json.dumps(
+                                {
+                                    "id": ex_["id"],
+                                    "detector": name,
+                                    **result,
+                                },
+                                ensure_ascii=False,
+                            )
+                            + "\n"
+                        )
+            else:
+                throttle_s = (
+                    skyflow_min_interval_ms / 1000.0
+                    if name.startswith("skyflow")
+                    else 0.0
+                )
+                last_call = 0.0
+                for ex_ in examples:
+                    if throttle_s:
+                        wait = throttle_s - (time.perf_counter() - last_call)
+                        if wait > 0:
+                            time.sleep(wait)
+                    last_call = time.perf_counter()
+                    result = det.detect(ex_["text"], language=ex_.get("language"))
+                    f.write(
+                        json.dumps(
+                            {"id": ex_["id"], "detector": name, **result},
+                            ensure_ascii=False,
+                        )
+                        + "\n"
+                    )
+        elapsed = time.perf_counter() - t0
+        print(f"[{name}] {len(examples)} examples in {elapsed:.1f}s -> {out_path}")
+        if hasattr(det, "close"):
+            det.close()
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--fixtures", required=True, type=Path)
+    ap.add_argument("--detectors", default="opf,skyflow")
+    ap.add_argument("--out", required=True, type=Path)
+    ap.add_argument(
+        "--skyflow-workers",
+        type=int,
+        default=1,
+        help="Concurrent Skyflow requests. Default 1 to be friendly to trial accounts.",
+    )
+    ap.add_argument(
+        "--skyflow-min-interval-ms",
+        type=float,
+        default=0.0,
+        help="Minimum ms between Skyflow requests (rate-limit friendly). Only applies "
+        "when --skyflow-workers=1.",
+    )
+    ap.add_argument(
+        "--skyflow-entities",
+        default=None,
+        help="Comma-separated Skyflow request enum values (lowercase) to constrain detection to. "
+        "Applies to the 'skyflow' detector only.",
+    )
+    ap.add_argument(
+        "--opf-calibration-path",
+        default=None,
+        help="Path to a Viterbi calibration JSON. Required when running the "
+        "'opf_calibrated' detector; ignored otherwise.",
+    )
+    ap.add_argument(
+        "--reuse-from",
+        type=Path,
+        default=None,
+        help="Copy raw_<detector>.jsonl files from this prior run dir into "
+        "--out before processing. Only detectors not already present are "
+        "copied; only detectors named in --detectors are run. Lets you add "
+        "a new detector without re-running existing ones on the same "
+        "fixtures.",
+    )
+    args = ap.parse_args()
+    run(
+        args.fixtures,
+        [d.strip() for d in args.detectors.split(",") if d.strip()],
+        args.out,
+        skyflow_workers=args.skyflow_workers,
+        skyflow_min_interval_ms=args.skyflow_min_interval_ms,
+        skyflow_entity_types=(
+            [e.strip() for e in args.skyflow_entities.split(",") if e.strip()]
+            if args.skyflow_entities
+            else None
+        ),
+        opf_calibration_path=args.opf_calibration_path,
+        reuse_from=args.reuse_from,
+    )
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,28 @@
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+.uv/
+build/
+dist/
+
+# eval data + run outputs
+eval/data/*.jsonl
+eval/data/finetuning/
+eval/results/runs/
+
+# OPF source — clone separately, do not vendor
+privacy-filter/
+
+# secrets / credentials
+.env
+.env.*
+*.env
+
+# api / docker
+.dockerignore.local
+
+# editor / OS
+.DS_Store
+.idea/
+.vscode/

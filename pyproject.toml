@@ -1,0 +1,18 @@
+[project]
+name = "local-privacy"
+version = "0.0.0"
+description = "Workspace root for OPF benchmark + REST API"
+requires-python = ">=3.10"
+dependencies = [
+    "opf",
+    "opf-eval",
+    "opf-api",
+]
+
+[tool.uv.workspace]
+members = ["eval", "api", "privacy-filter"]
+
+[tool.uv.sources]
+opf = { workspace = true }
+opf-eval = { workspace = true }
+opf-api = { workspace = true }
