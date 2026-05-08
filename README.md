@@ -1,6 +1,10 @@
 # local-privacy
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/jstjoe/local-privacy/blob/main/notebooks/pii_detector_comparison.ipynb)
+
 Benchmark harness comparing local and hosted PII detectors on PII-Masking-300k.
+
+See [**RESULTS.md**](RESULTS.md) for headline numbers (overall + per-category + per-language F1 and latency at n=1000).
 
 Detectors covered:
 
