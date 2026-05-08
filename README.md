@@ -135,6 +135,38 @@ PII-Masking-300k doesn't label these, so the harness doesn't grade them — but 
 
 Source: `DeidentifyStringRequest.entity_types` enum in [detect.openapi.json](detect.openapi.json).
 
+### How `skyflow_minimal` was tuned
+
+Skyflow's default behavior is to return whichever of its ~70 entity types it's confident about. Two issues with that for benchmarking:
+
+1. **Out-of-scope categories drag precision down.** PII-Masking-300k doesn't label OCCUPATION, ORGANIZATION, MEDICAL_PROCESS, etc., so every correct Skyflow detection of those counts as a false positive. The `skyflow` detector restricts the request to OPF's 8 categories to avoid this.
+2. **Bare general types are noisy fallbacks.** Skyflow returns broader labels like `NAME` (not `NAME_GIVEN`), `LOCATION` (not `LOCATION_CITY`), `LOCATION_ADDRESS` (not `LOCATION_ADDRESS_STREET`) when uncertain. These have much lower gold-hit rates than the granular subtypes.
+
+The methodology, in [eval/scripts/analyze_skyflow_hitrate.py](eval/scripts/analyze_skyflow_hitrate.py): for each raw entity type Skyflow returned in a 1k benchmark run, count how often it overlapped a gold span (≥0.5 IoU, same canonical). Sort by hit rate. Drop entity types below 50%.
+
+Findings on the 1k sample:
+
+| dropped raw label | gold hit rate | reason |
+| --- | --- | --- |
+| `NAME` | 38% | redundant with `NAME_GIVEN` (83%) + `NAME_FAMILY` (85%) |
+| `LOCATION` | 46% | redundant with `LOCATION_CITY` (79%) and friends |
+| `LOCATION_ADDRESS` | 20% | redundant with `LOCATION_ADDRESS_STREET` (89%) |
+| `NAME_MEDICAL_PROFESSIONAL` | 42% | low-confidence subtype |
+| `CREDIT_CARD` | 43% | sparse, low precision in our data |
+| `MONTH` / `YEAR` / `DAY` | 0–50% | rarely hit gold (gold uses full dates) |
+
+The resulting allowlist is `SKYFLOW_MINIMAL_ENTITY_TYPES` in [eval/src/opf_eval/taxonomy.py](eval/src/opf_eval/taxonomy.py) — 24 entity types instead of the 33 in the default constrained config.
+
+Impact at n=1000 (full numbers in [RESULTS.md](RESULTS.md)):
+
+- **Overall F1: 0.819 → 0.835** (+1.6)
+- **ADDRESS F1: 0.870 → 0.926** (+5.6) — the headline improvement
+- **PERSON F1: 0.701 → 0.748** (+4.7)
+- All other categories within ±1 F1
+- **Latency p99: 207 ms → 146 ms** (smaller response payload)
+
+Same approach would work for any hosted PII detector with a configurable entity allowlist: collect 1k of detection output against your gold, drop the raw entity types under ~50% hit rate.
+
 ## Fixtures and reports
 
 - `python -m opf_eval.fixtures --n N --out path` — materialize N examples, deterministic seed
