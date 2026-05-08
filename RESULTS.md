@@ -21,14 +21,34 @@ python -m opf_eval.report --run eval/results/runs/repro_1k/ --fixtures eval/data
 | **gliner** | 0.705 | 0.638 | 0.670 | 72 ms | 102 ms |
 | **presidio** | 0.351 | 0.380 | 0.365 | **11 ms** | **20 ms** |
 
-Granularity-neutral view (same scoring after merging adjacent same-canonical spans on both predictions and gold):
+## SemEval (nervaluate) — restricted to OPF categories
 
-| detector | F1 |
-| --- | --- |
-| skyflow_minimal | **0.851** |
-| opf | 0.825 |
-| gliner | 0.696 |
-| presidio | 0.385 |
+[SemEval 2013 9.1](https://davidsbatista.net/assets/documents/others/semeval_2013-task-9_1-evaluation-metrics.pdf) gives a four-schema view (boundary-strict to boundary-tolerant) plus an error decomposition.
+
+| detector | strict | exact | partial | type |
+| --- | --- | --- | --- | --- |
+| **skyflow_minimal** | **0.779** | **0.799** | **0.844** | **0.860** |
+| opf | 0.767 | 0.775 | 0.811 | 0.837 |
+| gliner | 0.602 | 0.626 | 0.696 | 0.730 |
+| presidio | 0.413 | 0.475 | 0.541 | 0.487 |
+
+Schema cheat-sheet: **Strict** = exact boundary + label. **Exact** = exact boundary, ignore label. **Partial** = any overlap, ignore label. **Type** = any overlap + matching label. Type is the principled "granularity-neutral" view (gives credit when OPF labels `2040-06-02 00:00:00` as one DATE while gold splits it).
+
+Strict-schema error decomposition — `correct / incorrect / partial / missed / spurious`:
+
+| detector | COR | INC | MIS | SPU |
+| --- | --- | --- | --- | --- |
+| skyflow_minimal | 5,091 | 714 | **560** | 897 |
+| opf | 4,763 | 498 | 1,105 | 790 |
+| gliner | 3,739 | 1,016 | 1,610 | 1,312 |
+| presidio | 3,014 | 1,413 | 3,126 | 2,600 |
+
+Reads cleanly:
+
+- skyflow_minimal's edge over OPF is **mostly recall** (560 missed vs 1,105 — half as many) at similar FP rates.
+- OPF beats skyflow_minimal on **type confusion** (INC 498 vs 714) — better at picking the right canonical when it does fire.
+- presidio's loss is split across MIS + SPU (under-recalls *and* over-fires on what it does catch); only 1,413 type confusions despite the lowest F1.
+- gliner over-detects more than the leaders (SPU 1,312).
 
 ## Per-category F1 (winners in **bold**)
 
