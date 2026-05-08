@@ -11,6 +11,7 @@ Side-quest specs for extending the OPF vs Skyflow benchmark. Each plan is brief
 | 04 | [LLM-as-detector via LM Studio](04-llm-detector-lmstudio.md) | ~3-4h | "what's the quality ceiling of a generative model on this task?" |
 | 05 | [Additional PII-focused models](05-additional-models.md) | ~½–1 day | "does any other open-weight PII model beat what we have?" |
 | 06 | [Unified privacy-detection API](06-unified-api.md) | ~1–1.5 days | "one client contract, switch backend with a flag" |
+| 07 | [Cloud Run hardening](07-cloud-run-hardening.md) | ~2 days | "auth + limits + observability + CI to make the API deployable to GCP" |
 
 ## Suggested order
 
