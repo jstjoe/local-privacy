@@ -4,13 +4,15 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from .limits import text_max_length
+
 
 DecodeMode = Literal["viterbi", "argmax"]
 PlaceholderFormat = Literal["bracket", "opf_native"]
 
 
 class RedactRequest(BaseModel):
-    text: str
+    text: str = Field(..., min_length=1, max_length=text_max_length())
     detector: str | None = Field(
         default=None,
         description="Detector name from /v1/detectors. None = use DEFAULT_DETECTOR env.",
@@ -79,13 +81,22 @@ class HealthResponse(BaseModel):
     schema_version: int
 
 
+class ReadyResponse(BaseModel):
+    status: Literal["ok", "not_ready"]
+    eager_loaded: list[str]
+    eager_pending: list[str]
+    skyflow_credentials: bool | None = None
+    skyflow_reason: str | None = None
+    schema_version: int
+
+
 # --- Legacy v0 schemas for back-compat /redact, /detect, /health ---
 
 LegacyOutputMode = Literal["typed", "redacted"]
 
 
 class LegacyRedactRequest(BaseModel):
-    text: str
+    text: str = Field(..., min_length=1, max_length=text_max_length())
     categories: list[str] | None = Field(
         default=None,
         description="Legacy: raw OPF labels (private_email, etc.). None = keep all.",
