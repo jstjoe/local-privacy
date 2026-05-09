@@ -12,7 +12,13 @@ from typing import Iterable
 CANONICAL_MAP: dict[str, dict[str, tuple[str, ...]]] = {
     "PERSON": {
         "opf": ("private_person",),
-        "skyflow": ("NAME", "NAME_GIVEN", "NAME_FAMILY", "NAME_MEDICAL_PROFESSIONAL"),
+        # Hierarchy: NAME (generic) > NAME_GIVEN/NAME_FAMILY (components).
+        # Every dataset we currently support annotates split components, so
+        # requesting NAME causes Skyflow to emit broad spans like "John Smith"
+        # that don't match component-level gold (counted as INC under strict).
+        # Drop NAME + the specialized NAME_MEDICAL_PROFESSIONAL (subsumed by
+        # the components) — see docstring at top of file.
+        "skyflow": ("NAME_GIVEN", "NAME_FAMILY"),
         "pii300k": (
             "GIVENNAME1",
             "GIVENNAME2",
@@ -62,9 +68,12 @@ CANONICAL_MAP: dict[str, dict[str, tuple[str, ...]]] = {
     },
     "ADDRESS": {
         "opf": ("private_address",),
+        # Hierarchy: LOCATION (any place) > LOCATION_ADDRESS (full addr) >
+        # LOCATION_ADDRESS_STREET (street part); LOCATION_CITY/STATE/ZIP/
+        # COUNTRY/COORDINATE are sibling components. Drop the two parents so
+        # Skyflow consistently emits components — matches the granularity
+        # every dataset we support actually annotates.
         "skyflow": (
-            "LOCATION",
-            "LOCATION_ADDRESS",
             "LOCATION_ADDRESS_STREET",
             "LOCATION_CITY",
             "LOCATION_STATE",
@@ -118,7 +127,11 @@ CANONICAL_MAP: dict[str, dict[str, tuple[str, ...]]] = {
     },
     "DATE": {
         "opf": ("private_date",),
-        "skyflow": ("DATE", "DATE_INTERVAL", "DOB", "TIME", "DAY", "MONTH", "YEAR"),
+        # Drop DAY/MONTH/YEAR — these are sub-units below DATE/DATE_INTERVAL/
+        # DOB. Datasets annotate full dates ("2040-06-02"), not bare years or
+        # months, so requesting them produces orphan spans Skyflow then has to
+        # disambiguate against the higher-confidence DATE classification.
+        "skyflow": ("DATE", "DATE_INTERVAL", "DOB", "TIME"),
         "pii300k": ("DATE", "TIME", "BOD"),
         "pii200k": ("DATE", "TIME", "DOB"),
         "openpii": ("DATE", "TIME", "DATEOFBIRTH"),
