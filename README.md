@@ -134,6 +134,9 @@ The harness projects every detector's native entity vocabulary and every dataset
 | `DEMOGRAPHIC` | Gender / sex / age / nationality (Presidio's `NRP`) |
 | `ORGANIZATION` | Companies, institutions, organizations |
 | `OCCUPATION` | Job title, role, profession |
+| `MONEY` | Monetary amounts, currency codes/symbols/names |
+| `VEHICLE` | Vehicle identifiers — VIN, license plate |
+| `PHYSICAL` | Physical attributes — height, eye color |
 
 ### Quick reference: who supports what
 
@@ -153,6 +156,9 @@ A check means at least one raw label maps to that canonical category in [taxonom
 | DEMOGRAPHIC | ✓ | ✓ (`SEX` only) | ✓ | — | ✓ | ✓ (`NRP`) | — |
 | ORGANIZATION | ✓ (`COMPANYNAME`) | — | — | — | ✓ | — | ✓ |
 | OCCUPATION | ✓ (`JOBTITLE`/`JOBAREA`/`JOBTYPE`) | — | — | — | ✓ | — | ✓ |
+| MONEY | ✓ (`AMOUNT`/`CURRENCY*`) | — | — | — | ✓ | — | ✓ |
+| VEHICLE | ✓ (`VEHICLEVIN`/`VEHICLEVRM`) | — | — | — | ✓ | — | ✓ |
+| PHYSICAL | ✓ (`HEIGHT`/`EYECOLOR`) | — | — | — | ✓ | — | ✓ |
 
 This drives the **fair scoring view** in the report: each detector's headline F1 is computed against `dataset_canonicals ∩ detector_supported_canonicals` so detectors aren't punished for labels they don't claim.
 
@@ -172,8 +178,11 @@ This drives the **fair scoring view** in the report: each detector's headline F1
 | DEMOGRAPHIC | `GENDER`, `SEX`, `AGE` | `SEX` | `GENDER`, `SEX`, `AGE` |
 | ORGANIZATION | `COMPANYNAME` | — | — |
 | OCCUPATION | `JOBTITLE`, `JOBAREA`, `JOBTYPE` | — | — |
+| MONEY | `AMOUNT`, `CURRENCYSYMBOL`, `CURRENCY`, `CURRENCYCODE`, `CURRENCYNAME` | — | — |
+| VEHICLE | `VEHICLEVIN`, `VEHICLEVRM` | — | — |
+| PHYSICAL | `HEIGHT`, `EYECOLOR` | — | — |
 
-Each dataset has additional raw labels not yet mapped to a canonical (e.g. pii_masking_200k's `USERAGENT`, `AMOUNT`, `CURRENCYSYMBOL`). Those are silently dropped at fixture-write time. Add a column to `CANONICAL_MAP` if you want them scored.
+pii_masking_200k also adds `SSN` (maps to ACCOUNT). Each dataset has additional raw labels not mapped to a canonical (e.g. pii_masking_200k's `USERAGENT`, `MASKEDNUMBER`, `MAC`, `ORDINALDIRECTION`). Those are silently dropped at fixture-write time. Add a column to `CANONICAL_MAP` if you want them scored.
 
 ### Detector → canonical mapping (raw labels)
 
@@ -191,6 +200,9 @@ Each dataset has additional raw labels not yet mapped to a canonical (e.g. pii_m
 | DEMOGRAPHIC | — | `GENDER`, `AGE`, `GENDER_SEXUALITY`, `MARITAL_STATUS` | `NRP` | — |
 | ORGANIZATION | — | `ORGANIZATION`, `ORGANIZATION_MEDICAL_FACILITY` | — | `organization`, `company` |
 | OCCUPATION | — | `OCCUPATION` | — | `occupation`, `job title` |
+| MONEY | — | `MONEY`, `FINANCIAL_METRIC` | — | `monetary amount`, `currency`, `price` |
+| VEHICLE | — | `VEHICLE_ID` | — | `vehicle id`, `license plate`, `vin` |
+| PHYSICAL | — | `PHYSICAL_ATTRIBUTE` | — | `height`, `eye color`, `physical attribute` |
 
 Notes:
 

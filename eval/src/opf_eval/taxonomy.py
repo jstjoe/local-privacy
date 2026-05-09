@@ -141,6 +141,7 @@ CANONICAL_MAP: dict[str, dict[str, tuple[str, ...]]] = {
             "IBAN",
             "BIC",
             "PIN",
+            "SSN",
         ),
         "openpii": (
             "ACCOUNTNUM",
@@ -237,6 +238,35 @@ CANONICAL_MAP: dict[str, dict[str, tuple[str, ...]]] = {
         "openpii": (),  # Not annotated
         "presidio": (),
         "gliner": ("occupation", "job title"),
+    },
+    "MONEY": {
+        "opf": (),
+        "skyflow": ("MONEY", "FINANCIAL_METRIC"),
+        "pii300k": (),
+        "pii200k": ("AMOUNT", "CURRENCYSYMBOL", "CURRENCY", "CURRENCYCODE", "CURRENCYNAME"),
+        "openpii": (),
+        "presidio": (),
+        "gliner": ("monetary amount", "currency", "price"),
+    },
+    "VEHICLE": {
+        "opf": (),
+        "skyflow": ("VEHICLE_ID",),
+        "pii300k": (),
+        "pii200k": ("VEHICLEVIN", "VEHICLEVRM"),
+        "openpii": (),
+        # Presidio's IN_VEHICLE_REGISTRATION stays under ACCOUNT — it's an
+        # India-specific ID, not a general vehicle identifier.
+        "presidio": (),
+        "gliner": ("vehicle id", "license plate", "vin"),
+    },
+    "PHYSICAL": {
+        "opf": (),
+        "skyflow": ("PHYSICAL_ATTRIBUTE",),
+        "pii300k": (),
+        "pii200k": ("HEIGHT", "EYECOLOR"),
+        "openpii": (),
+        "presidio": (),
+        "gliner": ("height", "eye color", "physical attribute"),
     },
 }
 
