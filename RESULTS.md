@@ -1,15 +1,15 @@
 # Benchmark Results
 
-Headline numbers from the 1k PII-Masking-300k sample (`eval/data/sample_1k.jsonl`, fixed seed 42). The 5k run confirmed these numbers for OPF / GLiNER / Presidio within ±1 F1; Skyflow_minimal at 5k is pending. Run on other ai4privacy datasets (200k / 400k / OpenPII nano / mini) by passing `--dataset NAME` everywhere — see [README](README.md#datasets).
+Headline numbers from the 1k PII-Masking-300k sample (`eval/data/sample_1k.jsonl`, fixed seed 42). The 5k run confirmed these numbers for OPF / GLiNER / Presidio within ±1 F1; Skyflow at 5k is pending. Run on other ai4privacy datasets (200k / 400k / OpenPII nano / mini) by passing `--dataset NAME` everywhere — see [README](README.md#datasets).
 
-Numbers below pre-date the multi-dataset refactor — they were generated with the legacy report layout that restricted everything to OPF's 8 categories. New runs on `pii_masking_300k` use the per-detector "fair view" by default (skyflow_minimal scope expands from 8 to 10 since it supports DEMOGRAPHIC + USERNAME, dropping its Type F1 from 0.860 → 0.821 — a more honest baseline).
+> **Note on Skyflow numbers.** The tables below were measured with the retired `skyflow` detector — a 24-entity hand-tuned allowlist for PII-Masking-300k specifically. The current default `skyflow` is **dataset-aware** and auto-derives `entity_types` from the chosen dataset's canonical labels. For `pii_masking_300k` the auto-derived set is broader (~33 entity types vs 24), so `skyflow` is expected to land within ±2 F1 of the numbers below — likely slightly higher recall, slightly lower precision. Re-run on the new code is pending. The numbers also pre-date the multi-dataset refactor's per-detector fair view; current runs widen the Skyflow scope from 8 to 10 canonicals (it supports DEMOGRAPHIC + USERNAME), trimming Type F1 from 0.860 → 0.821 in fair-view terms.
 
 Reproduce with:
 
 ```sh
 python -m opf_eval.fixtures --dataset pii_masking_300k --out eval/data/sample_1k.jsonl --n 1000
 python -m opf_eval.runner --dataset pii_masking_300k --fixtures eval/data/sample_1k.jsonl \
-    --detectors opf,skyflow_minimal,presidio,gliner \
+    --detectors opf,skyflow,presidio,gliner \
     --out eval/results/runs/repro_1k/
 python -m opf_eval.report --run eval/results/runs/repro_1k/ --fixtures eval/data/sample_1k.jsonl
 ```
@@ -18,7 +18,7 @@ python -m opf_eval.report --run eval/results/runs/repro_1k/ --fixtures eval/data
 
 | detector | precision | recall | F1 | latency p50 | latency p99 |
 | --- | --- | --- | --- | --- | --- |
-| **skyflow_minimal** | 0.821 | **0.850** | **0.835** | 105 ms | 318 ms |
+| **skyflow** | 0.821 | **0.850** | **0.835** | 105 ms | 318 ms |
 | **opf** | **0.844** | 0.784 | 0.813 | 515 ms | 922 ms |
 | **gliner** | 0.705 | 0.638 | 0.670 | 72 ms | 102 ms |
 | **presidio** | 0.351 | 0.380 | 0.365 | **11 ms** | **20 ms** |
@@ -29,7 +29,7 @@ python -m opf_eval.report --run eval/results/runs/repro_1k/ --fixtures eval/data
 
 | detector | strict | exact | partial | type |
 | --- | --- | --- | --- | --- |
-| **skyflow_minimal** | **0.779** | **0.799** | **0.844** | **0.860** |
+| **skyflow** | **0.779** | **0.799** | **0.844** | **0.860** |
 | opf | 0.767 | 0.775 | 0.811 | 0.837 |
 | gliner | 0.602 | 0.626 | 0.696 | 0.730 |
 | presidio | 0.413 | 0.475 | 0.541 | 0.487 |
@@ -40,21 +40,21 @@ Strict-schema error decomposition — `correct / incorrect / partial / missed / 
 
 | detector | COR | INC | MIS | SPU |
 | --- | --- | --- | --- | --- |
-| skyflow_minimal | 5,091 | 714 | **560** | 897 |
+| skyflow | 5,091 | 714 | **560** | 897 |
 | opf | 4,763 | 498 | 1,105 | 790 |
 | gliner | 3,739 | 1,016 | 1,610 | 1,312 |
 | presidio | 3,014 | 1,413 | 3,126 | 2,600 |
 
 Reads cleanly:
 
-- skyflow_minimal's edge over OPF is **mostly recall** (560 missed vs 1,105 — half as many) at similar FP rates.
-- OPF beats skyflow_minimal on **type confusion** (INC 498 vs 714) — better at picking the right canonical when it does fire.
+- skyflow's edge over OPF is **mostly recall** (560 missed vs 1,105 — half as many) at similar FP rates.
+- OPF beats skyflow on **type confusion** (INC 498 vs 714) — better at picking the right canonical when it does fire.
 - presidio's loss is split across MIS + SPU (under-recalls *and* over-fires on what it does catch); only 1,413 type confusions despite the lowest F1.
 - gliner over-detects more than the leaders (SPU 1,312).
 
 ## Per-category F1 (winners in **bold**)
 
-| label | gold n | opf | skyflow_minimal | gliner | presidio | winner |
+| label | gold n | opf | skyflow | gliner | presidio | winner |
 | --- | --- | --- | --- | --- | --- | --- |
 | ACCOUNT | 1,448 | **0.952** | 0.843 | 0.685 | 0.408 | OPF |
 | ADDRESS | 1,609 | 0.773 | **0.847** | 0.606 | 0.242 | Skyflow |
@@ -65,14 +65,14 @@ Reads cleanly:
 | SECRET | 220 | **0.946** | 0.758 | 0.736 | 0.000 | OPF |
 | URL | 274 | **0.956** | 0.898 | 0.427 | 0.527 | OPF |
 
-**Wins by category:** OPF 4, Skyflow_minimal 2, GLiNER 1, Presidio 1.
+**Wins by category:** OPF 4, Skyflow 2, GLiNER 1, Presidio 1.
 **Wins weighted by gold span volume:** OPF 32%, Skyflow 51%, GLiNER 17%, Presidio 5%.
 
-OPF wins more *categories*, but Skyflow_minimal wins the high-volume ones (ADDRESS + PERSON = 2,707 spans). DATE alone (1,111 spans, GLiNER's only win) is bigger than EMAIL + PHONE + SECRET + URL combined.
+OPF wins more *categories*, but Skyflow wins the high-volume ones (ADDRESS + PERSON = 2,707 spans). DATE alone (1,111 spans, GLiNER's only win) is bigger than EMAIL + PHONE + SECRET + URL combined.
 
 ## Per-language F1 (restricted, SemEval Type schema)
 
-| language | n | opf | skyflow_minimal | gliner | presidio | winner |
+| language | n | opf | skyflow | gliner | presidio | winner |
 | --- | --- | --- | --- | --- | --- | --- |
 | Dutch | 164 | 0.819 | **0.840** | 0.753 | 0.470 | Skyflow |
 | English | 169 | 0.824 | **0.855** | 0.697 | 0.625 | Skyflow |
@@ -81,7 +81,7 @@ OPF wins more *categories*, but Skyflow_minimal wins the high-volume ones (ADDRE
 | Italian | 143 | **0.846** | 0.823 | 0.733 | 0.450 | OPF |
 | Spanish | 158 | 0.852 | **0.897** | 0.751 | 0.485 | Skyflow |
 
-Skyflow_minimal wins 5 of 6 languages. The 5k confirmation at language level: OPF wins **all 6** languages when Skyflow isn't in the comparison. The Italian-OPF result at 1k is real.
+Skyflow wins 5 of 6 languages. The 5k confirmation at language level: OPF wins **all 6** languages when Skyflow isn't in the comparison. The Italian-OPF result at 1k is real.
 
 (Numbers shifted up vs. older partial-F1 versions of this table because Type schema gives credit for overlapping spans regardless of exact boundary — see the SemEval section above. Relative rankings are unchanged.)
 
@@ -89,8 +89,8 @@ Presidio's 30-point gap on non-English languages is its English-only spaCy NER. 
 
 ## Headline takeaways
 
-- **For broad PII coverage with hosted-OK constraints:** Skyflow_minimal. Fastest at scale (105 ms p50), highest F1 in granularity-neutral terms (0.851), best on the high-volume PERSON and ADDRESS categories.
-- **For local deployment:** OPF. Within 2.6 F1 of Skyflow_minimal in the most realistic view, dominates 4 of 8 categories, fully local. Slow on CPU (515 ms p50, 922 ms p99) — GPU recommended for production.
+- **For broad PII coverage with hosted-OK constraints:** Skyflow. Fastest at scale (105 ms p50), highest F1 in granularity-neutral terms (0.851), best on the high-volume PERSON and ADDRESS categories.
+- **For local deployment:** OPF. Within 2.6 F1 of Skyflow in the most realistic view, dominates 4 of 8 categories, fully local. Slow on CPU (515 ms p50, 922 ms p99) — GPU recommended for production.
 - **For DATE specifically:** GLiNER. Beats OPF by 22.7 F1 and Skyflow by 1.7 F1, despite being an order of magnitude smaller than OPF. The greedy-span pathology in OPF that we couldn't fix with Viterbi calibration just doesn't exist in GLiNER.
 - **For high-volume EMAIL detection only:** Presidio. 11 ms p50, 0.968 F1 on EMAIL — beats every other detector. Worthless on most other categories.
 - **A hybrid local stack** (OPF + GLiNER for DATE, optionally Presidio for EMAIL) would close most of the OPF→Skyflow gap while staying fully on-prem. Not built or benchmarked yet.

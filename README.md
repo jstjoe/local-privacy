@@ -97,7 +97,7 @@ Then run with one of the Skyflow detector names:
 ```sh
 python -m opf_eval.runner \
     --fixtures eval/data/sample_100.jsonl \
-    --detectors skyflow_minimal \
+    --detectors skyflow \
     --reuse-from eval/results/runs/smoke/ \
     --out eval/results/runs/with_skyflow/
 ```
@@ -115,8 +115,6 @@ python -m opf_eval.runner \
 | `presidio_multilang` | Presidio with all 6 spaCy models |
 | `skyflow` | Skyflow Detect API; `entity_types` auto-derived from dataset's canonical labels |
 | `skyflow_full` | Skyflow Detect API unconstrained (~70 entity types) |
-| `skyflow_minimal` | Skyflow with the hand-tuned PII-Masking-300k allowlist (manual override; not dataset-aware) |
-| `skyflow_constrained` | Alias for `skyflow` |
 
 ## Canonical entity types
 
@@ -134,6 +132,8 @@ The harness projects every detector's native entity vocabulary and every dataset
 | `SECRET` | Passwords |
 | `USERNAME` | Logins / handles |
 | `DEMOGRAPHIC` | Gender / sex / age / nationality (Presidio's `NRP`) |
+| `ORGANIZATION` | Companies, institutions, organizations |
+| `OCCUPATION` | Job title, role, profession |
 
 ### Quick reference: who supports what
 
@@ -151,6 +151,8 @@ A check means at least one raw label maps to that canonical category in [taxonom
 | SECRET | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ |
 | USERNAME | ✓ | ✓ | ✓ | — | ✓ | — | ✓ |
 | DEMOGRAPHIC | ✓ | ✓ (`SEX` only) | ✓ | — | ✓ | ✓ (`NRP`) | — |
+| ORGANIZATION | ✓ (`COMPANYNAME`) | — | — | — | ✓ | — | ✓ |
+| OCCUPATION | ✓ (`JOBTITLE`/`JOBAREA`/`JOBTYPE`) | — | — | — | ✓ | — | ✓ |
 
 This drives the **fair scoring view** in the report: each detector's headline F1 is computed against `dataset_canonicals ∩ detector_supported_canonicals` so detectors aren't punished for labels they don't claim.
 
@@ -168,8 +170,10 @@ This drives the **fair scoring view** in the report: each detector's headline F1
 | SECRET | `PASSWORD` | `PASS` | `PASSWORD` |
 | USERNAME | `USERNAME` | `USERNAME` | `USERNAME` |
 | DEMOGRAPHIC | `GENDER`, `SEX`, `AGE` | `SEX` | `GENDER`, `SEX`, `AGE` |
+| ORGANIZATION | `COMPANYNAME` | — | — |
+| OCCUPATION | `JOBTITLE`, `JOBAREA`, `JOBTYPE` | — | — |
 
-Each dataset has additional raw labels not yet mapped to a canonical (e.g. pii_masking_200k's `JOBTITLE`, `JOBAREA`, `COMPANYNAME`, `USERAGENT`). Those are silently dropped at fixture-write time. Add a column to `CANONICAL_MAP` if you want them scored.
+Each dataset has additional raw labels not yet mapped to a canonical (e.g. pii_masking_200k's `USERAGENT`, `AMOUNT`, `CURRENCYSYMBOL`). Those are silently dropped at fixture-write time. Add a column to `CANONICAL_MAP` if you want them scored.
 
 ### Detector → canonical mapping (raw labels)
 
@@ -185,11 +189,13 @@ Each dataset has additional raw labels not yet mapped to a canonical (e.g. pii_m
 | SECRET | `secret` | `PASSWORD` | — | `password` |
 | USERNAME | — | `USERNAME` | — | `username` |
 | DEMOGRAPHIC | — | `GENDER`, `AGE`, `GENDER_SEXUALITY`, `MARITAL_STATUS` | `NRP` | — |
+| ORGANIZATION | — | `ORGANIZATION`, `ORGANIZATION_MEDICAL_FACILITY` | — | `organization`, `company` |
+| OCCUPATION | — | `OCCUPATION` | — | `occupation`, `job title` |
 
 Notes:
 
 - **OPF** has 8 native categories — fixed at training time, not configurable. No native USERNAME or DEMOGRAPHIC support.
-- **Skyflow Detect** exposes 69 entity types in total (plus an `all` meta-value). The 38 mapped above are what the harness asks for via the `entity_types` request parameter. The `skyflow` detector now auto-derives this set from the chosen dataset's canonical labels; `skyflow_minimal` keeps a hand-tuned PII-Masking-300k preset (drops bare `name` / `location` / `location_address`, low gold-hit rate per `eval/scripts/analyze_skyflow_hitrate.py`). The other 31 entity types are listed below.
+- **Skyflow Detect** exposes 69 entity types in total (plus an `all` meta-value). The 38 mapped above are what the harness asks for via the `entity_types` request parameter. The `skyflow` detector auto-derives the per-call set from the chosen dataset's canonical labels via `canonical_to_skyflow_request_types()`; pass `skyflow_full` for the unconstrained call. The other 31 entity types are listed below.
 - **Presidio** entries are the default English recognizers. Multilingual Presidio adds language-specific spaCy NER, not new entity types. No native SECRET or USERNAME recognizer.
 - **GLiNER** is zero-shot and accepts any natural-language prompt. The vocabulary above is what the harness sends to the `urchade/gliner_multi_pii-v1` checkpoint; with `--dataset NAME` set, the prompt list is auto-restricted to canonicals the dataset annotates. Tuning the prompts is one of the easier ways to move GLiNER's per-category numbers.
 
@@ -205,37 +211,9 @@ PII-Masking-300k doesn't label these, so the harness doesn't grade them — but 
 
 Source: `DeidentifyStringRequest.entity_types` enum in [detect.openapi.json](detect.openapi.json).
 
-### How `skyflow_minimal` was tuned
+### Hit-rate tuning (historical context)
 
-Skyflow's default behavior is to return whichever of its ~70 entity types it's confident about. Two issues with that for benchmarking:
-
-1. **Out-of-scope categories drag precision down.** PII-Masking-300k doesn't label OCCUPATION, ORGANIZATION, MEDICAL_PROCESS, etc., so every correct Skyflow detection of those counts as a false positive. The `skyflow` detector restricts the request to OPF's 8 categories to avoid this.
-2. **Bare general types are noisy fallbacks.** Skyflow returns broader labels like `NAME` (not `NAME_GIVEN`), `LOCATION` (not `LOCATION_CITY`), `LOCATION_ADDRESS` (not `LOCATION_ADDRESS_STREET`) when uncertain. These have much lower gold-hit rates than the granular subtypes.
-
-The methodology, in [eval/scripts/analyze_skyflow_hitrate.py](eval/scripts/analyze_skyflow_hitrate.py): for each raw entity type Skyflow returned in a 1k benchmark run, count how often it overlapped a gold span (≥0.5 IoU, same canonical). Sort by hit rate. Drop entity types below 50%.
-
-Findings on the 1k sample:
-
-| dropped raw label | gold hit rate | reason |
-| --- | --- | --- |
-| `NAME` | 38% | redundant with `NAME_GIVEN` (83%) + `NAME_FAMILY` (85%) |
-| `LOCATION` | 46% | redundant with `LOCATION_CITY` (79%) and friends |
-| `LOCATION_ADDRESS` | 20% | redundant with `LOCATION_ADDRESS_STREET` (89%) |
-| `NAME_MEDICAL_PROFESSIONAL` | 42% | low-confidence subtype |
-| `CREDIT_CARD` | 43% | sparse, low precision in our data |
-| `MONTH` / `YEAR` / `DAY` | 0–50% | rarely hit gold (gold uses full dates) |
-
-The resulting allowlist is `SKYFLOW_MINIMAL_ENTITY_TYPES` in [eval/src/opf_eval/taxonomy.py](eval/src/opf_eval/taxonomy.py) — 24 entity types instead of the 33 in the default constrained config.
-
-Impact at n=1000 (full numbers in [RESULTS.md](RESULTS.md)):
-
-- **Overall F1: 0.819 → 0.835** (+1.6)
-- **ADDRESS F1: 0.870 → 0.926** (+5.6) — the headline improvement
-- **PERSON F1: 0.701 → 0.748** (+4.7)
-- All other categories within ±1 F1
-- **Latency p99: 207 ms → 146 ms** (smaller response payload)
-
-Same approach would work for any hosted PII detector with a configurable entity allowlist: collect 1k of detection output against your gold, drop the raw entity types under ~50% hit rate.
+The previously-shipped `skyflow_minimal` detector was a hand-tuned 24-entity allowlist derived from gold-hit-rate analysis on PII-Masking-300k (drop bare `NAME` / `LOCATION` / `LOCATION_ADDRESS`, keep components — see `eval/scripts/analyze_skyflow_hitrate.py`). It's now retired in favour of the dataset-aware default `skyflow`, which auto-derives `entity_types` from `canonical_to_skyflow_request_types(dataset_canonicals)` for whichever dataset you pick. The same hit-rate methodology still applies if you want to optimize Skyflow for a new dataset.
 
 ## Fixtures and reports
 

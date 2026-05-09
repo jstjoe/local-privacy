@@ -220,6 +220,24 @@ CANONICAL_MAP: dict[str, dict[str, tuple[str, ...]]] = {
         "presidio": ("NRP",),  # Nationality, Religion, Political affiliation
         "gliner": (),
     },
+    "ORGANIZATION": {
+        "opf": (),  # OPF has no native ORG label
+        "skyflow": ("ORGANIZATION", "ORGANIZATION_MEDICAL_FACILITY"),
+        "pii300k": (),  # Not annotated
+        "pii200k": ("COMPANYNAME",),
+        "openpii": (),  # Not annotated
+        "presidio": (),  # No native ORG recognizer in default Presidio
+        "gliner": ("organization", "company"),
+    },
+    "OCCUPATION": {
+        "opf": (),  # OPF has no native job label
+        "skyflow": ("OCCUPATION",),
+        "pii300k": (),  # Not annotated
+        "pii200k": ("JOBTITLE", "JOBAREA", "JOBTYPE"),
+        "openpii": (),  # Not annotated
+        "presidio": (),
+        "gliner": ("occupation", "job title"),
+    },
 }
 
 
@@ -247,13 +265,13 @@ _DATASET_REVERSE = {
 }
 
 
-# Detector name -> CANONICAL_MAP source key. Variants (skyflow_minimal,
+# Detector name -> CANONICAL_MAP source key. Variants (skyflow_full,
 # presidio_multilang) collapse to their parent vocabulary.
 _DETECTOR_VOCAB_KEY: dict[str, str] = {
     "opf": "opf",
     "opf_calibrated": "opf",
     "skyflow": "skyflow",
-    "skyflow_minimal": "skyflow",
+    "skyflow_full": "skyflow",
     "presidio": "presidio",
     "presidio_multilang": "presidio",
     "gliner": "gliner",
@@ -323,7 +341,7 @@ def dataset_canonicals(vocab_key: str) -> set[str]:
 
 def detector_supported_canonicals(detector: str) -> set[str]:
     """Canonical labels this detector can produce (handles variants like
-    skyflow_minimal -> skyflow vocabulary)."""
+    skyflow_full / presidio_multilang -> their parent vocabulary)."""
     source = _DETECTOR_VOCAB_KEY.get(detector, detector)
     return {
         canonical for canonical, by_source in CANONICAL_MAP.items()
@@ -343,45 +361,6 @@ CANONICAL_LABELS: tuple[str, ...] = tuple(CANONICAL_MAP.keys())
 # allow-list for apples-to-apples comparison against Skyflow.
 OPF_CANONICAL_LABELS: tuple[str, ...] = tuple(
     canonical for canonical, by_source in CANONICAL_MAP.items() if by_source.get("opf")
-)
-
-
-# Empirically-tuned minimal Skyflow entity_types: drops bare general types
-# (NAME, LOCATION, LOCATION_ADDRESS) and individual labels with <50% gold hit
-# rate on PII-Masking-300k 1k sample. See eval/scripts/analyze_skyflow_hitrate.py.
-SKYFLOW_MINIMAL_ENTITY_TYPES: tuple[str, ...] = (
-    # Names — drop bare 'name' (38% hit), keep components
-    "name_given",
-    "name_family",
-    # Email / phone / contact
-    "email_address",
-    "phone_number",
-    # Location — drop bare 'location' (46%) and 'location_address' (20%);
-    # keep components which all hit >=80%
-    "location_address_street",
-    "location_city",
-    "location_state",
-    "location_zip",
-    "location_country",
-    "location_coordinate",
-    # URL / IP
-    "url",
-    "ip_address",
-    # Dates — keep date, date_interval, dob, time; drop year/month/day (low hit)
-    "date",
-    "date_interval",
-    "dob",
-    "time",
-    # IDs / accounts
-    "account_number",
-    "ssn",
-    "passport_number",
-    "driver_license",
-    "healthcare_number",
-    "bank_account",
-    "numerical_pii",
-    # Secrets
-    "password",
 )
 
 

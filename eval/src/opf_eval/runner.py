@@ -59,17 +59,6 @@ def _build_detector(
         return SkyflowDetector(entity_types=types)
     if name == "skyflow_full":
         return SkyflowDetector(entity_types=skyflow_entity_types)
-    if name == "skyflow_constrained":
-        # Backward-compat alias for skyflow (now identical).
-        return SkyflowDetector(
-            entity_types=canonical_to_skyflow_request_types(sorted(dataset_canonicals_set))
-        )
-    if name == "skyflow_minimal":
-        # Hand-tuned PII-Masking-300k preset (from gold-hit-rate analysis).
-        # Kept as a 300k-specific manual override; new default `skyflow` is
-        # dataset-aware.
-        from .taxonomy import SKYFLOW_MINIMAL_ENTITY_TYPES
-        return SkyflowDetector(entity_types=list(SKYFLOW_MINIMAL_ENTITY_TYPES))
     raise ValueError(f"unknown detector: {name}")
 
 

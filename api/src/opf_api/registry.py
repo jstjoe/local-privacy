@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from opf_eval.detectors.base import Detector
-from opf_eval.taxonomy import CANONICAL_MAP, SKYFLOW_MINIMAL_ENTITY_TYPES
+from opf_eval.taxonomy import CANONICAL_MAP
 
 
 logger = logging.getLogger("opf_api.registry")
@@ -90,11 +90,6 @@ def build_default_registry() -> dict[str, DetectorEntry]:
     reg: dict[str, DetectorEntry] = {
         "opf": DetectorEntry("opf", _opf_factory),
         "skyflow": DetectorEntry("skyflow", _skyflow_factory(None), proxy=True),
-        "skyflow_minimal": DetectorEntry(
-            "skyflow_minimal",
-            _skyflow_factory(list(SKYFLOW_MINIMAL_ENTITY_TYPES)),
-            proxy=True,
-        ),
     }
     try:
         import presidio_analyzer  # noqa: F401
@@ -117,7 +112,6 @@ def build_default_registry() -> dict[str, DetectorEntry]:
 _SOURCE_KEY = {
     "opf": "opf",
     "skyflow": "skyflow",
-    "skyflow_minimal": "skyflow",
     "presidio": "presidio",
     "presidio_multilang": "presidio",
     "gliner": "gliner",
@@ -127,8 +121,8 @@ _SOURCE_KEY = {
 def detector_categories(name: str) -> list[str]:
     """Canonical categories a detector can produce.
 
-    Variants (skyflow_minimal, presidio_multilang) share their parent's
-    coverage. Returns empty list for unknown names.
+    Variants (presidio_multilang) share their parent's coverage. Returns
+    empty list for unknown names.
     """
     source = _SOURCE_KEY.get(name)
     if source is None:

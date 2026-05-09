@@ -132,9 +132,8 @@ For each detector, score against `dataset_canonicals(vocab) ∩ detector_support
 
 ```python
 def detector_supported_canonicals(detector: str) -> set[str]:
-    """Canonical labels this detector can produce (mirrors the registry in
-    api/src/opf_api/registry.py — variants like skyflow_minimal share their
-    parent's coverage)."""
+    """Canonical labels this detector can produce (variants like
+    skyflow_full / presidio_multilang collapse to their parent vocab)."""
     source = _DETECTOR_VOCAB_KEY.get(detector, detector)   # see below
     return {
         c for c, by_src in CANONICAL_MAP.items()
@@ -155,7 +154,7 @@ def fair_labels(detector: str, vocab_key: str) -> set[str]:
 
 ```python
 _DETECTOR_VOCAB_KEY = {
-    "skyflow_minimal": "skyflow",
+    "skyflow_full": "skyflow",
     "presidio_multilang": "presidio",
     # opf, gliner, presidio, skyflow, opf_calibrated all use their own name
 }
@@ -179,29 +178,28 @@ The per-category breakdown already shows P/R/F1 per label per detector — no ch
 
 ## Dataset-aware detector configuration
 
-Skyflow and GLiNER both take a per-call label set. Today those sets are hard-coded — `SKYFLOW_MINIMAL_ENTITY_TYPES` was tuned on PII-Masking-300k specifically; `gliner_prompts()` always returns the full union of all canonical labels' prompts. With dataset as a first-class input, both should auto-derive from the dataset's vocabulary so that picking `(detector, dataset, size)` runs the right configuration without manual flags.
+Skyflow and GLiNER both take a per-call label set. Previously those sets were hard-coded: `SKYFLOW_MINIMAL_ENTITY_TYPES` was tuned on PII-Masking-300k specifically; `gliner_prompts()` always returned the full union. With dataset as a first-class input, both auto-derive from the dataset's vocabulary so that picking `(detector, dataset, size)` runs the right configuration without manual flags. The retired `skyflow_minimal` and `skyflow_constrained` aliases are removed in this PR — the new default `skyflow` subsumes both.
 
 Per-detector behavior:
 
 | detector | configuration source after this PR |
 | --- | --- |
-| `skyflow` | `canonical_to_skyflow_request_types(dataset_canonicals)` — replaces today's "request everything" default |
-| `skyflow_minimal` | unchanged — keeps its hand-tuned PII-Masking-300k preset; document as a 300k-specific override |
-| `gliner` | prompts restricted to `gliner_prompts_for(dataset_canonicals)` — new helper |
+| `skyflow` | `canonical_to_skyflow_request_types(dataset_canonicals)` — replaces "request everything" + the hand-tuned 24-entity preset |
+| `skyflow_full` | unchanged — explicit unconstrained call returning all ~70 entity types |
+| `gliner` | prompts restricted to `gliner_prompts(dataset_canonicals)` |
 | `opf` / `presidio` | unchanged — fixed output vocab; the "request these only" filter is applied at scoring time, not call time |
 
 Runner threads `dataset_canonicals(vocab_key)` into `_build_detector`:
 
 ```python
-def _build_detector(name: str, *, dataset_canonicals: set[str]) -> Detector:
+def _build_detector(name: str, *, dataset_canonicals_set: set[str]) -> Detector:
     if name == "skyflow":
-        entity_types = canonical_to_skyflow_request_types(sorted(dataset_canonicals))
+        entity_types = canonical_to_skyflow_request_types(sorted(dataset_canonicals_set))
         return SkyflowDetector(entity_types=entity_types)
-    if name == "skyflow_minimal":
-        return SkyflowDetector(entity_types=list(SKYFLOW_MINIMAL_ENTITY_TYPES))
+    if name == "skyflow_full":
+        return SkyflowDetector(entity_types=None)
     if name == "gliner":
-        prompts = gliner_prompts_for(dataset_canonicals)
-        return GLiNERDetector(prompts=prompts)
+        return GLiNERDetector(prompts=gliner_prompts(dataset_canonicals_set))
     if name == "opf":
         return OPFDetector(...)   # vocab is fixed
     ...
@@ -278,7 +276,7 @@ Existing fixtures (no `dataset` field, no manifest entry) keep working. The fixt
 
 ## Risks / open questions
 
-- **`skyflow` semantic change is breaking.** Today `skyflow` requests everything; after this PR it requests only the dataset's canonical labels. Any historical runs labelled `skyflow` were scored against today's behavior. Mitigation: bump report version + document in CHANGELOG; users wanting the old behavior pass `--detector-entities skyflow=ALL` (future) or just continue using `skyflow_minimal` until the new defaults are validated.
+- **`skyflow` semantic change is breaking.** Pre-PR `skyflow` requested OPF's 8 categories; post-PR it requests the dataset's full canonical set. The previously-shipped `skyflow_minimal` and `skyflow_constrained` aliases are removed. Mitigation: document in CHANGELOG; for the historical request-everything behavior pass `skyflow_full`.
 - **OpenPII schema unknowns**. The model cards I've seen don't enumerate every entity type. Step 1 of the implementation (record dump) is non-negotiable.
 - **OpenPII vocab might collapse to legacy after canonicalization**. If 95% of OpenPII labels round-trip to the same canonical labels as `pii-masking-300k`, the practical difference is just dataset size + composition. Note this in the verification step; it doesn't kill the plan, but may shrink the "added value" story.
 - **Per-dataset language coverage**. PII-Masking-300k's six languages may not be the same set in OpenPII. The per-language report section already only emits rows for languages present in the fixture set, so this is benign — just don't promise coverage we don't have.
@@ -297,7 +295,7 @@ Existing fixtures (no `dataset` field, no manifest entry) keep working. The fixt
 5. Sanity check: a detector whose supported set fully covers the dataset's vocabulary should score the same in both views.
 6. Verify the SemEval section (plan 08) still scores cleanly — same detector outputs, different fixtures, both views.
 7. **Dataset-aware config sanity**: on `openpii_nano`, log the actual `entity_types` Skyflow was called with and the actual prompts GLiNER was called with. Confirm both lists derive from the dataset's annotated canonicals — not the union of all canonicals.
-8. Run `skyflow_minimal` and `skyflow` side-by-side on `pii_masking_300k`; expect their fair-view F1 to be within ±2 (the auto-derived list is broader than the hand-tuned one but should track close).
+8. Re-run `skyflow` on `pii_masking_300k` and compare to the previously-published `skyflow_minimal` numbers in RESULTS.md; expect fair-view F1 within ±2 (the auto-derived list is broader than the hand-tuned one but should track close).
 
 ## Effort
 
@@ -307,7 +305,7 @@ Existing fixtures (no `dataset` field, no manifest entry) keep working. The fixt
 - Fixtures + runner + manifest wiring: ~1 hour
 - Dataset-aware detector config (skyflow + gliner builders, `gliner_prompts_for`): ~1 hour
 - Report refactor for fair + raw views (replaces the single-view headline): ~2 hours
-- Verification runs (nano + a re-mat of existing 1k + skyflow vs skyflow_minimal): ~1.5 hours
+- Verification runs (nano + a re-mat of existing 1k + skyflow re-run on 300k): ~1.5 hours
 - README + RESULTS update: ~1 hour (the framing shift from "OPF vs Skyflow" to "general benchmark" needs language tweaks too)
 - **Total: ~1-1.5 days**
 
