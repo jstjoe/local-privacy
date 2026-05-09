@@ -115,6 +115,11 @@ python -m opf_eval.runner \
 | `presidio_multilang` | Presidio with all 6 spaCy models |
 | `skyflow` | Skyflow Detect API; `entity_types` auto-derived from dataset's canonical labels |
 | `skyflow_full` | Skyflow Detect API unconstrained (~70 entity types) |
+| `ai4privacy_modernbert` | ai4privacy `llama-...-openpii` ModernBERT-base, MIT, 8 langs, OpenPII vocab |
+| `gliner_gretel_small` | Gretel bi-encoder GLiNER (200 MB), 41 PII labels, threshold 0.7, English-only |
+| `gliner_gretel_large` | Gretel bi-encoder GLiNER (500 MB), same 41 labels, threshold 0.7, English-only |
+| `gliner_nvidia` | Nvidia gliner-PII on `urchade/gliner_large-v2.1` (570M base), threshold 0.3, NVIDIA Open Model License |
+| `openmed` | OpenMed PII via `openmed.extract_pii(lang=…)`, DeBERTa-based per-language models, snake_case 55-label vocab |
 
 ## Canonical entity types
 
