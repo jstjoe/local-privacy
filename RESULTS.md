@@ -21,14 +21,34 @@ python -m opf_eval.report --run eval/results/runs/repro_1k/ --fixtures eval/data
 | **gliner** | 0.705 | 0.638 | 0.670 | 72 ms | 102 ms |
 | **presidio** | 0.351 | 0.380 | 0.365 | **11 ms** | **20 ms** |
 
-Granularity-neutral view (same scoring after merging adjacent same-canonical spans on both predictions and gold):
+## SemEval (nervaluate) — restricted to OPF categories
 
-| detector | F1 |
-| --- | --- |
-| skyflow_minimal | **0.851** |
-| opf | 0.825 |
-| gliner | 0.696 |
-| presidio | 0.385 |
+[SemEval 2013 9.1](https://davidsbatista.net/assets/documents/others/semeval_2013-task-9_1-evaluation-metrics.pdf) gives a four-schema view (boundary-strict to boundary-tolerant) plus an error decomposition.
+
+| detector | strict | exact | partial | type |
+| --- | --- | --- | --- | --- |
+| **skyflow_minimal** | **0.779** | **0.799** | **0.844** | **0.860** |
+| opf | 0.767 | 0.775 | 0.811 | 0.837 |
+| gliner | 0.602 | 0.626 | 0.696 | 0.730 |
+| presidio | 0.413 | 0.475 | 0.541 | 0.487 |
+
+Schema cheat-sheet: **Strict** = exact boundary + label. **Exact** = exact boundary, ignore label. **Partial** = any overlap, ignore label. **Type** = any overlap + matching label. Type is the principled "granularity-neutral" view (gives credit when OPF labels `2040-06-02 00:00:00` as one DATE while gold splits it).
+
+Strict-schema error decomposition — `correct / incorrect / partial / missed / spurious`:
+
+| detector | COR | INC | MIS | SPU |
+| --- | --- | --- | --- | --- |
+| skyflow_minimal | 5,091 | 714 | **560** | 897 |
+| opf | 4,763 | 498 | 1,105 | 790 |
+| gliner | 3,739 | 1,016 | 1,610 | 1,312 |
+| presidio | 3,014 | 1,413 | 3,126 | 2,600 |
+
+Reads cleanly:
+
+- skyflow_minimal's edge over OPF is **mostly recall** (560 missed vs 1,105 — half as many) at similar FP rates.
+- OPF beats skyflow_minimal on **type confusion** (INC 498 vs 714) — better at picking the right canonical when it does fire.
+- presidio's loss is split across MIS + SPU (under-recalls *and* over-fires on what it does catch); only 1,413 type confusions despite the lowest F1.
+- gliner over-detects more than the leaders (SPU 1,312).
 
 ## Per-category F1 (winners in **bold**)
 
@@ -48,18 +68,20 @@ Granularity-neutral view (same scoring after merging adjacent same-canonical spa
 
 OPF wins more *categories*, but Skyflow_minimal wins the high-volume ones (ADDRESS + PERSON = 2,707 spans). DATE alone (1,111 spans, GLiNER's only win) is bigger than EMAIL + PHONE + SECRET + URL combined.
 
-## Per-language F1 (restricted, partial)
+## Per-language F1 (restricted, SemEval Type schema)
 
 | language | n | opf | skyflow_minimal | gliner | presidio | winner |
 | --- | --- | --- | --- | --- | --- | --- |
-| Dutch | 164 | 0.789 | **0.817** | 0.681 | 0.316 | Skyflow |
-| English | 169 | 0.791 | **0.837** | 0.629 | 0.432 | Skyflow |
-| French | 193 | 0.829 | **0.846** | 0.661 | 0.378 | Skyflow |
-| German | 173 | 0.814 | **0.842** | 0.693 | 0.324 | Skyflow |
-| Italian | 143 | **0.810** | 0.787 | 0.645 | 0.366 | OPF |
-| Spanish | 158 | 0.844 | **0.875** | 0.707 | 0.383 | Skyflow |
+| Dutch | 164 | 0.819 | **0.840** | 0.753 | 0.470 | Skyflow |
+| English | 169 | 0.824 | **0.855** | 0.697 | 0.625 | Skyflow |
+| French | 193 | 0.847 | **0.862** | 0.715 | 0.465 | Skyflow |
+| German | 173 | 0.835 | **0.878** | 0.737 | 0.428 | Skyflow |
+| Italian | 143 | **0.846** | 0.823 | 0.733 | 0.450 | OPF |
+| Spanish | 158 | 0.852 | **0.897** | 0.751 | 0.485 | Skyflow |
 
-Skyflow_minimal wins 5 of 6 languages. The 5k confirmation at language level: OPF wins **all 6** languages when Skyflow isn't in the comparison, with a tight 4-point spread (0.786–0.830). The Italian-OPF result at 1k was real.
+Skyflow_minimal wins 5 of 6 languages. The 5k confirmation at language level: OPF wins **all 6** languages when Skyflow isn't in the comparison. The Italian-OPF result at 1k is real.
+
+(Numbers shifted up vs. older partial-F1 versions of this table because Type schema gives credit for overlapping spans regardless of exact boundary — see the SemEval section above. Relative rankings are unchanged.)
 
 Presidio's 30-point gap on non-English languages is its English-only spaCy NER. Multilingual Presidio (`presidio_multilang`) actually performs slightly worse overall — country-specific regex recognizers (US_SSN etc.) get gated to `language="en"` and stop firing. See [plans/01-presidio-baseline.md](plans/01-presidio-baseline.md).
 
