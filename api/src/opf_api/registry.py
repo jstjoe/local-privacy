@@ -71,7 +71,7 @@ def _presidio_factory(*, multilang: bool) -> Callable[[], Detector]:
     def make() -> Detector:
         from opf_eval.detectors.presidio import LANGUAGE_MODELS, PresidioDetector
 
-        languages = list(LANGUAGE_MODELS.keys()) if multilang else ["English"]
+        languages = list(LANGUAGE_MODELS.keys()) if multilang else ["en"]
         return PresidioDetector(languages=languages)
 
     return make
