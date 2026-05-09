@@ -71,8 +71,24 @@ class PresidioDetector:
             for code in loaded
             if code in LANGUAGE_MODELS
         ]
+        # spaCy NER emits a number of label types (FAC, CARDINAL, PRODUCT,
+        # WORK_OF_ART, ORG, etc.) that Presidio doesn't translate to its
+        # entity vocabulary. By default Presidio logs a WARNING per record
+        # and keeps them anyway — we drop them at scoring time so they're
+        # noise. List them here so Presidio drops them upstream instead.
         provider = NlpEngineProvider(
-            nlp_configuration={"nlp_engine_name": "spacy", "models": models}
+            nlp_configuration={
+                "nlp_engine_name": "spacy",
+                "models": models,
+                "ner_model_configuration": {
+                    "labels_to_ignore": [
+                        "O", "ORG", "ORGANIZATION", "FAC", "FACILITY",
+                        "GPE", "EVENT", "LANGUAGE", "LAW", "MONEY",
+                        "NORP", "ORDINAL", "PERCENT", "PRODUCT", "QUANTITY",
+                        "WORK_OF_ART", "CARDINAL", "MISC",
+                    ],
+                },
+            }
         )
         nlp_engine = provider.create_engine()
         supported = [m["lang_code"] for m in models]
