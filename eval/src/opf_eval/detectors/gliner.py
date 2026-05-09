@@ -25,13 +25,17 @@ class GLiNERDetector:
         *,
         model_name: str = "urchade/gliner_multi_pii-v1",
         threshold: float = 0.5,
+        prompts: list[str] | None = None,
     ) -> None:
         """
         model_name: HuggingFace model id. Default is the multilingual PII variant.
         threshold: confidence cutoff (0-1). Default 0.5; lower = more recall, more FPs.
+        prompts: explicit prompt list to feed the model. Default = full set
+            (`gliner_prompts()`). Pass a restricted subset to focus the model
+            on a dataset's annotated labels.
         """
         self._model = GLiNER.from_pretrained(model_name)
-        self._labels = gliner_prompts()
+        self._labels = prompts if prompts is not None else gliner_prompts()
         self._threshold = threshold
 
     def detect(self, text: str, **_context: object) -> DetectorResult:

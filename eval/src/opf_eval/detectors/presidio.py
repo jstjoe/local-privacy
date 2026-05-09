@@ -26,15 +26,23 @@ from ..taxonomy import presidio_to_canonical
 from .base import DetectorResult, Span
 
 
-# Map PII-Masking-300k's full-name `language` field -> (ISO code, spaCy model).
-# Order is the default `languages` list when caller doesn't override.
+# Keyed on ISO 639-1 code (matches what the fixtures emit; new ai4privacy
+# datasets already use ISO and legacy 300k is normalised to ISO at fixture-
+# write time). The `display` form is for documentation / error messages.
 LANGUAGE_MODELS: dict[str, tuple[str, str]] = {
-    "English": ("en", "en_core_web_lg"),
-    "Dutch": ("nl", "nl_core_news_lg"),
-    "French": ("fr", "fr_core_news_lg"),
-    "German": ("de", "de_core_news_lg"),
-    "Italian": ("it", "it_core_news_lg"),
-    "Spanish": ("es", "es_core_news_lg"),
+    # iso  -> (spaCy model, display)
+    "en": ("en_core_web_lg", "English"),
+    "nl": ("nl_core_news_lg", "Dutch"),
+    "fr": ("fr_core_news_lg", "French"),
+    "de": ("de_core_news_lg", "German"),
+    "it": ("it_core_news_lg", "Italian"),
+    "es": ("es_core_news_lg", "Spanish"),
+}
+
+# Legacy full-name aliases for backwards compatibility with old fixtures
+# that stored language as "English" / "Dutch" / etc. New fixtures use ISO.
+_LEGACY_FULLNAME_TO_ISO = {
+    display: iso for iso, (_, display) in LANGUAGE_MODELS.items()
 }
 
 
@@ -48,19 +56,20 @@ class PresidioDetector:
         score_threshold: float = 0.0,
     ) -> None:
         """
-        languages: subset of LANGUAGE_MODELS keys to load. Default ["English"]
-            — empirically the best baseline (multi-lang lost ~24 F1 on ACCOUNT
-            because country-specific regex recognizers like US_SSN are gated to
-            language='en' and stop firing when text is routed to other langs).
-            Pass list(LANGUAGE_MODELS.keys()) to opt into the multilingual NLP
-            engine for the NER-driven categories (PERSON, ADDRESS).
+        languages: subset of LANGUAGE_MODELS keys (ISO codes) to load.
+            Default `["en"]` — empirically the best baseline (multi-lang lost
+            ~24 F1 on ACCOUNT because country-specific regex recognizers like
+            US_SSN are gated to language='en' and stop firing when text is
+            routed to other langs). Pass `list(LANGUAGE_MODELS.keys())` to opt
+            into the multilingual NLP engine for the NER-driven categories
+            (PERSON, ADDRESS).
         score_threshold: drop predictions with confidence below this (0..1).
         """
-        loaded = languages or ["English"]
+        loaded = languages or ["en"]
         models = [
-            {"lang_code": LANGUAGE_MODELS[name][0], "model_name": LANGUAGE_MODELS[name][1]}
-            for name in loaded
-            if name in LANGUAGE_MODELS
+            {"lang_code": code, "model_name": LANGUAGE_MODELS[code][0]}
+            for code in loaded
+            if code in LANGUAGE_MODELS
         ]
         provider = NlpEngineProvider(
             nlp_configuration={"nlp_engine_name": "spacy", "models": models}
@@ -70,7 +79,6 @@ class PresidioDetector:
         self._analyzer = AnalyzerEngine(
             nlp_engine=nlp_engine, supported_languages=supported
         )
-        self._lang_to_code = {name: LANGUAGE_MODELS[name][0] for name in loaded}
         self._supported_codes = set(supported)
         self._default_code = "en" if "en" in self._supported_codes else supported[0]
         self._score_threshold = score_threshold
@@ -79,9 +87,14 @@ class PresidioDetector:
             self._analyzer.analyze(text="warmup", language=code)
 
     def detect(self, text: str, **context: object) -> DetectorResult:
-        # PII-Masking-300k passes language as full name ("Dutch", "English", ...).
-        lang_full = str(context.get("language") or "")
-        lang_code = self._lang_to_code.get(lang_full, self._default_code)
+        # New fixtures pass ISO ("en", "nl", "hu"); legacy fixtures pass full
+        # names ("English"). Translate the latter for back-compat.
+        lang_raw = str(context.get("language") or "")
+        lang_code = (
+            _LEGACY_FULLNAME_TO_ISO.get(lang_raw)
+            or (lang_raw.lower() if len(lang_raw) == 2 else None)
+            or self._default_code
+        )
         if lang_code not in self._supported_codes:
             lang_code = self._default_code
         t0 = time.perf_counter()

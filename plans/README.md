@@ -13,6 +13,7 @@ Side-quest specs for extending the OPF vs Skyflow benchmark. Each plan is brief
 | 06 | [Unified privacy-detection API](06-unified-api.md) | ~1–1.5 days | "one client contract, switch backend with a flag" |
 | 07 | [Cloud Run hardening](07-cloud-run-hardening.md) | ~2 days | "auth + limits + observability + CI to make the API deployable to GCP" |
 | 08 | [SemEval scoring via nervaluate](08-nervaluate-scoring.md) | ~3-4h | "where exactly is each detector losing points — missed, mis-typed, spurious?" |
+| 09 | [Multi-dataset fixtures + per-detector scoring](09-multi-dataset-fixtures.md) | ~1-1.5 days | "general benchmark — pick (detector, dataset, size); detectors auto-configure per dataset; score against own claims + dataset as a whole" |
 
 ## Suggested order
 

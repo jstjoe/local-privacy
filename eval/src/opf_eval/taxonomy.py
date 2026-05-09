@@ -6,6 +6,8 @@ public Detect API but vendor sometimes adds new ones.
 
 from __future__ import annotations
 
+from typing import Iterable
+
 # canonical -> (OPF labels, Skyflow entity_types, PII-Masking-300k labels)
 CANONICAL_MAP: dict[str, dict[str, tuple[str, ...]]] = {
     "PERSON": {
@@ -19,6 +21,18 @@ CANONICAL_MAP: dict[str, dict[str, tuple[str, ...]]] = {
             "LASTNAME3",
             "TITLE",
         ),
+        "pii200k": (
+            "FIRSTNAME",
+            "MIDDLENAME",
+            "LASTNAME",
+            "PREFIX",
+            "SUFFIX",
+        ),
+        "openpii": (
+            "GIVENNAME",
+            "SURNAME",
+            "TITLE",
+        ),
         "presidio": ("PERSON",),
         "gliner": ("person",),
     },
@@ -26,6 +40,8 @@ CANONICAL_MAP: dict[str, dict[str, tuple[str, ...]]] = {
         "opf": ("private_email",),
         "skyflow": ("EMAIL_ADDRESS",),
         "pii300k": ("EMAIL",),
+        "pii200k": ("EMAIL",),
+        "openpii": ("EMAIL",),
         "presidio": ("EMAIL_ADDRESS",),
         "gliner": ("email",),
     },
@@ -33,6 +49,8 @@ CANONICAL_MAP: dict[str, dict[str, tuple[str, ...]]] = {
         "opf": ("private_phone",),
         "skyflow": ("PHONE_NUMBER",),
         "pii300k": ("TEL",),
+        "pii200k": ("PHONENUMBER", "PHONEIMEI"),
+        "openpii": ("TELEPHONENUM",),
         "presidio": ("PHONE_NUMBER",),
         "gliner": ("phone number",),
     },
@@ -58,6 +76,24 @@ CANONICAL_MAP: dict[str, dict[str, tuple[str, ...]]] = {
             "SECADDRESS",
             "GEOCOORD",
         ),
+        "pii200k": (
+            "STREET",
+            "CITY",
+            "COUNTY",
+            "STATE",
+            "ZIPCODE",
+            "BUILDINGNUMBER",
+            "SECONDARYADDRESS",
+            "NEARBYGPSCOORDINATE",
+        ),
+        "openpii": (
+            "STREET",
+            "CITY",
+            "STATE",
+            "ZIPCODE",
+            "BUILDINGNUM",
+            "SECONDARYADDRESS",
+        ),
         "presidio": ("LOCATION",),
         "gliner": ("address", "location", "city", "country", "postal code"),
     },
@@ -65,6 +101,8 @@ CANONICAL_MAP: dict[str, dict[str, tuple[str, ...]]] = {
         "opf": ("private_url",),
         "skyflow": ("URL", "IP_ADDRESS"),
         "pii300k": ("IP",),
+        "pii200k": ("URL", "IP", "IPV4", "IPV6"),
+        "openpii": ("URL", "IP", "IPV4", "IPV6"),
         "presidio": ("URL", "IP_ADDRESS"),
         "gliner": ("url", "ip address"),
     },
@@ -72,6 +110,8 @@ CANONICAL_MAP: dict[str, dict[str, tuple[str, ...]]] = {
         "opf": ("private_date",),
         "skyflow": ("DATE", "DATE_INTERVAL", "DOB", "TIME", "DAY", "MONTH", "YEAR"),
         "pii300k": ("DATE", "TIME", "BOD"),
+        "pii200k": ("DATE", "TIME", "DOB"),
+        "openpii": ("DATE", "TIME", "DATEOFBIRTH"),
         "presidio": ("DATE_TIME",),
         "gliner": ("date", "date of birth", "time"),
     },
@@ -89,6 +129,29 @@ CANONICAL_MAP: dict[str, dict[str, tuple[str, ...]]] = {
             "HEALTHCARE_NUMBER",
         ),
         "pii300k": ("SOCIALNUMBER", "IDCARD", "PASSPORT", "DRIVERLICENSE"),
+        "pii200k": (
+            "ACCOUNTNUMBER",
+            "ACCOUNTNAME",
+            "CREDITCARDNUMBER",
+            "CREDITCARDISSUER",
+            "CREDITCARDCVV",
+            "BITCOINADDRESS",
+            "ETHEREUMADDRESS",
+            "LITECOINADDRESS",
+            "IBAN",
+            "BIC",
+            "PIN",
+            "SSN",
+        ),
+        "openpii": (
+            "ACCOUNTNUM",
+            "CREDITCARDNUMBER",
+            "IDCARDNUM",
+            "SOCIALNUM",
+            "PASSPORTNUM",
+            "DRIVERLICENSENUM",
+            "TAXNUM",
+        ),
         "presidio": (
             "CREDIT_CARD",
             "IBAN_CODE",
@@ -135,6 +198,8 @@ CANONICAL_MAP: dict[str, dict[str, tuple[str, ...]]] = {
         "opf": ("secret",),
         "skyflow": ("PASSWORD",),
         "pii300k": ("PASS",),
+        "pii200k": ("PASSWORD",),
+        "openpii": ("PASSWORD",),
         "presidio": (),  # No default password recognizer in Presidio
         "gliner": ("password",),
     },
@@ -142,15 +207,66 @@ CANONICAL_MAP: dict[str, dict[str, tuple[str, ...]]] = {
         "opf": (),  # OPF has no native USERNAME label
         "skyflow": ("USERNAME",),
         "pii300k": ("USERNAME",),
+        "pii200k": ("USERNAME",),
+        "openpii": ("USERNAME",),
         "presidio": (),
         "gliner": ("username",),
     },
     "DEMOGRAPHIC": {
         "opf": (),  # OPF has no native gender/age label
-        "skyflow": ("GENDER", "AGE", "GENDER_SEXUALITY", "MARITAL_STATUS"),
+        "skyflow": ("GENDER", "AGE", "SEXUALITY", "MARITAL_STATUS"),
         "pii300k": ("SEX",),
+        "pii200k": ("GENDER", "SEX", "AGE"),
+        "openpii": ("GENDER", "SEX", "AGE"),
         "presidio": ("NRP",),  # Nationality, Religion, Political affiliation
         "gliner": (),
+    },
+    "ORGANIZATION": {
+        "opf": (),  # OPF has no native ORG label
+        "skyflow": ("ORGANIZATION", "ORGANIZATION_MEDICAL_FACILITY"),
+        "pii300k": (),  # Not annotated
+        "pii200k": ("COMPANYNAME",),
+        "openpii": (),  # Not annotated
+        "presidio": (),  # No native ORG recognizer in default Presidio
+        "gliner": ("organization", "company"),
+    },
+    "OCCUPATION": {
+        "opf": (),  # OPF has no native job label
+        "skyflow": ("OCCUPATION",),
+        "pii300k": (),  # Not annotated
+        "pii200k": ("JOBTITLE", "JOBAREA", "JOBTYPE"),
+        "openpii": (),  # Not annotated
+        "presidio": (),
+        "gliner": ("occupation", "job title"),
+    },
+    "MONEY": {
+        "opf": (),
+        "skyflow": ("MONEY", "FINANCIAL_METRIC"),
+        "pii300k": (),
+        "pii200k": ("AMOUNT", "CURRENCYSYMBOL", "CURRENCY", "CURRENCYCODE", "CURRENCYNAME"),
+        "openpii": (),
+        "presidio": (),
+        "gliner": ("monetary amount", "currency", "price"),
+    },
+    "VEHICLE": {
+        "opf": (),
+        "skyflow": ("VEHICLE_ID",),
+        "pii300k": (),
+        "pii200k": ("VEHICLEVIN", "VEHICLEVRM"),
+        "openpii": (),
+        # Presidio's IN_VEHICLE_REGISTRATION stays under ACCOUNT — it's an
+        # India-specific ID, not a general vehicle identifier.
+        "presidio": (),
+        "gliner": ("vehicle id", "license plate", "vin"),
+    },
+    "PHYSICAL": {
+        "opf": (),
+        "skyflow": ("PHYSICAL_ATTRIBUTE",),
+        "pii300k": (),
+        "pii200k": ("HEIGHT", "EYECOLOR"),
+        "openpii": (),
+        "presidio": (),
+        "gliner": ("height", "eye color", "physical attribute"),
     },
 }
 
@@ -166,8 +282,30 @@ def _build_reverse(source: str) -> dict[str, str]:
 _OPF_TO_CANONICAL = _build_reverse("opf")
 _SKYFLOW_TO_CANONICAL = _build_reverse("skyflow")
 _PII300K_TO_CANONICAL = _build_reverse("pii300k")
+_PII200K_TO_CANONICAL = _build_reverse("pii200k")
+_OPENPII_TO_CANONICAL = _build_reverse("openpii")
 _PRESIDIO_TO_CANONICAL = _build_reverse("presidio")
 _GLINER_TO_CANONICAL = _build_reverse("gliner")
+
+
+_DATASET_REVERSE = {
+    "pii300k": _PII300K_TO_CANONICAL,
+    "pii200k": _PII200K_TO_CANONICAL,
+    "openpii": _OPENPII_TO_CANONICAL,
+}
+
+
+# Detector name -> CANONICAL_MAP source key. Variants (skyflow_full,
+# presidio_multilang) collapse to their parent vocabulary.
+_DETECTOR_VOCAB_KEY: dict[str, str] = {
+    "opf": "opf",
+    "opf_calibrated": "opf",
+    "skyflow": "skyflow",
+    "skyflow_full": "skyflow",
+    "presidio": "presidio",
+    "presidio_multilang": "presidio",
+    "gliner": "gliner",
+}
 
 
 def opf_to_canonical(label: str) -> str | None:
@@ -188,11 +326,19 @@ def gliner_to_canonical(label: str) -> str | None:
     return _GLINER_TO_CANONICAL.get(label) or _GLINER_TO_CANONICAL.get(label.lower())
 
 
-def gliner_prompts() -> list[str]:
-    """Flat list of all GLiNER prompts to feed the model in one call."""
+def gliner_prompts(canonicals: "Iterable[str] | None" = None) -> list[str]:
+    """Flat list of GLiNER prompts to feed the model in one call.
+
+    canonicals: when provided, only emit prompts for these canonical labels
+        (used for dataset-aware detector configuration). When None, emit
+        the full union — backward-compatible behavior.
+    """
+    targets = set(canonicals) if canonicals is not None else None
     out: list[str] = []
     seen: set[str] = set()
     for canonical, by_source in CANONICAL_MAP.items():
+        if targets is not None and canonical not in targets:
+            continue
         for p in by_source.get("gliner", ()):
             if p not in seen:
                 seen.add(p)
@@ -206,51 +352,45 @@ def pii300k_to_canonical(label: str) -> str | None:
     return _PII300K_TO_CANONICAL.get(bare.upper())
 
 
+def dataset_to_canonical(vocab_key: str, label: str) -> str | None:
+    """Generic dataset-vocab lookup. Strips BIO prefix if present."""
+    table = _DATASET_REVERSE.get(vocab_key)
+    if table is None:
+        raise KeyError(f"unknown dataset vocab: {vocab_key!r}")
+    bare = label.split("-", 1)[1] if "-" in label and label[1:2] == "-" else label
+    return table.get(bare.upper())
+
+
+def dataset_canonicals(vocab_key: str) -> set[str]:
+    """Canonical labels actually annotated by this dataset's vocabulary."""
+    return {
+        canonical for canonical, by_source in CANONICAL_MAP.items()
+        if by_source.get(vocab_key)
+    }
+
+
+def detector_supported_canonicals(detector: str) -> set[str]:
+    """Canonical labels this detector can produce (handles variants like
+    skyflow_full / presidio_multilang -> their parent vocabulary)."""
+    source = _DETECTOR_VOCAB_KEY.get(detector, detector)
+    return {
+        canonical for canonical, by_source in CANONICAL_MAP.items()
+        if by_source.get(source)
+    }
+
+
+def fair_labels(detector: str, vocab_key: str) -> set[str]:
+    """Labels for the fair-view headline: intersection of (dataset annotates,
+    detector supports). Apples-to-apples within each detector's claims."""
+    return detector_supported_canonicals(detector) & dataset_canonicals(vocab_key)
+
+
 CANONICAL_LABELS: tuple[str, ...] = tuple(CANONICAL_MAP.keys())
 
 # The 8 categories OPF actually supports natively. Used as the default
 # allow-list for apples-to-apples comparison against Skyflow.
 OPF_CANONICAL_LABELS: tuple[str, ...] = tuple(
     canonical for canonical, by_source in CANONICAL_MAP.items() if by_source.get("opf")
-)
-
-
-# Empirically-tuned minimal Skyflow entity_types: drops bare general types
-# (NAME, LOCATION, LOCATION_ADDRESS) and individual labels with <50% gold hit
-# rate on PII-Masking-300k 1k sample. See eval/scripts/analyze_skyflow_hitrate.py.
-SKYFLOW_MINIMAL_ENTITY_TYPES: tuple[str, ...] = (
-    # Names — drop bare 'name' (38% hit), keep components
-    "name_given",
-    "name_family",
-    # Email / phone / contact
-    "email_address",
-    "phone_number",
-    # Location — drop bare 'location' (46%) and 'location_address' (20%);
-    # keep components which all hit >=80%
-    "location_address_street",
-    "location_city",
-    "location_state",
-    "location_zip",
-    "location_country",
-    "location_coordinate",
-    # URL / IP
-    "url",
-    "ip_address",
-    # Dates — keep date, date_interval, dob, time; drop year/month/day (low hit)
-    "date",
-    "date_interval",
-    "dob",
-    "time",
-    # IDs / accounts
-    "account_number",
-    "ssn",
-    "passport_number",
-    "driver_license",
-    "healthcare_number",
-    "bank_account",
-    "numerical_pii",
-    # Secrets
-    "password",
 )
 
 

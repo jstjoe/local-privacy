@@ -29,7 +29,7 @@ Edit `DETECTORS` in cell 5. Available names:
 - `gliner` — GLiNER multilingual PII (open-weight, local)
 - `presidio` — Microsoft Presidio English-only (free, local, regex+NER)
 - `presidio_multilang` — Presidio with all 6 language models
-- `skyflow` / `skyflow_minimal` / `skyflow_full` — Skyflow Detect API (requires creds)
+- `skyflow` / `skyflow_full` — Skyflow Detect API (requires creds; `skyflow` auto-derives `entity_types` from the chosen dataset)
 
 ### Skyflow auth in Colab
 

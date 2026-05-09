@@ -1,7 +1,16 @@
 """Read a runner output dir + the source fixtures, emit report.md.
 
-Restricted scoring: predictions and gold are both filtered to the canonical
-labels OPF natively supports (default; configurable via --canonical-labels).
+Two scoring views per detector:
+
+- **Fair**  — each detector scored against `dataset ∩ detector_supports`.
+  Apples-to-apples within each detector's claimed coverage.
+- **Raw**   — each detector scored against the full set the dataset annotates.
+  Labels a detector doesn't support count as misses; reflects real-world
+  out-of-the-box coverage.
+
+Manifest carries `dataset` (registry name); the report defaults the per-
+detector label sets from there. `--canonical-labels` overrides both views
+to a single explicit set (use for one-category drilldowns).
 """
 
 from __future__ import annotations
@@ -10,10 +19,14 @@ import argparse
 import json
 from pathlib import Path
 
-from .metrics import PRF, latency_summary, score
-from .nervaluate_metrics import SemEvalResult
+from .datasets import DEFAULT_DATASET, get as get_dataset_config
+from .metrics import PRF, score
 from .nervaluate_metrics import score as semeval_score
-from .taxonomy import OPF_CANONICAL_LABELS
+from .taxonomy import (
+    CANONICAL_LABELS,
+    dataset_canonicals,
+    fair_labels,
+)
 
 
 def _load_jsonl(path: Path) -> list[dict]:
@@ -67,27 +80,20 @@ def _build_pairs(
     return pairs, latencies, errors
 
 
-def _compute_scores(
+def _greedy_per_label(
     detectors: list[str],
     fixture_records: list[dict],
     detector_records: dict[str, dict[str, dict]],
     *,
-    allow: set[str] | None,
-    language_filter: str | None = None,
-) -> tuple[dict[str, object], dict[str, dict[str, float]], dict[str, int]]:
-    """Returns (greedy_score_by_det, latency_by_det, error_count_by_det)."""
-    score_by_det: dict[str, object] = {}
-    latency_by_det: dict[str, dict[str, float]] = {}
-    errors_by_det: dict[str, int] = {}
+    allow: set[str],
+) -> dict[str, object]:
+    out: dict[str, object] = {}
     for det in detectors:
-        pairs, latencies, errors = _build_pairs(
-            det, fixture_records, detector_records,
-            allow=allow, language_filter=language_filter,
+        pairs, _, _ = _build_pairs(
+            det, fixture_records, detector_records, allow=allow,
         )
-        score_by_det[det] = score(pairs)
-        latency_by_det[det] = latency_summary(latencies)
-        errors_by_det[det] = errors
-    return score_by_det, latency_by_det, errors_by_det
+        out[det] = score(pairs)
+    return out
 
 
 def _per_label_section(
@@ -111,43 +117,48 @@ def _per_label_section(
     return lines
 
 
-def _semeval_section(
+def _semeval_view(
     detectors: list[str],
     fixture_records: list[dict],
     detector_records: dict[str, dict[str, dict]],
     *,
-    allow: set[str],
+    label_set_per_det: dict[str, set[str]],
+    title: str,
+    description: str,
 ) -> list[str]:
-    """SemEval 2013 9.1 scoring via nervaluate.
-
-    Schema F1 across all four schemas, plus the per-detector COR/INC/PAR/MIS/SPU
-    breakdown under the Strict schema (the most diagnostic).
-    """
-    tags = sorted(allow)
-    results: dict[str, SemEvalResult] = {}
+    """Render a SemEval section. `label_set_per_det` maps each detector to
+    the labels it's scored against — different per detector for the fair
+    view, identical for the raw view."""
+    results = {}
     for det in detectors:
-        pairs, _, _ = _build_pairs(det, fixture_records, detector_records, allow=allow)
-        results[det] = semeval_score(detector=det, pairs=pairs, tags=tags)
+        labels = label_set_per_det[det]
+        if not labels:
+            results[det] = None
+            continue
+        pairs, _, _ = _build_pairs(
+            det, fixture_records, detector_records, allow=labels,
+        )
+        results[det] = semeval_score(detector=det, pairs=pairs, tags=sorted(labels))
 
     lines: list[str] = [
-        "## SemEval (nervaluate) — restricted to OPF categories",
+        f"## {title}",
         "",
-        "Schema definitions: **Strict** = exact boundary + label. **Exact** = exact"
-        " boundary, ignore label. **Partial** = any overlap, ignore label. **Type**"
-        " = any overlap + matching label. Type and Partial give partial credit for"
-        " boundary mismatches (e.g. OPF labelling `2040-06-02 00:00:00` as one"
-        " DATE when gold splits it).",
+        description,
         "",
         "### Headline F1 by schema",
         "",
-        "| detector | strict | exact | partial | type |",
-        "|---|---|---|---|---|",
+        "| detector | n labels | strict | exact | partial | type |",
+        "|---|---|---|---|---|---|",
     ]
     for det in detectors:
         r = results[det]
+        n = len(label_set_per_det[det])
+        if r is None:
+            lines.append(f"| {det} | 0 | — | — | — | — |")
+            continue
         lines.append(
-            "| {det} | {strict:.3f} | {exact:.3f} | {partial:.3f} | {ent:.3f} |".format(
-                det=det,
+            "| {det} | {n} | {strict:.3f} | {exact:.3f} | {partial:.3f} | {ent:.3f} |".format(
+                det=det, n=n,
                 strict=r.by_schema["strict"]["f1"],
                 exact=r.by_schema["exact"]["f1"],
                 partial=r.by_schema["partial"]["f1"],
@@ -156,7 +167,6 @@ def _semeval_section(
         )
     lines.append("")
 
-    # COR/INC/PAR/MIS/SPU under the Strict schema — the diagnostic table.
     lines.extend([
         "### Error decomposition (Strict schema)",
         "",
@@ -164,13 +174,26 @@ def _semeval_section(
         "|---|---|---|---|---|---|",
     ])
     for det in detectors:
-        m = results[det].by_schema["strict"]
+        r = results[det]
+        if r is None:
+            lines.append(f"| {det} | — | — | — | — | — |")
+            continue
+        m = r.by_schema["strict"]
         lines.append(
             "| {det} | {c} | {i} | {p} | {ms} | {sp} |".format(
                 det=det,
                 c=m["correct"], i=m["incorrect"], p=m["partial"],
                 ms=m["missed"], sp=m["spurious"],
             )
+        )
+    lines.append("")
+
+    # Show which labels each detector was scored against (small per-row table).
+    lines.extend(["### Label scopes", ""])
+    for det in detectors:
+        labels = label_set_per_det[det]
+        lines.append(
+            f"- **{det}** ({len(labels)}): {', '.join(sorted(labels)) if labels else '—'}"
         )
     lines.append("")
     return lines
@@ -181,22 +204,15 @@ def _per_language_semeval_section(
     fixture_records: list[dict],
     detector_records: dict[str, dict[str, dict]],
     *,
-    allow: set[str],
+    label_set_per_det: dict[str, set[str]],
     languages: list[str],
 ) -> list[str]:
-    """Per-language SemEval Type-schema F1.
-
-    Type schema (any overlap + matching label) is the most readable headline
-    number per language — boundary tolerance keeps language-level results
-    comparable across detectors with different granularity habits.
-    """
-    tags = sorted(allow)
+    """Per-language SemEval Type-schema F1 (fair view: per-detector scope)."""
     lines: list[str] = [
-        "## Per-language (restricted to OPF categories, SemEval Type F1)",
+        "## Per-language (fair view, SemEval Type F1)",
         "",
-        "Type schema = any overlap + matching label. See the SemEval headline"
-        " section above for the full four-schema breakdown over the whole"
-        " sample.",
+        "Each detector is scored against its own (dataset ∩ detector-supported)"
+        " label set per language. Type schema = any overlap + matching label.",
         "",
         "| language | n | " + " | ".join(detectors) + " |",
         "|---|---|" + "|".join("---" for _ in detectors) + "|",
@@ -205,11 +221,15 @@ def _per_language_semeval_section(
         n = sum(1 for ex in fixture_records if ex.get("language") == lang)
         row = [lang, str(n)]
         for det in detectors:
+            labels = label_set_per_det[det]
+            if not labels:
+                row.append("—")
+                continue
             pairs, _, _ = _build_pairs(
                 det, fixture_records, detector_records,
-                allow=allow, language_filter=lang,
+                allow=labels, language_filter=lang,
             )
-            r = semeval_score(detector=det, pairs=pairs, tags=tags)
+            r = semeval_score(detector=det, pairs=pairs, tags=sorted(labels))
             row.append(f"{r.by_schema['ent_type']['f1']:.3f}")
         lines.append("| " + " | ".join(row) + " |")
     lines.append("")
@@ -220,12 +240,13 @@ def build_report(
     run_dir: Path,
     fixtures: Path,
     *,
-    canonical_labels: tuple[str, ...] | None = OPF_CANONICAL_LABELS,
+    canonical_labels: tuple[str, ...] | None = None,
     max_disagreements: int = 50,
 ) -> str:
-    """canonical_labels: scope the SemEval, per-category, and per-language
-    sections to these labels (defaults to OPF's 8). Pass an empty tuple to
-    disable the scoped sections entirely.
+    """canonical_labels: when given, force both fair and raw views to this
+    explicit label set (degenerates the two views into one). When None, the
+    label sets come from the manifest's `dataset` field — fair = per-detector
+    intersection, raw = full dataset vocabulary.
     """
     manifest = json.loads((run_dir / "manifest.json").read_text())
     detectors: list[str] = manifest["detectors"]
@@ -236,42 +257,80 @@ def build_report(
         path = run_dir / f"raw_{det}.jsonl"
         detector_records[det] = _index(_load_jsonl(path))
 
+    dataset_name = manifest.get("dataset") or DEFAULT_DATASET
+    vocab_key = manifest.get("vocab_key")
+    if not vocab_key:
+        # Older manifests: derive from the registry.
+        vocab_key = get_dataset_config(dataset_name).vocab_key
+
+    if canonical_labels:
+        # Override mode: both views use the same explicit set.
+        forced = set(canonical_labels)
+        fair_set = {det: forced for det in detectors}
+        raw_set = forced
+    else:
+        ds_canon = dataset_canonicals(vocab_key)
+        fair_set = {det: fair_labels(det, vocab_key) for det in detectors}
+        raw_set = ds_canon
+
     lines: list[str] = [
-        f"# OPF vs Skyflow benchmark — {manifest['started_at']}",
+        f"# PII detector benchmark — {manifest['started_at']}",
         "",
+        f"- dataset: `{dataset_name}` (vocab `{vocab_key}`)",
         f"- fixtures: `{manifest['fixtures']}` ({manifest['n_examples']} examples)",
         f"- detectors: {', '.join(detectors)}",
         "",
     ]
 
-    # Restricted to canonical_labels (default = OPF's 8). SemEval headline
-    # leads; greedy per-category breakdown follows for the per-label P/R/F1
-    # detail SemEval doesn't replicate as cleanly.
-    allow = set(canonical_labels) if canonical_labels else None
-    if allow:
-        lines.extend(_semeval_section(
-            detectors, fixture_records, detector_records, allow=allow,
-        ))
-        score_restricted, _, _ = _compute_scores(
-            detectors, fixture_records, detector_records, allow=allow,
-        )
-        lines.extend(_per_label_section(
-            "Per-category, restricted (partial overlap, IoU >= 0.5)",
-            detectors,
-            score_restricted,
-        ))
+    # SemEval — Fair view (per-detector scope)
+    lines.extend(_semeval_view(
+        detectors, fixture_records, detector_records,
+        label_set_per_det=fair_set,
+        title="SemEval — Fair view (per-detector scope)",
+        description=(
+            "Each detector scored against the intersection of (dataset annotates,"
+            " this detector supports). Apples-to-apples within each detector's"
+            " claimed coverage. Schema definitions: **Strict** = exact boundary"
+            " + label. **Exact** = boundary, ignore label. **Partial** = any"
+            " overlap, ignore label. **Type** = any overlap + matching label."
+        ),
+    ))
 
-    # Per-language slicing (only if the fixtures carry a language field)
+    # SemEval — Raw view (full dataset vocabulary)
+    lines.extend(_semeval_view(
+        detectors, fixture_records, detector_records,
+        label_set_per_det={det: raw_set for det in detectors},
+        title="SemEval — Raw dataset view (full vocabulary)",
+        description=(
+            f"Every detector scored against the dataset's full annotated set"
+            f" ({len(raw_set)} canonical labels). Labels a detector doesn't"
+            f" support take zero recall here, so this view reflects out-of-the-"
+            f"box coverage rather than fairness."
+        ),
+    ))
+
+    # Per-category greedy partial — uses raw view's label set (uniform across detectors)
+    score_raw = _greedy_per_label(
+        detectors, fixture_records, detector_records, allow=raw_set,
+    )
+    lines.extend(_per_label_section(
+        "Per-category breakdown — raw view (partial overlap, IoU >= 0.5)",
+        detectors,
+        score_raw,
+    ))
+
+    # Per-language fair view
     languages = sorted({
         ex.get("language") for ex in fixture_records if ex.get("language")
     })
-    if languages and allow:
+    if languages:
         lines.extend(_per_language_semeval_section(
-            detectors, fixture_records, detector_records, allow=allow,
+            detectors, fixture_records, detector_records,
+            label_set_per_det=fair_set,
             languages=languages,
         ))
 
-    # Disagreement appendix (still uses all categories — that's the interesting signal)
+    # Disagreement appendix (uniform — uses dataset's full vocab)
     if "opf" in detectors and "skyflow" in detectors:
         lines.append("## Disagreements — all categories (capped at {} per bucket)".format(max_disagreements))
         lines.append("")
@@ -303,20 +362,20 @@ def main() -> None:
     ap.add_argument("--out", type=Path)
     ap.add_argument(
         "--canonical-labels",
-        default=",".join(OPF_CANONICAL_LABELS),
+        default="",
         help=(
-            "Comma-separated canonical labels scoping the SemEval, per-category,"
-            " and per-language sections. Default = OPF's 8 categories. Single"
-            " labels (e.g. 'DATE') give a tight signal for one-category"
-            " experiments. Empty string disables the scoped sections entirely."
-            f" Available: {', '.join(OPF_CANONICAL_LABELS)}."
+            "Optional comma-separated canonical label override. When set, both"
+            " the fair and raw views are forced to this explicit set (one-"
+            " category drilldowns, e.g. 'DATE'). Default empty = per-detector"
+            " fair view + dataset-wide raw view derived from manifest."
+            f" Available: {', '.join(CANONICAL_LABELS)}."
         ),
     )
     args = ap.parse_args()
     canonicals = (
         tuple(x.strip() for x in args.canonical_labels.split(",") if x.strip())
         if args.canonical_labels
-        else ()
+        else None
     )
     md = build_report(args.run, args.fixtures, canonical_labels=canonicals)
     out = args.out or (args.run / "report.md")

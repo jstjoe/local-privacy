@@ -15,17 +15,24 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .datasets import DEFAULT_DATASET, get as get_dataset_config, names as dataset_names
 from .detectors import GLiNERDetector, OPFDetector, PresidioDetector, SkyflowDetector
 from .detectors.base import Detector
-from .taxonomy import OPF_CANONICAL_LABELS, canonical_to_skyflow_request_types
+from .taxonomy import canonical_to_skyflow_request_types, dataset_canonicals, gliner_prompts
 
 
 def _build_detector(
     name: str,
     *,
+    dataset_canonicals_set: set[str],
     skyflow_entity_types: list[str] | None = None,
     opf_calibration_path: str | None = None,
 ) -> Detector:
+    """Build a detector. `dataset_canonicals_set` is what the chosen dataset
+    annotates — used to auto-configure detectors that take per-call label
+    sets (skyflow, gliner). Detectors with fixed vocabularies (opf, presidio)
+    ignore it.
+    """
     if name == "opf":
         return OPFDetector(viterbi_calibration_path=opf_calibration_path)
     if name == "presidio":
@@ -35,33 +42,23 @@ def _build_detector(
         from .detectors.presidio import LANGUAGE_MODELS
         return PresidioDetector(languages=list(LANGUAGE_MODELS.keys()))
     if name == "gliner":
-        return GLiNERDetector()
+        # Restrict prompts to what this dataset annotates so GLiNER stops
+        # over-detecting labels the gold doesn't cover.
+        return GLiNERDetector(prompts=gliner_prompts(dataset_canonicals_set))
     if name == "opf_calibrated":
-        # Convenience: assumes a calibration path was passed via opf_calibration_path.
         if not opf_calibration_path:
-            raise ValueError(
-                "opf_calibrated requires --opf-calibration-path"
-            )
+            raise ValueError("opf_calibrated requires --opf-calibration-path")
         return OPFDetector(viterbi_calibration_path=opf_calibration_path)
     if name == "skyflow":
-        # Default to OPF-coverage entity types — fairer comparison and what we'd
-        # actually deploy. Override via --skyflow-entities or use 'skyflow_full'
-        # to get the unconstrained behavior.
-        types = skyflow_entity_types or canonical_to_skyflow_request_types(OPF_CANONICAL_LABELS)
+        # Auto-derive entity_types from the dataset's canonical labels mapped
+        # to Skyflow request types. Override with --skyflow-entities or use
+        # 'skyflow_full' for the unconstrained call.
+        types = skyflow_entity_types or canonical_to_skyflow_request_types(
+            sorted(dataset_canonicals_set)
+        )
         return SkyflowDetector(entity_types=types)
     if name == "skyflow_full":
-        # Original unconstrained Skyflow — returns all ~70 entity types.
         return SkyflowDetector(entity_types=skyflow_entity_types)
-    if name == "skyflow_constrained":
-        # Backward-compat alias for skyflow (now identical).
-        return SkyflowDetector(
-            entity_types=canonical_to_skyflow_request_types(OPF_CANONICAL_LABELS)
-        )
-    if name == "skyflow_minimal":
-        # Reduced entity set: only general-level Skyflow types, no granular
-        # subcomponents (e.g. 'location' yes, 'location_city' no).
-        from .taxonomy import SKYFLOW_MINIMAL_ENTITY_TYPES
-        return SkyflowDetector(entity_types=list(SKYFLOW_MINIMAL_ENTITY_TYPES))
     raise ValueError(f"unknown detector: {name}")
 
 
@@ -104,6 +101,7 @@ def run(
     detector_names: list[str],
     out_dir: Path,
     *,
+    dataset: str = DEFAULT_DATASET,
     skyflow_workers: int = 1,
     skyflow_min_interval_ms: float = 0.0,
     skyflow_entity_types: list[str] | None = None,
@@ -129,9 +127,15 @@ def run(
     merged_detectors = sorted(
         set(existing.get("detectors") or []) | set(present_detectors) | set(detector_names)
     )
+
+    cfg = get_dataset_config(dataset)
+    canonicals = dataset_canonicals(cfg.vocab_key)
+
     manifest = {
         "started_at": existing.get("started_at") or datetime.now(timezone.utc).isoformat(),
         "fixtures": str(fixtures),
+        "dataset": dataset,
+        "vocab_key": cfg.vocab_key,
         "n_examples": len(examples),
         "detectors": merged_detectors,
     }
@@ -140,6 +144,7 @@ def run(
     for name in detector_names:
         det = _build_detector(
             name,
+            dataset_canonicals_set=canonicals,
             skyflow_entity_types=skyflow_entity_types,
             opf_calibration_path=opf_calibration_path,
         )
@@ -199,6 +204,16 @@ def main() -> None:
     ap.add_argument("--detectors", default="opf,skyflow")
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument(
+        "--dataset",
+        default=DEFAULT_DATASET,
+        choices=dataset_names(),
+        help=(
+            f"Source dataset for the fixtures (default: {DEFAULT_DATASET}). "
+            "Used to derive each detector's per-call label set and to pick the "
+            "right vocabulary for canonical-label restricted scoring."
+        ),
+    )
+    ap.add_argument(
         "--skyflow-workers",
         type=int,
         default=1,
@@ -238,6 +253,7 @@ def main() -> None:
         args.fixtures,
         [d.strip() for d in args.detectors.split(",") if d.strip()],
         args.out,
+        dataset=args.dataset,
         skyflow_workers=args.skyflow_workers,
         skyflow_min_interval_ms=args.skyflow_min_interval_ms,
         skyflow_entity_types=(
