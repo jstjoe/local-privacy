@@ -213,7 +213,7 @@ CANONICAL_MAP: dict[str, dict[str, tuple[str, ...]]] = {
     },
     "DEMOGRAPHIC": {
         "opf": (),  # OPF has no native gender/age label
-        "skyflow": ("GENDER", "AGE", "GENDER_SEXUALITY", "MARITAL_STATUS"),
+        "skyflow": ("GENDER", "AGE", "SEXUALITY", "MARITAL_STATUS"),
         "pii300k": ("SEX",),
         "pii200k": ("GENDER", "SEX", "AGE"),
         "openpii": ("GENDER", "SEX", "AGE"),
