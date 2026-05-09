@@ -34,7 +34,7 @@ class Ai4PrivacyDetector:
         *,
         model_name: str = DEFAULT_MODEL,
         aggregation_strategy: AggregationStrategy = "simple",
-        device: int | str = -1,
+        device: str = "cpu",
     ) -> None:
         """
         aggregation_strategy: how the HF pipeline merges sub-token predictions.
@@ -42,13 +42,21 @@ class Ai4PrivacyDetector:
             ~3× more entities with cleaner boundaries than `first` (which over-
             extends spans into trailing whitespace + punctuation). `average`
             and `max` give cleaner boundaries but lower recall.
-        device: -1 = CPU; 0 = first CUDA device; "mps" for Apple Silicon.
+        device: torch device — `"cpu"`, `"cuda"`, or `"mps"`. Translated to
+            the HF pipeline's int convention internally.
         """
+        # HF pipeline takes an int (-1 = CPU, 0..N = CUDA index) or a string
+        # for non-CUDA accelerators. Translate from our unified naming.
+        hf_device: int | str = -1
+        if device == "cuda":
+            hf_device = 0
+        elif device == "mps":
+            hf_device = "mps"
         self._pipe = pipeline(
             "token-classification",
             model=model_name,
             aggregation_strategy=aggregation_strategy,
-            device=device,
+            device=hf_device,
         )
 
     def detect(self, text: str, **_context: object) -> DetectorResult:
