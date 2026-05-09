@@ -33,13 +33,15 @@ class Ai4PrivacyDetector:
         self,
         *,
         model_name: str = DEFAULT_MODEL,
-        aggregation_strategy: AggregationStrategy = "first",
+        aggregation_strategy: AggregationStrategy = "simple",
         device: int | str = -1,
     ) -> None:
         """
         aggregation_strategy: how the HF pipeline merges sub-token predictions.
-            `first` is the default — use the first sub-token's score for the
-            aggregated entity. `simple` over-merges, `average` is more lenient.
+            `simple` is the default — empirically best on this model: produces
+            ~3× more entities with cleaner boundaries than `first` (which over-
+            extends spans into trailing whitespace + punctuation). `average`
+            and `max` give cleaner boundaries but lower recall.
         device: -1 = CPU; 0 = first CUDA device; "mps" for Apple Silicon.
         """
         self._pipe = pipeline(
@@ -67,15 +69,29 @@ class Ai4PrivacyDetector:
             canonical = dataset_to_canonical("openpii", bare)
             if not canonical:
                 continue
-            start = int(ent["start"])
-            end = int(ent["end"])
+            start, end = _trim_boundaries(text, int(ent["start"]), int(ent["end"]))
+            if end <= start:
+                continue
             spans.append(
                 {
                     "label": canonical,
                     "raw_label": bare,
                     "start": start,
                     "end": end,
-                    "text": ent.get("word") or text[start:end],
+                    "text": text[start:end],
                 }
             )
         return {"spans": spans, "latency_ms": latency_ms, "error": None}
+
+
+_TRIM_CHARS = " \t\n\r,;:\"'`()[]{}<>"
+
+
+def _trim_boundaries(text: str, start: int, end: int) -> tuple[int, int]:
+    """The ai4privacy pipeline often includes trailing whitespace/punctuation
+    in span boundaries (subword token alignment quirk). Trim conservatively."""
+    while start < end and text[start] in _TRIM_CHARS:
+        start += 1
+    while end > start and text[end - 1] in _TRIM_CHARS:
+        end -= 1
+    return start, end
