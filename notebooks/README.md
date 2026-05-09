@@ -27,6 +27,10 @@ Edit `DETECTORS` in cell 5. Available names:
 
 - `opf` — OpenAI Privacy Filter (open-weight, local)
 - `gliner` — GLiNER multilingual PII (open-weight, local)
+- `gliner_nvidia` — Nvidia gliner-PII on `urchade/gliner_large-v2.1` (570M, NVIDIA Open Model License)
+- `gliner_gretel_small` / `gliner_gretel_large` — Gretel bi-encoder GLiNER variants (English-only training)
+- `ai4privacy_modernbert` — ai4privacy ModernBERT-base, MIT, 8 languages, OpenPII vocab
+- `openmed` — OpenMed PII via `openmed.extract_pii(lang=…)`, DeBERTa-based per-language models
 - `presidio` — Microsoft Presidio English-only (free, local, regex+NER)
 - `presidio_multilang` — Presidio with all 6 language models
 - `skyflow` / `skyflow_full` — Skyflow Detect API (requires creds; `skyflow` auto-derives `entity_types` from the chosen dataset)
