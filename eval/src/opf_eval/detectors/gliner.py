@@ -32,6 +32,7 @@ class GLiNERDetector:
         prompts: list[str] | None = None,
         label_to_canonical: LabelMapper | None = None,
         name: str | None = None,
+        device: str = "cpu",
     ) -> None:
         """
         model_name: HuggingFace model id. Default is the multilingual PII variant.
@@ -45,8 +46,17 @@ class GLiNERDetector:
             their own snake_case labels.
         name: override the registered detector name (for raw_<name>.jsonl
             output paths and report tables). Defaults to "gliner".
+        device: torch device — `"cpu"`, `"cuda"`, or `"mps"`. The 570M
+            gliner_nvidia base benefits ~10× from GPU.
         """
         self._model = GLiNER.from_pretrained(model_name)
+        if device != "cpu":
+            try:
+                self._model = self._model.to(device)
+            except Exception:  # noqa: BLE001
+                # Some GLiNER bi-encoder variants don't allow .to(); fall back
+                # to CPU rather than crash the run.
+                pass
         self._labels = prompts if prompts is not None else gliner_prompts()
         self._threshold = threshold
         self._to_canonical = label_to_canonical or gliner_to_canonical

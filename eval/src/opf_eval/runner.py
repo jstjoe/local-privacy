@@ -40,14 +40,17 @@ def _build_detector(
     dataset_canonicals_set: set[str],
     skyflow_entity_types: list[str] | None = None,
     opf_calibration_path: str | None = None,
+    device: str = "cpu",
 ) -> Detector:
     """Build a detector. `dataset_canonicals_set` is what the chosen dataset
     annotates — used to auto-configure detectors that take per-call label
     sets (skyflow, gliner). Detectors with fixed vocabularies (opf, presidio)
-    ignore it.
+    ignore it. `device` is propagated to local PyTorch detectors (`opf`,
+    `gliner*`, `ai4privacy_modernbert`, `openmed`); ignored by Skyflow
+    (HTTP) and Presidio (CPU spaCy).
     """
     if name == "opf":
-        return OPFDetector(viterbi_calibration_path=opf_calibration_path)
+        return OPFDetector(viterbi_calibration_path=opf_calibration_path, device=device)  # type: ignore[arg-type]
     if name == "presidio":
         return PresidioDetector()
     if name == "presidio_multilang":
@@ -57,9 +60,9 @@ def _build_detector(
     if name == "gliner":
         # Restrict prompts to what this dataset annotates so GLiNER stops
         # over-detecting labels the gold doesn't cover.
-        return GLiNERDetector(prompts=gliner_prompts(dataset_canonicals_set))
+        return GLiNERDetector(prompts=gliner_prompts(dataset_canonicals_set), device=device)
     if name == "ai4privacy_modernbert":
-        return Ai4PrivacyDetector()
+        return Ai4PrivacyDetector(device=device)
     if name == "gliner_gretel_small":
         return GLiNERDetector(
             model_name="gretelai/gretel-gliner-bi-small-v1.0",
@@ -67,6 +70,7 @@ def _build_detector(
             prompts=gretel_prompts(),
             label_to_canonical=gretel_to_canonical,
             name="gliner_gretel_small",
+            device=device,
         )
     if name == "gliner_gretel_large":
         return GLiNERDetector(
@@ -75,6 +79,7 @@ def _build_detector(
             prompts=gretel_prompts(),
             label_to_canonical=gretel_to_canonical,
             name="gliner_gretel_large",
+            device=device,
         )
     if name == "gliner_nvidia":
         # Same vocabulary as default GLiNER, larger 570M-param base, lower
@@ -84,13 +89,14 @@ def _build_detector(
             threshold=0.3,
             prompts=gliner_prompts(dataset_canonicals_set),
             name="gliner_nvidia",
+            device=device,
         )
     if name == "openmed":
-        return OpenMedDetector()
+        return OpenMedDetector(device=device)
     if name == "opf_calibrated":
         if not opf_calibration_path:
             raise ValueError("opf_calibrated requires --opf-calibration-path")
-        return OPFDetector(viterbi_calibration_path=opf_calibration_path)
+        return OPFDetector(viterbi_calibration_path=opf_calibration_path, device=device)  # type: ignore[arg-type]
     if name == "skyflow":
         # Auto-derive entity_types from the dataset's canonical labels mapped
         # to Skyflow request types. Override with --skyflow-entities or use
@@ -149,6 +155,7 @@ def run(
     skyflow_entity_types: list[str] | None = None,
     opf_calibration_path: str | None = None,
     reuse_from: Path | None = None,
+    device: str = "cpu",
 ) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     examples = list(_read_fixtures(fixtures))
@@ -189,6 +196,7 @@ def run(
             dataset_canonicals_set=canonicals,
             skyflow_entity_types=skyflow_entity_types,
             opf_calibration_path=opf_calibration_path,
+            device=device,
         )
         out_path = out_dir / f"raw_{name}.jsonl"
         t0 = time.perf_counter()
@@ -290,7 +298,21 @@ def main() -> None:
         "a new detector without re-running existing ones on the same "
         "fixtures.",
     )
+    ap.add_argument(
+        "--device",
+        choices=["cpu", "cuda", "mps", "auto"],
+        default="cpu",
+        help=(
+            "Torch device for local PyTorch detectors (opf, gliner*, "
+            "ai4privacy_modernbert, openmed). `auto` picks cuda > mps > cpu. "
+            "Skyflow (HTTP) and Presidio (CPU spaCy) ignore this."
+        ),
+    )
     args = ap.parse_args()
+    device = args.device
+    if device == "auto":
+        device = _autodetect_device()
+        print(f"[device] auto -> {device}")
     run(
         args.fixtures,
         [d.strip() for d in args.detectors.split(",") if d.strip()],
@@ -305,7 +327,21 @@ def main() -> None:
         ),
         opf_calibration_path=args.opf_calibration_path,
         reuse_from=args.reuse_from,
+        device=device,
     )
+
+
+def _autodetect_device() -> str:
+    """cuda > mps > cpu."""
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return "cuda"
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            return "mps"
+    except Exception:  # noqa: BLE001
+        pass
+    return "cpu"
 
 
 if __name__ == "__main__":

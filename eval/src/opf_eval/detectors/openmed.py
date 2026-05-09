@@ -37,24 +37,31 @@ class OpenMedDetector:
         *,
         confidence_threshold: float = 0.5,
         default_lang: str = "en",
+        device: str = "cpu",
     ) -> None:
         """
         confidence_threshold: drop predictions below this score (0..1).
         default_lang: language code used when the fixture record doesn't
             carry a `language` hint.
+        device: torch device passed through to OpenMedConfig — `"cpu"`,
+            `"cuda"`, or `"mps"`. Big speedup on the larger 434–568M
+            non-English checkpoints.
         """
         # Lazy import — keeps the openmed dep optional at module import time.
         import openmed
 
-        self._extract_pii = openmed.extract_pii
+        self._openmed = openmed
         self._loader_cls = openmed.ModelLoader
+        self._config_cls = openmed.OpenMedConfig
         self._loaders: dict[str, "ModelLoader"] = {}
         self._threshold = confidence_threshold
         self._default_lang = default_lang
+        self._device = device
 
     def _get_loader(self, lang: str) -> "ModelLoader":
         if lang not in self._loaders:
-            self._loaders[lang] = self._loader_cls()
+            cfg = self._config_cls(device=self._device) if self._device != "cpu" else None
+            self._loaders[lang] = self._loader_cls(config=cfg)
         return self._loaders[lang]
 
     def detect(self, text: str, **context: object) -> DetectorResult:
@@ -66,7 +73,7 @@ class OpenMedDetector:
 
         t0 = time.perf_counter()
         try:
-            result = self._extract_pii(
+            result = self._openmed.extract_pii(
                 text,
                 confidence_threshold=self._threshold,
                 lang=lang,
