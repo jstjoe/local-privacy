@@ -2,9 +2,9 @@
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/jstjoe/local-privacy/blob/main/notebooks/pii_detector_comparison.ipynb)
 
-Benchmark harness comparing local and hosted PII detectors on PII-Masking-300k.
+Benchmark harness comparing local and hosted PII detectors against any of five ai4privacy datasets (PII-Masking-200k/300k/400k, OpenPII nano/mini).
 
-See [**RESULTS.md**](RESULTS.md) for headline numbers (overall + per-category + per-language F1 and latency at n=1000).
+See [**RESULTS.md**](RESULTS.md) for headline numbers (overall + per-category + per-language F1 and latency at n=1000 on PII-Masking-300k).
 
 Detectors covered:
 
@@ -13,7 +13,9 @@ Detectors covered:
 - **Microsoft Presidio** — regex + spaCy NER, local
 - **Skyflow Detect API** — hosted
 
-Plus a minimal FastAPI server wrapping OPF for a privacy-preprocessing layer.
+Pick `(detector, dataset, sample size)` on the CLI; detectors that take a per-call label set (Skyflow, GLiNER) auto-configure to the chosen dataset's vocabulary.
+
+Plus a unified FastAPI service ([api/](api/)) exposing all detectors behind one contract.
 
 ## Layout
 
@@ -49,19 +51,36 @@ for lang in nl fr de it es; do python -m spacy download ${lang}_core_news_lg; do
 ## Quick smoke test
 
 ```sh
-# 1. Materialize a 100-example sample from PII-Masking-300k
-python -m opf_eval.fixtures --out eval/data/sample_100.jsonl --n 100
+# 1. Materialize a 100-example sample from a dataset of your choice.
+#    Default is pii_masking_300k for back-compat. Other names below.
+python -m opf_eval.fixtures --dataset openpii_nano --out eval/data/openpii_nano_100.jsonl --n 100
 
 # 2. Run local-only detectors (no API creds needed)
 python -m opf_eval.runner \
-    --fixtures eval/data/sample_100.jsonl \
+    --dataset openpii_nano \
+    --fixtures eval/data/openpii_nano_100.jsonl \
     --detectors opf,gliner,presidio \
     --out eval/results/runs/smoke/
 
-# 3. View the report
-python -m opf_eval.report --run eval/results/runs/smoke/ --fixtures eval/data/sample_100.jsonl
+# 3. View the report (two scoring views — "fair" per detector +
+#    "raw" against the full dataset vocabulary)
+python -m opf_eval.report --run eval/results/runs/smoke/ --fixtures eval/data/openpii_nano_100.jsonl
 cat eval/results/runs/smoke/report.md
 ```
+
+## Datasets
+
+Five ai4privacy variants pre-registered. Three distinct annotation vocabularies (verified via record dump in [eval/src/opf_eval/datasets/](eval/src/opf_eval/datasets/)):
+
+| `--dataset` | size | vocab | notes |
+| --- | --- | --- | --- |
+| `openpii_nano` | 1k | OpenPII | smoke / CI |
+| `openpii_mini` | 10k | OpenPII | mid-size |
+| `pii_masking_200k` | 200k | own (`FIRSTNAME`/`LASTNAME`/`PHONENUMBER`/...) | older |
+| `pii_masking_300k` | 300k | numbered names (`GIVENNAME1`/`LASTNAME1`/...) | current default |
+| `pii_masking_400k` | 400k | OpenPII | newest legacy variant |
+
+The runner writes the dataset name into the manifest; the report uses it to drive both scoring views.
 
 ## Adding Skyflow
 
@@ -91,12 +110,12 @@ python -m opf_eval.runner \
 | --- | --- |
 | `opf` | OpenAI Privacy Filter (default Viterbi decoder) |
 | `opf_calibrated` | OPF with a custom Viterbi calibration JSON (`--opf-calibration-path`) |
-| `gliner` | GLiNER multilingual PII model |
+| `gliner` | GLiNER multilingual PII model — prompts auto-restricted to dataset's canonical labels |
 | `presidio` | Presidio English-only |
 | `presidio_multilang` | Presidio with all 6 spaCy models |
-| `skyflow` | Skyflow Detect API constrained to OPF's 8 categories |
+| `skyflow` | Skyflow Detect API; `entity_types` auto-derived from dataset's canonical labels |
 | `skyflow_full` | Skyflow Detect API unconstrained (~70 entity types) |
-| `skyflow_minimal` | Skyflow with the empirically-tuned entity allowlist |
+| `skyflow_minimal` | Skyflow with the hand-tuned PII-Masking-300k allowlist (manual override; not dataset-aware) |
 | `skyflow_constrained` | Alias for `skyflow` |
 
 ## Category coverage
@@ -169,10 +188,19 @@ Same approach would work for any hosted PII detector with a configurable entity 
 
 ## Fixtures and reports
 
-- `python -m opf_eval.fixtures --n N --out path` — materialize N examples, deterministic seed
-- `python -m opf_eval.runner --detectors X,Y --fixtures path --out dir` — run detectors against fixtures
-- `python -m opf_eval.report --run dir --fixtures path` — emit `report.md`
-- `python -m opf_eval.report ... --canonical-labels DATE` — restrict scoring to a single category
+- `python -m opf_eval.fixtures --dataset NAME --n N --out path` — materialize N examples (deterministic seed)
+- `python -m opf_eval.runner --dataset NAME --detectors X,Y --fixtures path --out dir` — run detectors; manifest carries dataset name + vocab
+- `python -m opf_eval.report --run dir --fixtures path` — emit `report.md` with both fair (per-detector scope) + raw (full dataset vocab) views
+- `python -m opf_eval.report ... --canonical-labels DATE` — override both views to a single explicit label set (one-category drilldowns)
+
+### Two scoring views
+
+The report emits two SemEval sections per run:
+
+- **Fair view** — each detector scored against `dataset_canonicals ∩ detector_supported_canonicals`. Each row's `n labels` column shows the per-detector scope. Apples-to-apples within each detector's claimed coverage; doesn't punish broader vocabularies or flatter narrower ones.
+- **Raw view** — every detector scored against the dataset's full annotated set. Labels a detector doesn't support take zero recall; reflects out-of-the-box coverage.
+
+The greedy per-category breakdown stays under the raw view (single per-label table; `—` where a detector doesn't claim the label).
 
 ## Notebooks
 
@@ -180,19 +208,22 @@ Same approach would work for any hosted PII detector with a configurable entity 
 
 ## Plans for further experiments
 
-[plans/](plans/) — see plans/README.md for an index. Currently filed:
+[plans/](plans/) — see [plans/README.md](plans/README.md) for the full index. Highlights:
 
 - 01: Microsoft Presidio baseline (shipped)
-- 02: Fine-tune OPF on PII-Masking-300k
 - 03: GLiNER baseline (shipped)
-- 04: LLM-as-detector via LM Studio
+- 06: Unified privacy-detection API (shipped)
+- 08: SemEval scoring via nervaluate (shipped)
+- 09: Multi-dataset fixtures + per-detector scoring (this PR)
+- 02, 04, 05: model & training experiments (not yet shipped)
+- 07: Cloud Run hardening (planned)
 
 ## API server
 
-The `api/` directory is a minimal FastAPI server wrapping OPF as a privacy-preprocessing layer. Run with:
+The `api/` directory is a unified FastAPI service exposing all benchmark detectors behind one contract. Pick the backend with the `detector` field; canonical labels apply uniformly. Run with:
 
 ```sh
-uvicorn opf_api.main:app --reload
+DEFAULT_DETECTOR=opf EAGER_LOAD=opf uvicorn opf_api.main:app --reload
 ```
 
-Routes: `POST /redact`, `POST /detect`, `GET /health`. See [api/Dockerfile](api/Dockerfile) for containerization.
+Routes: `POST /v1/redact`, `POST /v1/detect`, `GET /v1/detectors`, `GET /v1/health`. Legacy `/redact`/`/detect`/`/health` remain (OPF-only, deprecated). See [api/Dockerfile](api/Dockerfile) for slim/full container profiles via build args.

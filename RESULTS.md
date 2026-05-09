@@ -1,12 +1,14 @@
 # Benchmark Results
 
-Headline numbers from the 1k PII-Masking-300k sample (`eval/data/sample_1k.jsonl`, fixed seed 42), restricted to OPF's 8 supported categories. The 5k run confirmed these numbers for OPF / GLiNER / Presidio within ±1 F1; Skyflow_minimal at 5k is pending.
+Headline numbers from the 1k PII-Masking-300k sample (`eval/data/sample_1k.jsonl`, fixed seed 42). The 5k run confirmed these numbers for OPF / GLiNER / Presidio within ±1 F1; Skyflow_minimal at 5k is pending. Run on other ai4privacy datasets (200k / 400k / OpenPII nano / mini) by passing `--dataset NAME` everywhere — see [README](README.md#datasets).
+
+Numbers below pre-date the multi-dataset refactor — they were generated with the legacy report layout that restricted everything to OPF's 8 categories. New runs on `pii_masking_300k` use the per-detector "fair view" by default (skyflow_minimal scope expands from 8 to 10 since it supports DEMOGRAPHIC + USERNAME, dropping its Type F1 from 0.860 → 0.821 — a more honest baseline).
 
 Reproduce with:
 
 ```sh
-python -m opf_eval.fixtures --out eval/data/sample_1k.jsonl --n 1000
-python -m opf_eval.runner --fixtures eval/data/sample_1k.jsonl \
+python -m opf_eval.fixtures --dataset pii_masking_300k --out eval/data/sample_1k.jsonl --n 1000
+python -m opf_eval.runner --dataset pii_masking_300k --fixtures eval/data/sample_1k.jsonl \
     --detectors opf,skyflow_minimal,presidio,gliner \
     --out eval/results/runs/repro_1k/
 python -m opf_eval.report --run eval/results/runs/repro_1k/ --fixtures eval/data/sample_1k.jsonl
