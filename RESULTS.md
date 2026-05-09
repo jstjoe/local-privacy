@@ -1,6 +1,13 @@
 # Benchmark Results
 
-Headline numbers from a 1k PII-Masking-300k sample (`eval/data/sample_1k.jsonl`, fixed seed 42), re-run on the multi-dataset code with the new dataset-aware `skyflow` detector. Every detector is scored under both views the report emits — **Fair** (each detector against `dataset ∩ detector_supports`) and **Raw** (every detector against the dataset's full annotated vocabulary). Run on other ai4privacy datasets (200k / 400k / OpenPII nano / mini) by passing `--dataset NAME` everywhere — see [README](README.md#datasets).
+Headline numbers from 1k samples of two ai4privacy datasets, re-run on the multi-dataset code with the new dataset-aware `skyflow` detector:
+
+- **`pii_masking_300k`** — 10 canonical labels annotated; the original baseline
+- **`pii_masking_200k`** — 15 canonical labels (richer vocabulary including `MONEY`, `OCCUPATION`, `ORGANIZATION`, `VEHICLE`, `PHYSICAL`)
+
+Every detector is scored under both views the report emits — **Fair** (each detector against `dataset ∩ detector_supports`) and **Raw** (every detector against the dataset's full annotated vocabulary). Run on other ai4privacy datasets (400k / OpenPII nano / mini) by passing `--dataset NAME` everywhere — see [README](README.md#datasets).
+
+## pii_masking_300k (1k sample)
 
 Reproduce with:
 
@@ -13,7 +20,7 @@ python -m opf_eval.runner --dataset pii_masking_300k --fixtures eval/data/sample
 python -m opf_eval.report --run eval/results/runs/repro_1k/ --fixtures eval/data/sample_1k.jsonl
 ```
 
-## SemEval — Fair view (per-detector scope)
+### SemEval — Fair view (per-detector scope)
 
 Each detector scored against the intersection of (dataset annotates, this detector supports). N labels in parens shows per-detector scope.
 
@@ -26,7 +33,7 @@ Each detector scored against the intersection of (dataset annotates, this detect
 
 Schema cheat-sheet: **Strict** = exact boundary + label. **Exact** = exact boundary, ignore label. **Partial** = any overlap, ignore label. **Type** = any overlap + matching label.
 
-## SemEval — Raw view (full pii_masking_300k vocabulary, 10 labels)
+### SemEval — Raw view (full pii_masking_300k vocabulary, 10 labels)
 
 Every detector scored against the dataset's full annotated set. Labels a detector doesn't support take zero recall; this view reflects out-of-the-box coverage rather than fairness.
 
@@ -53,7 +60,7 @@ Reads cleanly:
 - **GLiNER over-detects more than the leaders** (SPU 1,179) and misses more (1,771 vs OPF's 1,338).
 - **Presidio's loss is split across MIS + SPU** (under-recalls *and* over-fires); 1,603 INC despite the lowest F1.
 
-## Latency (single-request, 1k sample)
+### Latency (single-request, 1k sample)
 
 | detector | p50 | p95 | p99 |
 | --- | --- | --- | --- |
@@ -64,7 +71,7 @@ Reads cleanly:
 
 OPF on CPU. Skyflow latency is region-dependent (network to vault).
 
-## Per-category F1 (raw view, partial overlap, IoU ≥ 0.5; winners in **bold**)
+### Per-category F1 (raw view, partial overlap, IoU ≥ 0.5; winners in **bold**)
 
 | label | gold n | opf | skyflow | gliner | presidio | winner |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -84,7 +91,7 @@ OPF on CPU. Skyflow latency is region-dependent (network to vault).
 
 OPF wins more *categories*, but Skyflow's headline F1 is higher because it covers two categories (DEMOGRAPHIC + USERNAME) that OPF / Presidio don't claim and that meaningfully drag those detectors' raw-view scores. The fair view (above) collapses that gap by scoping each detector to its supported labels — and there OPF's 0.837 Type F1 is within 2.1 of Skyflow's 0.858.
 
-## Per-language F1 (fair view, SemEval Type schema)
+### Per-language F1 (fair view, SemEval Type schema)
 
 | language | n | opf | skyflow | gliner | presidio | winner |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -97,17 +104,113 @@ OPF wins more *categories*, but Skyflow's headline F1 is higher because it cover
 
 Skyflow wins 5/6 languages; OPF wins Italian. Tight 4-point spread for OPF (0.819–0.852) confirms the 5k-run finding that OPF is consistent across the languages it sees. Presidio's 30-point gap on non-English is its English-only spaCy NER; multilingual Presidio (`presidio_multilang`) actually performs slightly worse overall — country-specific regex recognizers (US_SSN etc.) get gated to `language="en"` and stop firing. See [plans/01-presidio-baseline.md](plans/01-presidio-baseline.md).
 
+## pii_masking_200k (1k sample)
+
+Reproduce with:
+
+```sh
+python -m opf_eval.fixtures --dataset pii_masking_200k --out eval/data/pii_masking_200k_1k.jsonl --n 1000
+python -m opf_eval.runner --dataset pii_masking_200k --fixtures eval/data/pii_masking_200k_1k.jsonl \
+    --detectors opf,skyflow,presidio,gliner \
+    --skyflow-min-interval-ms 100 \
+    --out eval/results/runs/repro_200k_1k/
+python -m opf_eval.report --run eval/results/runs/repro_200k_1k/ --fixtures eval/data/pii_masking_200k_1k.jsonl
+```
+
+200k has its own annotation vocabulary (56 distinct raw labels in the first 5k records) covering all 15 canonical labels — gains `MONEY`, `OCCUPATION`, `ORGANIZATION`, `VEHICLE`, `PHYSICAL` over what 300k annotates. This is where Skyflow's broad coverage and GLiNER's prompt-driven flexibility actually pay off vs OPF's fixed 8-category vocabulary.
+
+### SemEval — Fair view (per-detector scope, 200k)
+
+| detector | n labels | strict | exact | partial | type |
+| --- | --- | --- | --- | --- | --- |
+| **skyflow** | 15 | **0.600** | **0.668** | **0.767** | **0.776** |
+| opf | 8 | 0.516 | 0.582 | 0.676 | 0.694 |
+| gliner | 14 | 0.459 | 0.553 | 0.665 | 0.657 |
+| presidio | 8 | 0.340 | 0.409 | 0.493 | 0.440 |
+
+### SemEval — Raw view (full pii_masking_200k vocabulary, 15 labels)
+
+| detector | strict | exact | partial | type |
+| --- | --- | --- | --- | --- |
+| **skyflow** | **0.600** | **0.668** | **0.767** | **0.776** |
+| gliner | 0.446 | 0.561 | 0.675 | 0.638 |
+| opf | 0.426 | 0.530 | 0.625 | 0.572 |
+| presidio | 0.239 | 0.316 | 0.437 | 0.314 |
+
+Strict-schema error decomposition (raw view):
+
+| detector | COR | INC | MIS | SPU |
+| --- | --- | --- | --- | --- |
+| skyflow | 1,829 | 812 | **259** | 556 |
+| gliner | 1,357 | 1,041 | 501 | 783 |
+| opf | 1,006 | 695 | 1,198 | **127** |
+| presidio | 993 | 1,329 | 938 | 2,741 |
+
+Reads cleanly:
+
+- **Skyflow widens its lead vs 300k** (+8.2 fair Type F1 over OPF here, vs +2.1 on 300k). The richer vocabulary is exactly the test where Skyflow's range pays off.
+- **OPF's strict-view raw F1 (0.426) drops below GLiNER (0.446)** — penalized hard by the 7 categories it doesn't claim. Fair view restores OPF's edge over GLiNER (0.694 vs 0.657).
+- **OPF still has the cleanest precision profile** (lowest SPU 127) — it doesn't make stuff up; it just doesn't see anything outside its 8 categories.
+
+### Latency (single-request, 1k sample, 200k)
+
+| detector | p50 | p95 | p99 |
+| --- | --- | --- | --- |
+| presidio | **7 ms** | 10 ms | **13 ms** |
+| gliner | 71 ms | 98 ms | 111 ms |
+| skyflow | 106 ms | 137 ms | 211 ms |
+| opf | 272 ms | 491 ms | 649 ms |
+
+Lower than 300k across the board — 200k records are shorter on average. OPF p50 in particular drops 703 ms → 272 ms (same model, shorter inputs).
+
+### Per-category F1 (raw view, partial overlap, IoU ≥ 0.5; winners in **bold**, 200k)
+
+| label | gold n | opf | skyflow | gliner | presidio | winner |
+| --- | --- | --- | --- | --- | --- | --- |
+| ACCOUNT | 495 | 0.613 | **0.701** | 0.532 | 0.347 | Skyflow |
+| ADDRESS | 429 | 0.566 | **0.722** | 0.618 | 0.217 | Skyflow |
+| DATE | 225 | 0.743 | **0.908** | 0.829 | 0.606 | Skyflow |
+| DEMOGRAPHIC | 169 | 0.000 | **0.479** | 0.000 | 0.028 | Skyflow |
+| EMAIL | 73 | 0.993 | **1.000** | 0.847 | **1.000** | Skyflow / Presidio |
+| MONEY | 216 | 0.000 | 0.584 | **0.622** | 0.000 | GLiNER |
+| OCCUPATION | 189 | 0.000 | 0.425 | **0.582** | 0.000 | GLiNER |
+| ORGANIZATION | 58 | 0.000 | **0.339** | 0.095 | 0.015 | Skyflow |
+| PERSON | 519 | 0.497 | **0.765** | 0.524 | 0.229 | Skyflow |
+| PHONE | 85 | 0.733 | 0.719 | **0.766** | 0.298 | GLiNER |
+| PHYSICAL | 48 | 0.000 | 0.619 | **0.729** | 0.000 | GLiNER |
+| SECRET | 60 | 0.537 | **0.794** | 0.712 | 0.000 | Skyflow |
+| URL | 213 | 0.808 | **0.969** | 0.573 | 0.796 | Skyflow |
+| USERNAME | 86 | 0.000 | **0.781** | 0.226 | 0.000 | Skyflow |
+| VEHICLE | 34 | 0.000 | **0.828** | 0.702 | 0.000 | Skyflow |
+
+**Wins by category:** Skyflow 11 (one tied with Presidio on EMAIL), GLiNER 4 (DATE was Skyflow this dataset; GLiNER picks up MONEY, OCCUPATION, PHONE, PHYSICAL), OPF 0, Presidio 0 (only ties on EMAIL).
+**OPF zeros**: MONEY, OCCUPATION, ORGANIZATION, PHYSICAL, USERNAME, VEHICLE, DEMOGRAPHIC — the 7 categories outside its supported set. Same picture for Presidio on the categories it doesn't claim.
+
+GLiNER's strength on the new canonicals is real: prompt-driven NER handles `MONEY`, `OCCUPATION`, `PHYSICAL` better than Skyflow's native types. ORGANIZATION is a Skyflow win even though its 0.339 F1 looks low — it's a high-recall (0.879) low-precision (0.210) profile that beats GLiNER's 0.095 outright.
+
+### Per-language F1 (fair view, SemEval Type schema, 200k)
+
+| language | n | opf | skyflow | gliner | presidio | winner |
+| --- | --- | --- | --- | --- | --- | --- |
+| de | 231 | 0.681 | **0.798** | 0.661 | 0.379 | Skyflow |
+| en | 228 | 0.667 | **0.791** | 0.653 | 0.563 | Skyflow |
+| fr | 309 | 0.696 | **0.736** | 0.641 | 0.456 | Skyflow |
+| it | 232 | 0.730 | **0.793** | 0.680 | 0.396 | Skyflow |
+
+200k has 4 languages (no nl/es). Skyflow wins all 4. OPF holds a tight 6-point spread (0.667–0.730).
+
 ## Headline takeaways
 
-- **For broad PII coverage with hosted-OK constraints:** Skyflow. Fastest at scale (107 ms p50), highest F1 in the most realistic Type-schema view (0.858 fair / 0.858 raw), the only detector that handles `DEMOGRAPHIC` + `USERNAME` on this dataset.
-- **For local deployment:** OPF. Within 2.1 F1 of Skyflow in fair view (0.837 Type), dominates 6 of 10 categories outright, fully local. Slow on CPU (703 ms p50, 1,229 ms p99) — GPU recommended for production.
-- **For DATE specifically:** GLiNER. Beats OPF by 23.4 F1 and Skyflow by 1.7 F1 on the highest-volume category, despite being an order of magnitude smaller than OPF.
-- **For high-volume EMAIL detection only:** Presidio. 14 ms p50, 0.968 F1 on EMAIL — beats every other detector. Worthless on most other categories.
-- **A hybrid local stack** (OPF + GLiNER for DATE, optionally Presidio for EMAIL) would close most of the OPF→Skyflow gap while staying fully on-prem. Not built or benchmarked yet.
+- **For broad PII coverage with hosted-OK constraints:** Skyflow. Wins overall on both 300k (0.858 Type fair) and 200k (0.776 Type fair); only detector that handles `DEMOGRAPHIC` + `USERNAME` on 300k and `MONEY` / `OCCUPATION` / `ORGANIZATION` / `VEHICLE` / `PHYSICAL` on 200k. Fast (~107 ms p50).
+- **For local deployment with broad coverage:** GLiNER. Surprisingly the overall winner on the harder 200k vocabulary outside of Skyflow (0.638 raw Type), beating OPF (0.572 raw Type) once you score against the dataset's full vocabulary. Wins MONEY, OCCUPATION, PHONE, PHYSICAL on 200k and DATE on 300k.
+- **For local deployment with narrow coverage:** OPF. Within 2.1 F1 of Skyflow on 300k fair view (0.837 Type), dominates 6 of 10 categories outright there. On the wider 200k vocabulary it falls behind GLiNER in raw view but still wins fair view comfortably (0.694 vs 0.657). Slow on CPU (272–703 ms p50 depending on input length) — GPU recommended for production.
+- **For high-volume EMAIL only:** Presidio. 7-14 ms p50, perfect or near-perfect F1 on EMAIL across both datasets. Worthless on most other categories.
+- **A hybrid local stack** (OPF + GLiNER for the categories OPF doesn't claim, optionally Presidio for EMAIL) would close most of the local-vs-Skyflow gap while staying fully on-prem. Not built or benchmarked yet.
 
 ## Caveats and what we don't measure here
 
-- **PII-Masking-300k is a single dataset.** Performance on production traffic (chat transcripts, support tickets, internal docs) may differ. The dataset's labeling style (e.g. `GIVENNAME1`/`GIVENNAME2` per-token rather than `FULL_NAME`) shapes the granularity bias and per-category recall profile. Other ai4privacy datasets (`pii_masking_200k`, `pii_masking_400k`, `openpii_nano/mini`) are runnable by passing `--dataset NAME`; results not yet folded in.
+- **Two datasets isn't all of them.** 300k and 200k are folded in here; `pii_masking_400k` and `openpii_nano/mini` are runnable by passing `--dataset NAME` but not yet measured. Performance on production traffic (chat transcripts, support tickets, internal docs) may also differ from any of these.
+- **Dataset labeling style shapes the result.** 300k uses per-token names (`GIVENNAME1`/`GIVENNAME2`) which produces the granularity-bias / Type-vs-Strict gap; 200k uses bare names but adds 56 distinct entity types (more open-ended). 300k is the more recall-friendly benchmark; 200k is the more coverage-stress test.
 - **OPF was not fine-tuned.** [plans/02-finetune-opf.md](plans/02-finetune-opf.md) is the remaining high-leverage experiment — fine-tuning could plausibly close most of the DATE/ADDRESS gap to Skyflow.
 - **Skyflow API latency is region-dependent.** Reported p50 is whatever your network-to-vault path is. For latency-sensitive paths in a different region, mileage will vary.
 - **Cost not measured.** Skyflow is per-call; OPF/Presidio/GLiNER are self-hosted compute. Decision frameworks usually need both quality and cost — cost is left to the deployer.
