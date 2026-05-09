@@ -260,17 +260,19 @@ The greedy per-category breakdown stays under the raw view (single per-label tab
 - 01: Microsoft Presidio baseline (shipped)
 - 03: GLiNER baseline (shipped)
 - 06: Unified privacy-detection API (shipped)
+- 07: Cloud Run hardening (shipped)
 - 08: SemEval scoring via nervaluate (shipped)
-- 09: Multi-dataset fixtures + per-detector scoring (this PR)
-- 02, 04, 05: model & training experiments (not yet shipped)
-- 07: Cloud Run hardening (planned)
+- 09: Multi-dataset fixtures + per-detector scoring (shipped)
+- 02, 04: model & training experiments (not yet shipped)
 
 ## API server
 
 The `api/` directory is a unified FastAPI service exposing all benchmark detectors behind one contract. Pick the backend with the `detector` field; canonical labels apply uniformly. Run with:
 
 ```sh
-DEFAULT_DETECTOR=opf EAGER_LOAD=opf uvicorn opf_api.main:app --reload
+API_KEYS=dev-key DEFAULT_DETECTOR=opf EAGER_LOAD=opf uvicorn opf_api.main:app --reload
 ```
 
-Routes: `POST /v1/redact`, `POST /v1/detect`, `GET /v1/detectors`, `GET /v1/health`. Legacy `/redact`/`/detect`/`/health` remain (OPF-only, deprecated). See [api/Dockerfile](api/Dockerfile) for slim/full container profiles via build args.
+Routes: `POST /v1/redact`, `POST /v1/detect`, `GET /v1/detectors`, `GET /v1/health` (liveness), `GET /v1/ready` (readiness), `GET /metrics` (Prometheus). Legacy `/redact`/`/detect`/`/health` remain (OPF-only, deprecated).
+
+Production hardening (auth, rate limiting, structured logs, graceful shutdown) is wired in. See [api/deploy/README.md](api/deploy/README.md) for Cloud Run deployment, secrets, and the GitHub Actions release pipeline. Build args in [api/Dockerfile](api/Dockerfile) pick slim vs full container profiles.

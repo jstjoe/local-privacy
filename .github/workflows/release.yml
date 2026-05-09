@@ -1,0 +1,65 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag (default: short SHA)"
+        required: false
+
+permissions:
+  contents: read
+  id-token: write   # required for Workload Identity Federation
+
+env:
+  GCP_REGION: us-central1
+  GAR_REPO: privacy
+  IMAGE_NAME: api
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve tag
+        id: tag
+        run: |
+          if [ -n "${{ inputs.tag }}" ]; then
+            echo "value=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "value=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Auth to GCP via Workload Identity
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure docker auth
+        run: gcloud auth configure-docker ${{ env.GCP_REGION }}-docker.pkg.dev --quiet
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build + push (full image)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: api/Dockerfile
+          push: true
+          platforms: linux/amd64
+          build-args: |
+            INCLUDE_OPF=1
+            INCLUDE_GLINER=0
+            INCLUDE_PRESIDIO=0
+            INCLUDE_PRESIDIO_MULTILANG=0
+          tags: |
+            ${{ env.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.value }}
+            ${{ env.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.IMAGE_NAME }}:latest

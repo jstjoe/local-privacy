@@ -61,5 +61,7 @@ RUN if [ "$INCLUDE_GLINER" = "1" ]; then \
         python -c "from gliner import GLiNER; GLiNER.from_pretrained('urchade/gliner_multi_pii-v1')"; \
     fi
 
+# Cloud Run injects $PORT (default 8080); fall back to 8080 for local docker run.
+ENV PORT=8080
 EXPOSE 8080
-CMD ["uvicorn", "opf_api.main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["sh", "-c", "exec uvicorn opf_api.main:app --host 0.0.0.0 --port ${PORT:-8080}"]

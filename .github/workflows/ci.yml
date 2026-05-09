@@ -1,0 +1,75 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - name: Ruff check
+        run: uvx ruff check api/
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - name: Install workspace
+        run: uv sync --all-extras
+        env:
+          UV_PYTHON: ${{ matrix.python-version }}
+      - name: Run tests
+        run: uv run pytest api/tests/ -v
+
+  docker-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build slim image (no OPF, no GLiNER, no Presidio)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: api/Dockerfile
+          push: false
+          load: true
+          tags: privacy-api:smoke
+          build-args: |
+            INCLUDE_OPF=0
+            INCLUDE_GLINER=0
+            INCLUDE_PRESIDIO=0
+            INCLUDE_PRESIDIO_MULTILANG=0
+      - name: Smoke-test container boots
+        run: |
+          docker run -d --name api \
+            -e API_KEYS=ci-test \
+            -e DEFAULT_DETECTOR=skyflow \
+            -e EAGER_LOAD= \
+            -p 8080:8080 \
+            privacy-api:smoke
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8080/v1/health > /dev/null; then
+              echo "ready after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+          curl -fsS http://localhost:8080/v1/health
+          docker logs api
+          docker stop api
