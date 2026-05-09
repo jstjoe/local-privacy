@@ -118,9 +118,60 @@ python -m opf_eval.runner \
 | `skyflow_minimal` | Skyflow with the hand-tuned PII-Masking-300k allowlist (manual override; not dataset-aware) |
 | `skyflow_constrained` | Alias for `skyflow` |
 
-## Category coverage
+## Canonical entity types
 
-The harness projects each detector's native entity vocabulary into a 10-label canonical taxonomy ([eval/src/opf_eval/taxonomy.py](eval/src/opf_eval/taxonomy.py)) so detectors can be compared on equal footing. The canonical labels are: PERSON, EMAIL, PHONE, ADDRESS, URL, DATE, ACCOUNT, SECRET, USERNAME, DEMOGRAPHIC.
+The harness projects every detector's native entity vocabulary and every dataset's gold-label vocabulary into a 10-label canonical taxonomy ([eval/src/opf_eval/taxonomy.py](eval/src/opf_eval/taxonomy.py)) so apples-to-apples comparison is possible. The 10 canonical labels are:
+
+| canonical | meaning |
+| --- | --- |
+| `PERSON` | Names (full, given, family, titles) |
+| `EMAIL` | Email addresses |
+| `PHONE` | Phone numbers, IMEI |
+| `ADDRESS` | Street, city, state/region, postcode, country, coordinates, building |
+| `URL` | URLs and IP addresses |
+| `DATE` | Dates, times, DOB |
+| `ACCOUNT` | Account / credit card / SSN / passport / driver-licence / bank / crypto identifiers |
+| `SECRET` | Passwords |
+| `USERNAME` | Logins / handles |
+| `DEMOGRAPHIC` | Gender / sex / age / nationality (Presidio's `NRP`) |
+
+### Quick reference: who supports what
+
+A check means at least one raw label maps to that canonical category in [taxonomy.py](eval/src/opf_eval/taxonomy.py). Dashes mean the source has no annotations / no recognizer for that canonical type.
+
+| canonical | pii_masking_200k | pii_masking_300k | openpii (400k, nano, mini) | OPF | Skyflow | Presidio | GLiNER |
+| --- | :-: | :-: | :-: | :-: | :-: | :-: | :-: |
+| PERSON | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| EMAIL | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| PHONE | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| ADDRESS | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| URL | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| DATE | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| ACCOUNT | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| SECRET | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ |
+| USERNAME | ✓ | ✓ | ✓ | — | ✓ | — | ✓ |
+| DEMOGRAPHIC | ✓ | ✓ (`SEX` only) | ✓ | — | ✓ | ✓ (`NRP`) | — |
+
+This drives the **fair scoring view** in the report: each detector's headline F1 is computed against `dataset_canonicals ∩ detector_supported_canonicals` so detectors aren't punished for labels they don't claim.
+
+### Dataset → canonical mapping (raw labels)
+
+| canonical | pii_masking_200k | pii_masking_300k | openpii (400k, nano, mini) |
+| --- | --- | --- | --- |
+| PERSON | `FIRSTNAME`, `MIDDLENAME`, `LASTNAME`, `PREFIX`, `SUFFIX` | `GIVENNAME1`, `GIVENNAME2`, `LASTNAME1`, `LASTNAME2`, `LASTNAME3`, `TITLE` | `GIVENNAME`, `SURNAME`, `TITLE` |
+| EMAIL | `EMAIL` | `EMAIL` | `EMAIL` |
+| PHONE | `PHONENUMBER`, `PHONEIMEI` | `TEL` | `TELEPHONENUM` |
+| ADDRESS | `STREET`, `CITY`, `COUNTY`, `STATE`, `ZIPCODE`, `BUILDINGNUMBER`, `SECONDARYADDRESS`, `NEARBYGPSCOORDINATE` | `STREET`, `CITY`, `STATE`, `COUNTRY`, `POSTCODE`, `BUILDING`, `SECADDRESS`, `GEOCOORD` | `STREET`, `CITY`, `STATE`, `ZIPCODE`, `BUILDINGNUM`, `SECONDARYADDRESS` |
+| URL | `URL`, `IP`, `IPV4`, `IPV6` | `IP` | `URL`, `IP`, `IPV4`, `IPV6` |
+| DATE | `DATE`, `TIME`, `DOB` | `DATE`, `TIME`, `BOD` | `DATE`, `TIME`, `DATEOFBIRTH` |
+| ACCOUNT | `ACCOUNTNUMBER`, `ACCOUNTNAME`, `CREDITCARDNUMBER`, `CREDITCARDISSUER`, `CREDITCARDCVV`, `BITCOINADDRESS`, `ETHEREUMADDRESS`, `LITECOINADDRESS`, `IBAN`, `BIC`, `PIN` | `SOCIALNUMBER`, `IDCARD`, `PASSPORT`, `DRIVERLICENSE` | `ACCOUNTNUM`, `CREDITCARDNUMBER`, `IDCARDNUM`, `SOCIALNUM`, `PASSPORTNUM`, `DRIVERLICENSENUM`, `TAXNUM` |
+| SECRET | `PASSWORD` | `PASS` | `PASSWORD` |
+| USERNAME | `USERNAME` | `USERNAME` | `USERNAME` |
+| DEMOGRAPHIC | `GENDER`, `SEX`, `AGE` | `SEX` | `GENDER`, `SEX`, `AGE` |
+
+Each dataset has additional raw labels not yet mapped to a canonical (e.g. pii_masking_200k's `JOBTITLE`, `JOBAREA`, `COMPANYNAME`, `USERAGENT`). Those are silently dropped at fixture-write time. Add a column to `CANONICAL_MAP` if you want them scored.
+
+### Detector → canonical mapping (raw labels)
 
 | canonical | OPF | Skyflow Detect | Presidio | GLiNER |
 | --- | --- | --- | --- | --- |
@@ -138,9 +189,9 @@ The harness projects each detector's native entity vocabulary into a 10-label ca
 Notes:
 
 - **OPF** has 8 native categories — fixed at training time, not configurable. No native USERNAME or DEMOGRAPHIC support.
-- **Skyflow Detect** exposes 69 entity types in total (plus an `all` meta-value). The 38 mapped above are what the harness asks for via the `entity_types` request parameter. The `skyflow_minimal` detector config (recommended) sends a tuned subset that drops bare `name` / `location` / `location_address` (low gold-hit rate per `eval/scripts/analyze_skyflow_hitrate.py`). The other 31 entity types are listed below.
+- **Skyflow Detect** exposes 69 entity types in total (plus an `all` meta-value). The 38 mapped above are what the harness asks for via the `entity_types` request parameter. The `skyflow` detector now auto-derives this set from the chosen dataset's canonical labels; `skyflow_minimal` keeps a hand-tuned PII-Masking-300k preset (drops bare `name` / `location` / `location_address`, low gold-hit rate per `eval/scripts/analyze_skyflow_hitrate.py`). The other 31 entity types are listed below.
 - **Presidio** entries are the default English recognizers. Multilingual Presidio adds language-specific spaCy NER, not new entity types. No native SECRET or USERNAME recognizer.
-- **GLiNER** is zero-shot and accepts any natural-language prompt. The vocabulary above is what the harness sends to the `urchade/gliner_multi_pii-v1` checkpoint; tuning the prompts is one of the easier ways to move GLiNER's per-category numbers.
+- **GLiNER** is zero-shot and accepts any natural-language prompt. The vocabulary above is what the harness sends to the `urchade/gliner_multi_pii-v1` checkpoint; with `--dataset NAME` set, the prompt list is auto-restricted to canonicals the dataset annotates. Tuning the prompts is one of the easier ways to move GLiNER's per-category numbers.
 
 ### Additional Skyflow categories (out of scope for this benchmark)
 
