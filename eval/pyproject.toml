@@ -12,6 +12,7 @@ dependencies = [
     "presidio-analyzer>=2.2",
     "gliner>=0.2.13",
     "nervaluate>=0.2,<0.3",
+    "openmed[hf]>=0.1",
 ]
 
 [build-system]

@@ -35,6 +35,8 @@ CANONICAL_MAP: dict[str, dict[str, tuple[str, ...]]] = {
         ),
         "presidio": ("PERSON",),
         "gliner": ("person",),
+        "gretel": ("first_name", "last_name", "name"),
+        "openmed": ("first_name", "last_name"),
     },
     "EMAIL": {
         "opf": ("private_email",),
@@ -44,6 +46,8 @@ CANONICAL_MAP: dict[str, dict[str, tuple[str, ...]]] = {
         "openpii": ("EMAIL",),
         "presidio": ("EMAIL_ADDRESS",),
         "gliner": ("email",),
+        "gretel": ("email",),
+        "openmed": ("email",),
     },
     "PHONE": {
         "opf": ("private_phone",),
@@ -53,6 +57,8 @@ CANONICAL_MAP: dict[str, dict[str, tuple[str, ...]]] = {
         "openpii": ("TELEPHONENUM",),
         "presidio": ("PHONE_NUMBER",),
         "gliner": ("phone number",),
+        "gretel": ("phone_number",),
+        "openmed": ("phone_number", "fax_number"),
     },
     "ADDRESS": {
         "opf": ("private_address",),
@@ -96,6 +102,8 @@ CANONICAL_MAP: dict[str, dict[str, tuple[str, ...]]] = {
         ),
         "presidio": ("LOCATION",),
         "gliner": ("address", "location", "city", "country", "postal code"),
+        "gretel": ("address", "street_address", "city", "state", "country", "postcode", "coordinate"),
+        "openmed": ("street_address", "city", "state", "county", "country", "postcode", "coordinate"),
     },
     "URL": {
         "opf": ("private_url",),
@@ -105,6 +113,8 @@ CANONICAL_MAP: dict[str, dict[str, tuple[str, ...]]] = {
         "openpii": ("URL", "IP", "IPV4", "IPV6"),
         "presidio": ("URL", "IP_ADDRESS"),
         "gliner": ("url", "ip address"),
+        "gretel": ("url", "ipv4", "ipv6"),
+        "openmed": ("url", "ipv4", "ipv6", "mac_address"),
     },
     "DATE": {
         "opf": ("private_date",),
@@ -114,6 +124,8 @@ CANONICAL_MAP: dict[str, dict[str, tuple[str, ...]]] = {
         "openpii": ("DATE", "TIME", "DATEOFBIRTH"),
         "presidio": ("DATE_TIME",),
         "gliner": ("date", "date of birth", "time"),
+        "gretel": ("date", "date_of_birth", "date_time", "time"),
+        "openmed": ("date", "date_of_birth", "date_time", "time"),
     },
     "ACCOUNT": {
         "opf": ("account_number",),
@@ -193,6 +205,44 @@ CANONICAL_MAP: dict[str, dict[str, tuple[str, ...]]] = {
             "id number",
             "tax id",
         ),
+        "gretel": (
+            "ssn",
+            "credit_card_number",
+            "bank_routing_number",
+            "account_number",
+            "national_id",
+            "tax_id",
+            "swift_bic",
+            "cvv",
+            "pin",
+            "medical_record_number",
+            "health_plan_beneficiary_number",
+            "unique_identifier",
+            "customer_id",
+            "employee_id",
+            "device_identifier",
+            "biometric_identifier",
+            "certificate_license_number",
+        ),
+        "openmed": (
+            "ssn",
+            "credit_debit_card",
+            "bank_routing_number",
+            "account_number",
+            "tax_id",
+            "swift_bic",
+            "cvv",
+            "pin",
+            "medical_record_number",
+            "health_plan_beneficiary_number",
+            "customer_id",
+            "employee_id",
+            "device_identifier",
+            "biometric_identifier",
+            "certificate_license_number",
+            "unique_id",
+            "npi",  # National Provider Identifier
+        ),
     },
     "SECRET": {
         "opf": ("secret",),
@@ -202,6 +252,8 @@ CANONICAL_MAP: dict[str, dict[str, tuple[str, ...]]] = {
         "openpii": ("PASSWORD",),
         "presidio": (),  # No default password recognizer in Presidio
         "gliner": ("password",),
+        "gretel": ("password", "api_key"),
+        "openmed": ("password", "api_key", "http_cookie"),
     },
     "USERNAME": {
         "opf": (),  # OPF has no native USERNAME label
@@ -211,6 +263,8 @@ CANONICAL_MAP: dict[str, dict[str, tuple[str, ...]]] = {
         "openpii": ("USERNAME",),
         "presidio": (),
         "gliner": ("username",),
+        "gretel": ("user_name",),
+        "openmed": ("user_name",),
     },
     "DEMOGRAPHIC": {
         "opf": (),  # OPF has no native gender/age label
@@ -220,6 +274,19 @@ CANONICAL_MAP: dict[str, dict[str, tuple[str, ...]]] = {
         "openpii": ("GENDER", "SEX", "AGE"),
         "presidio": ("NRP",),  # Nationality, Religion, Political affiliation
         "gliner": (),
+        "gretel": (),
+        "openmed": (
+            "age",
+            "gender",
+            "sexuality",
+            "race_ethnicity",
+            "religious_belief",
+            "political_view",
+            "blood_type",
+            "education_level",
+            "employment_status",
+            "language",
+        ),
     },
     "ORGANIZATION": {
         "opf": (),  # OPF has no native ORG label
@@ -229,6 +296,8 @@ CANONICAL_MAP: dict[str, dict[str, tuple[str, ...]]] = {
         "openpii": (),  # Not annotated
         "presidio": (),  # No native ORG recognizer in default Presidio
         "gliner": ("organization", "company"),
+        "gretel": ("company_name",),
+        "openmed": ("company_name",),
     },
     "OCCUPATION": {
         "opf": (),  # OPF has no native job label
@@ -238,6 +307,8 @@ CANONICAL_MAP: dict[str, dict[str, tuple[str, ...]]] = {
         "openpii": (),  # Not annotated
         "presidio": (),
         "gliner": ("occupation", "job title"),
+        "gretel": (),
+        "openmed": ("occupation",),
     },
     "MONEY": {
         "opf": (),
@@ -247,6 +318,8 @@ CANONICAL_MAP: dict[str, dict[str, tuple[str, ...]]] = {
         "openpii": (),
         "presidio": (),
         "gliner": ("monetary amount", "currency", "price"),
+        "gretel": (),
+        "openmed": (),
     },
     "VEHICLE": {
         "opf": (),
@@ -258,6 +331,8 @@ CANONICAL_MAP: dict[str, dict[str, tuple[str, ...]]] = {
         # India-specific ID, not a general vehicle identifier.
         "presidio": (),
         "gliner": ("vehicle id", "license plate", "vin"),
+        "gretel": ("license_plate", "vehicle_identifier"),
+        "openmed": ("license_plate", "vehicle_identifier"),
     },
     "PHYSICAL": {
         "opf": (),
@@ -267,6 +342,8 @@ CANONICAL_MAP: dict[str, dict[str, tuple[str, ...]]] = {
         "openpii": (),
         "presidio": (),
         "gliner": ("height", "eye color", "physical attribute"),
+        "gretel": (),
+        "openmed": (),
     },
 }
 
@@ -288,6 +365,9 @@ _PRESIDIO_TO_CANONICAL = _build_reverse("presidio")
 _GLINER_TO_CANONICAL = _build_reverse("gliner")
 
 
+_GRETEL_TO_CANONICAL = _build_reverse("gretel")
+_OPENMED_TO_CANONICAL = _build_reverse("openmed")
+
 _DATASET_REVERSE = {
     "pii300k": _PII300K_TO_CANONICAL,
     "pii200k": _PII200K_TO_CANONICAL,
@@ -305,6 +385,11 @@ _DETECTOR_VOCAB_KEY: dict[str, str] = {
     "presidio": "presidio",
     "presidio_multilang": "presidio",
     "gliner": "gliner",
+    "gliner_nvidia": "gliner",  # uses our default gliner_prompts
+    "gliner_gretel_small": "gretel",
+    "gliner_gretel_large": "gretel",
+    "ai4privacy_modernbert": "openpii",
+    "openmed": "openmed",
 }
 
 
@@ -324,6 +409,31 @@ def gliner_to_canonical(label: str) -> str | None:
     """Reverse-map a GLiNER prompt string back to a canonical label.
     Case-insensitive since GLiNER may echo prompts with varied casing."""
     return _GLINER_TO_CANONICAL.get(label) or _GLINER_TO_CANONICAL.get(label.lower())
+
+
+def gretel_to_canonical(label: str) -> str | None:
+    """Reverse-map a Gretel snake_case label to a canonical."""
+    return _GRETEL_TO_CANONICAL.get(label) or _GRETEL_TO_CANONICAL.get(label.lower())
+
+
+def openmed_to_canonical(label: str) -> str | None:
+    """Reverse-map an OpenMed snake_case label to a canonical."""
+    return _OPENMED_TO_CANONICAL.get(label) or _OPENMED_TO_CANONICAL.get(label.lower())
+
+
+def gretel_prompts(canonicals: "Iterable[str] | None" = None) -> list[str]:
+    """All Gretel snake_case labels (or restricted to a canonical subset)."""
+    targets = set(canonicals) if canonicals is not None else None
+    out: list[str] = []
+    seen: set[str] = set()
+    for canonical, by_source in CANONICAL_MAP.items():
+        if targets is not None and canonical not in targets:
+            continue
+        for p in by_source.get("gretel", ()):
+            if p not in seen:
+                seen.add(p)
+                out.append(p)
+    return out
 
 
 def gliner_prompts(canonicals: "Iterable[str] | None" = None) -> list[str]:
