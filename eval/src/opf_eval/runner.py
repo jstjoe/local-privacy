@@ -16,9 +16,22 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .datasets import DEFAULT_DATASET, get as get_dataset_config, names as dataset_names
-from .detectors import GLiNERDetector, OPFDetector, PresidioDetector, SkyflowDetector
+from .detectors import (
+    Ai4PrivacyDetector,
+    GLiNERDetector,
+    OpenMedDetector,
+    OPFDetector,
+    PresidioDetector,
+    SkyflowDetector,
+)
 from .detectors.base import Detector
-from .taxonomy import canonical_to_skyflow_request_types, dataset_canonicals, gliner_prompts
+from .taxonomy import (
+    canonical_to_skyflow_request_types,
+    dataset_canonicals,
+    gliner_prompts,
+    gretel_prompts,
+    gretel_to_canonical,
+)
 
 
 def _build_detector(
@@ -45,6 +58,35 @@ def _build_detector(
         # Restrict prompts to what this dataset annotates so GLiNER stops
         # over-detecting labels the gold doesn't cover.
         return GLiNERDetector(prompts=gliner_prompts(dataset_canonicals_set))
+    if name == "ai4privacy_modernbert":
+        return Ai4PrivacyDetector()
+    if name == "gliner_gretel_small":
+        return GLiNERDetector(
+            model_name="gretelai/gretel-gliner-bi-small-v1.0",
+            threshold=0.7,
+            prompts=gretel_prompts(),
+            label_to_canonical=gretel_to_canonical,
+            name="gliner_gretel_small",
+        )
+    if name == "gliner_gretel_large":
+        return GLiNERDetector(
+            model_name="gretelai/gretel-gliner-bi-large-v1.0",
+            threshold=0.7,
+            prompts=gretel_prompts(),
+            label_to_canonical=gretel_to_canonical,
+            name="gliner_gretel_large",
+        )
+    if name == "gliner_nvidia":
+        # Same vocabulary as default GLiNER, larger 570M-param base, lower
+        # recommended threshold per model card.
+        return GLiNERDetector(
+            model_name="nvidia/gliner-PII",
+            threshold=0.3,
+            prompts=gliner_prompts(dataset_canonicals_set),
+            name="gliner_nvidia",
+        )
+    if name == "openmed":
+        return OpenMedDetector()
     if name == "opf_calibrated":
         if not opf_calibration_path:
             raise ValueError("opf_calibrated requires --opf-calibration-path")

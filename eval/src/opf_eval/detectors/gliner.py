@@ -10,11 +10,15 @@ prompt-driven instead of having a fixed label vocabulary.
 from __future__ import annotations
 
 import time
+from typing import Callable
 
 from gliner import GLiNER
 
 from ..taxonomy import gliner_prompts, gliner_to_canonical
 from .base import DetectorResult, Span
+
+
+LabelMapper = Callable[[str], "str | None"]
 
 
 class GLiNERDetector:
@@ -26,6 +30,8 @@ class GLiNERDetector:
         model_name: str = "urchade/gliner_multi_pii-v1",
         threshold: float = 0.5,
         prompts: list[str] | None = None,
+        label_to_canonical: LabelMapper | None = None,
+        name: str | None = None,
     ) -> None:
         """
         model_name: HuggingFace model id. Default is the multilingual PII variant.
@@ -33,10 +39,19 @@ class GLiNERDetector:
         prompts: explicit prompt list to feed the model. Default = full set
             (`gliner_prompts()`). Pass a restricted subset to focus the model
             on a dataset's annotated labels.
+        label_to_canonical: callback mapping raw model label -> canonical
+            label. Defaults to `gliner_to_canonical` (the generic GLiNER
+            prompt vocabulary). Override for variants like Gretel that emit
+            their own snake_case labels.
+        name: override the registered detector name (for raw_<name>.jsonl
+            output paths and report tables). Defaults to "gliner".
         """
         self._model = GLiNER.from_pretrained(model_name)
         self._labels = prompts if prompts is not None else gliner_prompts()
         self._threshold = threshold
+        self._to_canonical = label_to_canonical or gliner_to_canonical
+        if name is not None:
+            self.name = name
 
     def detect(self, text: str, **_context: object) -> DetectorResult:
         t0 = time.perf_counter()
@@ -50,7 +65,7 @@ class GLiNERDetector:
         spans: list[Span] = []
         for ent in entities:
             raw = ent.get("label", "")
-            canonical = gliner_to_canonical(raw) or raw.upper()
+            canonical = self._to_canonical(raw) or raw.upper()
             start = int(ent["start"])
             end = int(ent["end"])
             spans.append(
