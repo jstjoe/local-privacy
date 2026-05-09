@@ -20,7 +20,7 @@ import json
 from pathlib import Path
 
 from .datasets import DEFAULT_DATASET, get as get_dataset_config
-from .metrics import PRF, score
+from .nervaluate_metrics import SemEvalResult
 from .nervaluate_metrics import score as semeval_score
 from .taxonomy import (
     CANONICAL_LABELS,
@@ -43,8 +43,14 @@ def _index(records: list[dict], key: str = "id") -> dict[str, dict]:
     return {r[key]: r for r in records}
 
 
-def _fmt_prf(p: PRF) -> str:
-    return f"{p.precision:.3f} / {p.recall:.3f} / {p.f1:.3f}  (tp={p.tp} fp={p.fp} fn={p.fn})"
+def _fmt_per_label(metrics: dict[str, float | int]) -> str:
+    """Render one (P / R / F1, COR/INC/MIS/SPU) cell from a nervaluate per-tag
+    schema dict."""
+    return (
+        f"{metrics['precision']:.3f} / {metrics['recall']:.3f} / {metrics['f1']:.3f}"
+        f"  (cor={metrics['correct']} inc={metrics['incorrect']}"
+        f" mis={metrics['missed']} spu={metrics['spurious']})"
+    )
 
 
 def _filter_spans(spans: list[dict], allow: set[str] | None) -> list[dict]:
@@ -80,38 +86,28 @@ def _build_pairs(
     return pairs, latencies, errors
 
 
-def _greedy_per_label(
-    detectors: list[str],
-    fixture_records: list[dict],
-    detector_records: dict[str, dict[str, dict]],
-    *,
-    allow: set[str],
-) -> dict[str, object]:
-    out: dict[str, object] = {}
-    for det in detectors:
-        pairs, _, _ = _build_pairs(
-            det, fixture_records, detector_records, allow=allow,
-        )
-        out[det] = score(pairs)
-    return out
-
-
 def _per_label_section(
     title: str,
     detectors: list[str],
-    score_by_det: dict[str, object],
+    semeval_by_det: dict[str, SemEvalResult],
+    labels: list[str],
+    *,
+    schema: str = "ent_type",
 ) -> list[str]:
+    """Per-label P/R/F1 + COR/INC/MIS/SPU from nervaluate's per-tag results.
+    Default schema = `ent_type` (Type — any overlap + matching label),
+    consistent with the per-language headline."""
     lines: list[str] = [f"### {title}", ""]
-    all_labels: set[str] = set()
-    for det in detectors:
-        all_labels.update(score_by_det[det].per_label_partial.keys())  # type: ignore[union-attr]
     lines.append("| label | " + " | ".join(detectors) + " |")
     lines.append("|---|" + "|".join("---" for _ in detectors) + "|")
-    for lbl in sorted(all_labels):
+    for lbl in sorted(labels):
         row = [lbl]
         for det in detectors:
-            p = score_by_det[det].per_label_partial.get(lbl)  # type: ignore[union-attr]
-            row.append(_fmt_prf(p) if p else "—")
+            r = semeval_by_det.get(det)
+            if r is None or lbl not in r.by_label:
+                row.append("—")
+                continue
+            row.append(_fmt_per_label(r.by_label[lbl][schema]))
         lines.append("| " + " | ".join(row) + " |")
     lines.append("")
     return lines
@@ -125,11 +121,12 @@ def _semeval_view(
     label_set_per_det: dict[str, set[str]],
     title: str,
     description: str,
-) -> list[str]:
+) -> tuple[list[str], dict[str, "SemEvalResult | None"]]:
     """Render a SemEval section. `label_set_per_det` maps each detector to
     the labels it's scored against — different per detector for the fair
-    view, identical for the raw view."""
-    results = {}
+    view, identical for the raw view. Returns (lines, per-detector results)
+    so callers can reuse the per-tag breakdowns for follow-on tables."""
+    results: dict[str, "SemEvalResult | None"] = {}
     for det in detectors:
         labels = label_set_per_det[det]
         if not labels:
@@ -196,7 +193,7 @@ def _semeval_view(
             f"- **{det}** ({len(labels)}): {', '.join(sorted(labels)) if labels else '—'}"
         )
     lines.append("")
-    return lines
+    return lines, results
 
 
 def _per_language_semeval_section(
@@ -241,7 +238,6 @@ def build_report(
     fixtures: Path,
     *,
     canonical_labels: tuple[str, ...] | None = None,
-    max_disagreements: int = 50,
 ) -> str:
     """canonical_labels: when given, force both fair and raw views to this
     explicit label set (degenerates the two views into one). When None, the
@@ -283,7 +279,7 @@ def build_report(
     ]
 
     # SemEval — Fair view (per-detector scope)
-    lines.extend(_semeval_view(
+    fair_lines, _ = _semeval_view(
         detectors, fixture_records, detector_records,
         label_set_per_det=fair_set,
         title="SemEval — Fair view (per-detector scope)",
@@ -294,10 +290,12 @@ def build_report(
             " + label. **Exact** = boundary, ignore label. **Partial** = any"
             " overlap, ignore label. **Type** = any overlap + matching label."
         ),
-    ))
+    )
+    lines.extend(fair_lines)
 
-    # SemEval — Raw view (full dataset vocabulary)
-    lines.extend(_semeval_view(
+    # SemEval — Raw view (full dataset vocabulary). Reuse its per-tag results
+    # for the per-category breakdown below — the same scoring run.
+    raw_lines, raw_results = _semeval_view(
         detectors, fixture_records, detector_records,
         label_set_per_det={det: raw_set for det in detectors},
         title="SemEval — Raw dataset view (full vocabulary)",
@@ -307,16 +305,16 @@ def build_report(
             f" support take zero recall here, so this view reflects out-of-the-"
             f"box coverage rather than fairness."
         ),
-    ))
-
-    # Per-category greedy partial — uses raw view's label set (uniform across detectors)
-    score_raw = _greedy_per_label(
-        detectors, fixture_records, detector_records, allow=raw_set,
     )
+    lines.extend(raw_lines)
+
+    # Per-category breakdown — SemEval Type schema (any overlap + matching
+    # label), pulled from the raw view's per-tag results above.
     lines.extend(_per_label_section(
-        "Per-category breakdown — raw view (partial overlap, IoU >= 0.5)",
+        "Per-category breakdown — raw view (SemEval Type schema)",
         detectors,
-        score_raw,
+        raw_results,
+        sorted(raw_set),
     ))
 
     # Per-language fair view
@@ -329,28 +327,6 @@ def build_report(
             label_set_per_det=fair_set,
             languages=languages,
         ))
-
-    # Disagreement appendix (uniform — uses dataset's full vocab)
-    if "opf" in detectors and "skyflow" in detectors:
-        lines.append("## Disagreements — all categories (capped at {} per bucket)".format(max_disagreements))
-        lines.append("")
-        opf_only, sky_only = [], []
-        for ex in fixture_records:
-            opf = detector_records["opf"].get(ex["id"], {})
-            sky = detector_records["skyflow"].get(ex["id"], {})
-            opf_spans = {(s["label"], s["start"], s["end"]) for s in opf.get("spans") or []}
-            sky_spans = {(s["label"], s["start"], s["end"]) for s in sky.get("spans") or []}
-            if opf_spans - sky_spans:
-                opf_only.append((ex, opf_spans - sky_spans))
-            if sky_spans - opf_spans:
-                sky_only.append((ex, sky_spans - opf_spans))
-        for title, bucket in (("OPF caught, Skyflow missed", opf_only), ("Skyflow caught, OPF missed", sky_only)):
-            lines.append(f"### {title} ({len(bucket)} total)")
-            lines.append("")
-            for ex, diff in bucket[:max_disagreements]:
-                lines.append(f"- `{ex['id']}` — {sorted(diff)}")
-                lines.append(f"  > {ex['text'][:160]!r}")
-            lines.append("")
 
     return "\n".join(lines)
 
