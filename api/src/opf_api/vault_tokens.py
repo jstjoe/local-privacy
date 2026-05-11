@@ -9,7 +9,9 @@ Vault schema (one row per insert; only one column populated per row):
 
     table: entities  (configurable via SKYFLOW_TOKEN_VAULT_TABLE)
     columns: tok_person, tok_email, tok_phone, tok_address, tok_url,
-             tok_date, tok_account, tok_secret, tok_username, tok_demographic
+             tok_date, tok_account, tok_secret, tok_username, tok_demographic,
+             tok_organization, tok_occupation, tok_money, tok_vehicle,
+             tok_physical
     each column: DETERMINISTIC_FPT, format regex ^[A-Za-z0-9]{7}$
 
 Env:
