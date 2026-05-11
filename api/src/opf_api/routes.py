@@ -244,7 +244,12 @@ async def tokenize(request: Request, body: TokenizeRequest) -> TokenizeResponse:
                     "and SKYFLOW_TOKEN_VAULT_ID env vars to be set"
                 ),
             )
-        render = _build_vault_token_renderer(spans, client)
+        # TokenVaultClient uses httpx.Client (sync) so the Skyflow round-trip
+        # would block the event loop if called directly. Same pattern as the
+        # detector call in _run_detect.
+        render = await asyncio.to_thread(
+            _build_vault_token_renderer, spans, client
+        )
     else:  # pragma: no cover — pydantic Literal blocks other values
         raise HTTPException(status_code=400, detail=f"unknown token_format: {fmt!r}")
 
