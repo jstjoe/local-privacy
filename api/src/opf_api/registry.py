@@ -77,16 +77,55 @@ def _presidio_factory(*, multilang: bool) -> Callable[[], Detector]:
     return make
 
 
+def _device() -> str:
+    return os.environ.get("OPF_DEVICE", "cpu")
+
+
 def _gliner_factory() -> Detector:
     from opf_eval.detectors.gliner import GLiNERDetector
 
-    return GLiNERDetector()
+    return GLiNERDetector(device=_device())  # type: ignore[arg-type]
+
+
+def _gliner_nvidia_factory() -> Detector:
+    from opf_eval.detectors.gliner import GLiNERDetector
+
+    return GLiNERDetector(
+        model_name="nvidia/gliner-PII",
+        threshold=0.3,
+        name="gliner_nvidia",
+        device=_device(),  # type: ignore[arg-type]
+    )
+
+
+def _gliner_gretel_factory(*, size: str) -> Callable[[], Detector]:
+    def make() -> Detector:
+        from opf_eval.detectors.gliner import GLiNERDetector
+        from opf_eval.taxonomy import gretel_prompts, gretel_to_canonical
+
+        return GLiNERDetector(
+            model_name=f"gretelai/gretel-gliner-bi-{size}-v1.0",
+            threshold=0.7,
+            prompts=gretel_prompts(),
+            label_to_canonical=gretel_to_canonical,
+            name=f"gliner_gretel_{size}",
+            device=_device(),  # type: ignore[arg-type]
+        )
+
+    return make
+
+
+def _ai4privacy_factory() -> Detector:
+    from opf_eval.detectors.ai4privacy import Ai4PrivacyDetector
+
+    return Ai4PrivacyDetector(device=_device())  # type: ignore[arg-type]
 
 
 def build_default_registry() -> dict[str, DetectorEntry]:
-    """Construct the registry. Optional backends (gliner, presidio) are
-    registered only if their imports succeed. Skyflow is always available
-    since it's just an HTTP client (creds checked at first call)."""
+    """Construct the registry. Optional backends (gliner, presidio,
+    ai4privacy_modernbert) are registered only if their imports succeed.
+    Skyflow is always available since it's just an HTTP client (creds
+    checked at first call)."""
     reg: dict[str, DetectorEntry] = {
         "opf": DetectorEntry("opf", _opf_factory),
         "skyflow": DetectorEntry("skyflow", _skyflow_factory(None), proxy=True),
@@ -104,8 +143,23 @@ def build_default_registry() -> dict[str, DetectorEntry]:
         import gliner  # noqa: F401
 
         reg["gliner"] = DetectorEntry("gliner", _gliner_factory)
+        reg["gliner_nvidia"] = DetectorEntry("gliner_nvidia", _gliner_nvidia_factory)
+        reg["gliner_gretel_small"] = DetectorEntry(
+            "gliner_gretel_small", _gliner_gretel_factory(size="small")
+        )
+        reg["gliner_gretel_large"] = DetectorEntry(
+            "gliner_gretel_large", _gliner_gretel_factory(size="large")
+        )
     except ImportError:
         logger.info("gliner not installed; skipping registration")
+    try:
+        import transformers  # noqa: F401
+
+        reg["ai4privacy_modernbert"] = DetectorEntry(
+            "ai4privacy_modernbert", _ai4privacy_factory
+        )
+    except ImportError:
+        logger.info("transformers not installed; ai4privacy_modernbert skipped")
     return reg
 
 
@@ -115,6 +169,10 @@ _SOURCE_KEY = {
     "presidio": "presidio",
     "presidio_multilang": "presidio",
     "gliner": "gliner",
+    "gliner_nvidia": "gliner",
+    "gliner_gretel_small": "gretel",
+    "gliner_gretel_large": "gretel",
+    "ai4privacy_modernbert": "openpii",
 }
 
 

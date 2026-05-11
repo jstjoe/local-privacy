@@ -1,8 +1,8 @@
-# local-privacy
+# Sensitive Data Detection & Protection Experiments
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/jstjoe/local-privacy/blob/main/notebooks/pii_detector_comparison.ipynb)
 
-Benchmark harness comparing local and hosted PII detectors against any of five ai4privacy datasets (PII-Masking-200k/300k/400k, OpenPII nano/mini).
+Benchmark harness comparing available PII detectors against one of five datasets (PII-Masking-200k/300k/400k, OpenPII nano/mini).
 
 See [**RESULTS.md**](RESULTS.md) for headline numbers (overall + per-category + per-language F1 and latency at n=1000 on PII-Masking-300k).
 
@@ -10,6 +10,7 @@ Detectors covered:
 
 - **OPF** — OpenAI Privacy Filter, open-weight, local
 - **GLiNER** — small open-weight zero-shot NER, local
+- **Nvidia GLiNER** — open-weight zero-shot NER, local
 - **Microsoft Presidio** — regex + spaCy NER, local
 - **Skyflow Detect API** — hosted
 
@@ -23,7 +24,7 @@ Plus a unified FastAPI service ([api/](api/)) exposing all detectors behind one 
 local-privacy/
 ├── eval/         # benchmark harness — fixtures, detectors, runner, metrics, report
 ├── api/          # FastAPI server wrapping OPF
-├── notebooks/    # Colab notebook for hosted runs
+├── notebooks/    # Colab notebooks
 ├── plans/        # specs for additional experiments (see plans/README.md)
 └── privacy-filter/   # OPF source — cloned separately, gitignored
 ```
@@ -104,7 +105,7 @@ python -m opf_eval.runner \
 
 `--reuse-from` copies existing detector outputs from a previous run so you don't re-run OPF/GLiNER/Presidio.
 
-## Detector names
+## Available Detectors
 
 | name | what it is |
 | --- | --- |
@@ -267,10 +268,196 @@ The greedy per-category breakdown stays under the raw view (single per-label tab
 
 ## API server
 
-The `api/` directory is a unified FastAPI service exposing all benchmark detectors behind one contract. Pick the backend with the `detector` field; canonical labels apply uniformly. Run with:
+The `api/` directory is a unified FastAPI service exposing all benchmark detectors behind one contract. Pick the backend with the `detector` field; canonical labels apply uniformly across all of them. Interactive docs at `/docs` (Swagger) and `/redoc`. Container build profiles in [api/Dockerfile](api/Dockerfile).
+
+Run locally:
 
 ```sh
 DEFAULT_DETECTOR=opf EAGER_LOAD=opf uvicorn opf_api.main:app --reload
 ```
 
-Routes: `POST /v1/redact`, `POST /v1/detect`, `GET /v1/detectors`, `GET /v1/health`. Legacy `/redact`/`/detect`/`/health` remain (OPF-only, deprecated). See [api/Dockerfile](api/Dockerfile) for slim/full container profiles via build args.
+### Concepts
+
+**Detectors** — registered backends (lazy-loaded):
+
+| Name                     | Backend                                                 | Notes                                                       |
+|--------------------------|---------------------------------------------------------|-------------------------------------------------------------|
+| `opf`                    | OPF local model, ~2.8 GB                                | Trained categories only.                                    |
+| `skyflow`                | HTTP proxy to Skyflow Detect API                        | Requires `SKYFLOW_VAULT_*` env. `proxy: true` in `/v1/detectors`. |
+| `presidio`               | Microsoft Presidio, English spaCy model                 | Registered only if `presidio-analyzer` is installed.        |
+| `presidio_multilang`     | Presidio with all 6 spaCy languages                     | Each `<lang>_core_news_lg` model must be installed.         |
+| `gliner`                 | `urchade/gliner_multi_pii-v1`, multilingual             | Registered only if `gliner` is installed.                   |
+| `gliner_nvidia`          | `nvidia/gliner-PII`, 570M params, threshold 0.3         | Same vocabulary as `gliner`; GPU recommended.               |
+| `gliner_gretel_small`    | `gretelai/gretel-gliner-bi-small-v1.0`, threshold 0.7   | Uses Gretel's label space.                                  |
+| `gliner_gretel_large`    | `gretelai/gretel-gliner-bi-large-v1.0`, threshold 0.7   | Uses Gretel's label space.                                  |
+| `ai4privacy_modernbert`  | ModernBERT-based multilingual anonymiser (~150M params) | Requires `transformers`. 8 languages (en, fr, de, es, it, nl, hi, te). |
+
+Hit `GET /v1/detectors` to see what's currently registered in your deployment.
+
+**Canonical labels (15)** — `PERSON`, `EMAIL`, `PHONE`, `ADDRESS`, `URL`, `DATE`, `ACCOUNT`, `SECRET`, `USERNAME`, `DEMOGRAPHIC`, `ORGANIZATION`, `OCCUPATION`, `MONEY`, `VEHICLE`, `PHYSICAL`. Every detector's raw output maps into this taxonomy. The `categories` request filter accepts any of these. Different detectors cover different subsets — `/v1/detectors` reports each detector's category list.
+
+#### Server env
+
+| Variable                       | Notes                                                                |
+|--------------------------------|----------------------------------------------------------------------|
+| `DEFAULT_DETECTOR`             | Detector used when request omits `detector`. Default `opf`.          |
+| `EAGER_LOAD`                   | Comma-separated detector names loaded at startup. Default = `DEFAULT_DETECTOR`. |
+| `OPF_DEVICE`                   | `cpu`, `cuda`, `mps`. Default `cpu`.                                 |
+| `OPF_DECODE_MODE`              | `viterbi` or `argmax`. OPF-only. Default `viterbi`.                  |
+| `SKYFLOW_VAULT_URL` / `_ID` / `_BEARER_TOKEN` | Required for the `skyflow` **detector**.              |
+| `SKYFLOW_TOKEN_VAULT_URL` / `_ID` / `_BEARER_TOKEN` | Required for `/v1/tokenize` `vault_token` mode. See [docs/token-vault-setup.md](docs/token-vault-setup.md). |
+
+---
+
+### `POST /v1/detect`
+
+Returns detected spans. No text rewriting.
+
+Request:
+
+```json
+{
+  "text": "Email joe@example.com about the trip to Elgin, TX.",
+  "detector": "presidio",        // optional, defaults to DEFAULT_DETECTOR
+  "categories": ["EMAIL"],       // optional canonical filter
+  "decode_mode": "viterbi"       // optional, OPF-only
+}
+```
+
+Response (`200`):
+
+```json
+{
+  "schema_version": 1,
+  "detector": "presidio",
+  "text": "Email joe@example.com about the trip to Elgin, TX.",
+  "detected_spans": [
+    {"label": "EMAIL", "raw_label": "EMAIL_ADDRESS",
+     "start": 6, "end": 21, "text": "joe@example.com", "placeholder": null}
+  ],
+  "summary": {"span_count": 1, "by_label": {"EMAIL": 1}},
+  "warning": null
+}
+```
+
+Errors: `400` unknown detector or unknown category. `502` detector backend failure.
+
+---
+
+### `POST /v1/redact`
+
+Same detection, plus `redacted_text` with each span swapped for a placeholder.
+
+Extra request fields:
+
+| Field                | Type                       | Default     | Notes                                                          |
+|----------------------|----------------------------|-------------|----------------------------------------------------------------|
+| `placeholder_format` | `"bracket" \| "opf_native"` | `"bracket"` | `bracket` → `[EMAIL]`. `opf_native` → `<PRIVATE_EMAIL>` (only valid when `detector="opf"`). |
+
+Response adds `redacted_text` and each span carries its rendered `placeholder`:
+
+```json
+{
+  "detector": "presidio",
+  "redacted_text": "Email [EMAIL] about the trip to [ADDRESS].",
+  "detected_spans": [
+    {"label": "EMAIL", "raw_label": "EMAIL_ADDRESS",
+     "start": 6, "end": 21, "text": "joe@example.com",
+     "placeholder": "[EMAIL]"}
+  ],
+  "summary": {"span_count": 2, "by_label": {"EMAIL": 1, "ADDRESS": 1}}
+}
+```
+
+Overlapping spans: the earlier-starting span wins; later overlaps are skipped in `redacted_text` (still listed in `detected_spans`).
+
+Errors: as `/v1/detect`. Plus `400` when `placeholder_format="opf_native"` with a non-OPF detector.
+
+---
+
+### `POST /v1/tokenize`
+
+Replaces detected spans with stable **tokens** rather than generic placeholders. Three token formats:
+
+| `token_format`     | Looks like         | Stability                                                              |
+|--------------------|--------------------|------------------------------------------------------------------------|
+| `label`            | `[EMAIL]`          | None — equivalent to `/redact` with `placeholder_format=bracket`.       |
+| `label_numbered`   | `[EMAIL_1]`        | Per request. Numbered in order of first appearance, per label. Duplicate `(label, text)` reuses its number. |
+| `vault_token`      | `[EMAIL_MGaE1Bo]`  | Forever. 7-char alphanumeric deterministic token from a Skyflow vault. Same plaintext → same token, across requests, across detectors. |
+
+Request (defaults `token_format` to `label_numbered`):
+
+```json
+{
+  "text": "Email alice@x.com or call +1-415-555-0100.",
+  "detector": "presidio",
+  "token_format": "vault_token"
+}
+```
+
+Response (`200`):
+
+```json
+{
+  "schema_version": 1,
+  "detector": "presidio",
+  "text": "Email alice@x.com or call +1-415-555-0100.",
+  "tokenized_text": "Email [EMAIL_MGaE1Bo] or call [PHONE_vRXiWKZ].",
+  "detected_spans": [
+    {"label": "EMAIL", "raw_label": "EMAIL_ADDRESS",
+     "start": 6, "end": 17, "text": "alice@x.com",
+     "token": "[EMAIL_MGaE1Bo]"},
+    {"label": "PHONE", "raw_label": "PHONE_NUMBER",
+     "start": 27, "end": 42, "text": "+1-415-555-0100",
+     "token": "[PHONE_vRXiWKZ]"}
+  ],
+  "summary": {"span_count": 2, "by_label": {"EMAIL": 1, "PHONE": 1}},
+  "warning": null
+}
+```
+
+`vault_token` requires `SKYFLOW_TOKEN_VAULT_URL` + `SKYFLOW_TOKEN_VAULT_ID` and a bearer (`SKYFLOW_TOKEN_BEARER_TOKEN`, or falls back to `SKYFLOW_BEARER_TOKEN`). The vault must be configured per [docs/token-vault-setup.md](docs/token-vault-setup.md) — one table with one `tok_<label>` column per canonical label, each `DETERMINISTIC_FPT` with regex `^[A-Za-z0-9]{7}$`.
+
+Errors: `400` when `vault_token` requested but env not set. `502` when the vault call fails. Spans whose canonical label has no vault column fall back to `[LABEL]` for that span only.
+
+---
+
+### `GET /v1/detectors`
+
+Lists registered detectors plus the categories each can produce.
+
+```json
+{
+  "default": "opf",
+  "detectors": [
+    {"name": "gliner",  "categories": ["PERSON", "EMAIL", "..."], "loaded": false, "proxy": false},
+    {"name": "opf",     "categories": ["PERSON", "EMAIL", "..."], "loaded": true,  "proxy": false},
+    {"name": "skyflow", "categories": ["PERSON", "EMAIL", "..."], "loaded": false, "proxy": true}
+  ]
+}
+```
+
+`loaded` flips to `true` after first use (or at startup if listed in `EAGER_LOAD`). `proxy=true` means the detector calls an external service.
+
+---
+
+### `GET /v1/health`
+
+Liveness + which detectors are loaded.
+
+```json
+{
+  "status": "ok",
+  "default_detector": "opf",
+  "loaded_detectors": ["opf"],
+  "schema_version": 1
+}
+```
+
+Always `200` when the process is up; does not probe detector backends.
+
+---
+
+### Legacy endpoints (deprecated)
+
+`POST /redact`, `POST /detect`, `GET /health` — OPF-only, raw OPF label space (`private_email` etc.), kept for back-compat. Prefer the `/v1/*` versions.

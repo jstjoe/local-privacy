@@ -12,6 +12,7 @@ from fastapi import FastAPI  # noqa: E402
 from .registry import build_default_registry  # noqa: E402
 from .routes import router  # noqa: E402
 from .routes_legacy import legacy_router  # noqa: E402
+from .vault_tokens import TokenVaultClient  # noqa: E402
 
 
 logger = logging.getLogger("opf_api")
@@ -33,6 +34,13 @@ async def lifespan(app: FastAPI):
     app.state.registry = registry
     app.state.default_detector = default
     app.state.schema_version = SCHEMA_VERSION
+    app.state.token_vault_client = TokenVaultClient.from_env()
+    if app.state.token_vault_client is None:
+        logger.info(
+            "token vault not configured; /v1/tokenize 'vault_token' mode will 400"
+        )
+    else:
+        logger.info("token vault configured for /v1/tokenize 'vault_token' mode")
 
     eager = os.environ.get("EAGER_LOAD", default)
     eager_names = [n.strip() for n in eager.split(",") if n.strip()]

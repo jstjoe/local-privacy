@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 DecodeMode = Literal["viterbi", "argmax"]
 PlaceholderFormat = Literal["bracket", "opf_native"]
+TokenFormat = Literal["label", "label_numbered", "vault_token"]
 
 
 class RedactRequest(BaseModel):
@@ -18,8 +19,9 @@ class RedactRequest(BaseModel):
     categories: list[str] | None = Field(
         default=None,
         description=(
-            "Canonical categories to keep (PERSON, EMAIL, PHONE, ADDRESS, URL, "
-            "DATE, ACCOUNT, SECRET, USERNAME, DEMOGRAPHIC). None = keep all."
+            "Canonical categories to keep. Valid: PERSON, EMAIL, PHONE, "
+            "ADDRESS, URL, DATE, ACCOUNT, SECRET, USERNAME, DEMOGRAPHIC, "
+            "ORGANIZATION, OCCUPATION, MONEY, VEHICLE, PHYSICAL. None = keep all."
         ),
     )
     decode_mode: DecodeMode | None = Field(
@@ -56,6 +58,54 @@ class DetectResponse(BaseModel):
     detector: str
     text: str
     detected_spans: list[SpanOut]
+    summary: dict
+    warning: str | None = None
+
+
+class TokenizeRequest(BaseModel):
+    text: str
+    detector: str | None = Field(
+        default=None,
+        description="Detector name from /v1/detectors. None = use DEFAULT_DETECTOR env.",
+    )
+    categories: list[str] | None = Field(
+        default=None,
+        description=(
+            "Canonical categories to keep. Valid: PERSON, EMAIL, PHONE, "
+            "ADDRESS, URL, DATE, ACCOUNT, SECRET, USERNAME, DEMOGRAPHIC, "
+            "ORGANIZATION, OCCUPATION, MONEY, VEHICLE, PHYSICAL. None = keep all."
+        ),
+    )
+    decode_mode: DecodeMode | None = Field(
+        default=None,
+        description="OPF-only. Ignored by other detectors.",
+    )
+    token_format: TokenFormat = Field(
+        default="label_numbered",
+        description=(
+            "`label` = `[EMAIL]`. `label_numbered` = `[EMAIL_1]`, numbered per-label "
+            "in order of first appearance, duplicates share a number. "
+            "`vault_token` = `[EMAIL_jRc7QGn]`, deterministic 7-char token from "
+            "the configured Skyflow token vault."
+        ),
+    )
+
+
+class TokenSpanOut(BaseModel):
+    label: str
+    raw_label: str
+    start: int
+    end: int
+    text: str
+    token: str
+
+
+class TokenizeResponse(BaseModel):
+    schema_version: int
+    detector: str
+    text: str
+    detected_spans: list[TokenSpanOut]
+    tokenized_text: str
     summary: dict
     warning: str | None = None
 
