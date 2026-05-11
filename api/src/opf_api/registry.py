@@ -81,27 +81,31 @@ def _device() -> str:
     return os.environ.get("OPF_DEVICE", "cpu")
 
 
+# All GLiNER variants run at the same threshold so /v1/detect output is
+# comparable across them and operators have one knob to reason about.
+# Gretel's own recommendation is 0.7; nvidia's model card suggests 0.3
+# but that produces noticeably more false positives — 0.7 was chosen as
+# the precision-leaning common ground.
+GLINER_THRESHOLD = 0.7
+
+
 def _gliner_factory() -> Detector:
     from opf_eval.detectors.gliner import GLiNERDetector
 
-    logger.info("gliner: threshold=0.5 (GLiNERDetector default)")
-    return GLiNERDetector(device=_device())  # type: ignore[arg-type]
+    logger.info("gliner: threshold=%.2f", GLINER_THRESHOLD)
+    return GLiNERDetector(
+        threshold=GLINER_THRESHOLD,
+        device=_device(),  # type: ignore[arg-type]
+    )
 
 
 def _gliner_nvidia_factory() -> Detector:
     from opf_eval.detectors.gliner import GLiNERDetector
 
-    # 0.3 is the model card's recommended threshold but is unusually low —
-    # warn so operators know to expect more false positives than the other
-    # GLiNER variants (default 0.5, Gretel 0.7). Tune via a config override
-    # if FP rate is a problem.
-    logger.warning(
-        "gliner_nvidia: threshold=0.3 per model card — expect more false "
-        "positives than gliner (0.5) or gliner_gretel_* (0.7)",
-    )
+    logger.info("gliner_nvidia: threshold=%.2f", GLINER_THRESHOLD)
     return GLiNERDetector(
         model_name="nvidia/gliner-PII",
-        threshold=0.3,
+        threshold=GLINER_THRESHOLD,
         name="gliner_nvidia",
         device=_device(),  # type: ignore[arg-type]
     )
@@ -112,10 +116,10 @@ def _gliner_gretel_factory(*, size: str) -> Callable[[], Detector]:
         from opf_eval.detectors.gliner import GLiNERDetector
         from opf_eval.taxonomy import gretel_prompts, gretel_to_canonical
 
-        logger.info("gliner_gretel_%s: threshold=0.7 (Gretel-recommended)", size)
+        logger.info("gliner_gretel_%s: threshold=%.2f", size, GLINER_THRESHOLD)
         return GLiNERDetector(
             model_name=f"gretelai/gretel-gliner-bi-{size}-v1.0",
-            threshold=0.7,
+            threshold=GLINER_THRESHOLD,
             prompts=gretel_prompts(),
             label_to_canonical=gretel_to_canonical,
             name=f"gliner_gretel_{size}",

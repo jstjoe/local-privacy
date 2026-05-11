@@ -124,7 +124,7 @@ python -m opf_eval.runner \
 
 ## Canonical entity types
 
-The harness projects every detector's native entity vocabulary and every dataset's gold-label vocabulary into a 10-label canonical taxonomy ([eval/src/opf_eval/taxonomy.py](eval/src/opf_eval/taxonomy.py)) so apples-to-apples comparison is possible. The 10 canonical labels are:
+The harness projects every detector's native entity vocabulary and every dataset's gold-label vocabulary into a 15-label canonical taxonomy ([eval/src/opf_eval/taxonomy.py](eval/src/opf_eval/taxonomy.py)) so apples-to-apples comparison is possible. The 15 canonical labels are:
 
 | canonical | meaning |
 | --- | --- |
@@ -287,9 +287,9 @@ DEFAULT_DETECTOR=opf EAGER_LOAD=opf uvicorn opf_api.main:app --reload
 | `presidio`               | Microsoft Presidio, English spaCy model                 | Registered only if `presidio-analyzer` is installed.        |
 | `presidio_multilang`     | Presidio with all 6 spaCy languages                     | Each `<lang>_core_news_lg` model must be installed.         |
 | `gliner`                 | `urchade/gliner_multi_pii-v1`, multilingual             | Registered only if `gliner` is installed.                   |
-| `gliner_nvidia`          | `nvidia/gliner-PII`, 570M params, threshold 0.3         | Same vocabulary as `gliner`; GPU recommended.               |
-| `gliner_gretel_small`    | `gretelai/gretel-gliner-bi-small-v1.0`, threshold 0.7   | Uses Gretel's label space.                                  |
-| `gliner_gretel_large`    | `gretelai/gretel-gliner-bi-large-v1.0`, threshold 0.7   | Uses Gretel's label space.                                  |
+| `gliner_nvidia`          | `nvidia/gliner-PII`, 570M params                        | Same vocabulary as `gliner`; GPU recommended.               |
+| `gliner_gretel_small`    | `gretelai/gretel-gliner-bi-small-v1.0`                  | Uses Gretel's label space.                                  |
+| `gliner_gretel_large`    | `gretelai/gretel-gliner-bi-large-v1.0`                  | Uses Gretel's label space.                                  |
 | `ai4privacy_modernbert`  | ModernBERT-based multilingual anonymiser (~150M params) | Requires `transformers`. 8 languages (en, fr, de, es, it, nl, hi, te). |
 
 Hit `GET /v1/detectors` to see what's currently registered in your deployment.
