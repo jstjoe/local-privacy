@@ -12,6 +12,8 @@ The `pii_masking_300k` 1k bench now compares **9 detectors**:
 
 Every detector is scored under both views the report emits — **Fair** (each detector against `dataset ∩ detector_supports`) and **Raw** (every detector against the dataset's full annotated vocabulary). Run on other ai4privacy datasets (400k / OpenPII nano / mini) by passing `--dataset NAME` everywhere — see [README](README.md#datasets).
 
+> **2026-05-11 threshold standardization.** All GLiNER variants (`gliner`, `gliner_nvidia`, `gliner_gretel_*`) now use a uniform `threshold=0.7` so /v1/detect output is comparable across them. The `gliner` row in the 300k tables below was re-run after this change (strict F1 dropped 0.597 → 0.577 as expected — recall traded for precision). The `gliner_nvidia` 300k rows and the entire 200k section pre-date the change; their numbers will shift on the next full re-run.
+
 ## pii_masking_300k (1k sample)
 
 Reproduce with:
@@ -34,7 +36,7 @@ Each detector scored against the intersection of (dataset annotates, this detect
 | **skyflow** | 10 | **0.778** | **0.812** | **0.857** | **0.852** |
 | opf | 8 | 0.767 | 0.775 | 0.811 | 0.837 |
 | gliner_nvidia | 9 | 0.699 | 0.764 | 0.806 | 0.769 |
-| gliner | 9 | 0.597 | 0.644 | 0.714 | 0.721 |
+| gliner | 9 | 0.577 | 0.608 | 0.671 | 0.692 |
 | gliner_gretel_large | 9 | 0.610 | 0.661 | 0.692 | 0.667 |
 | gliner_gretel_small | 9 | 0.505 | 0.553 | 0.583 | 0.558 |
 | openmed | 10 | 0.348 | 0.375 | 0.469 | 0.495 |
@@ -52,7 +54,7 @@ Every detector scored against the dataset's full annotated set. Labels a detecto
 | **skyflow** | **0.778** | 0.812 | **0.857** | **0.852** |
 | opf | 0.731 | 0.794 | 0.830 | 0.797 |
 | gliner_nvidia | 0.687 | 0.758 | 0.800 | 0.755 |
-| gliner | 0.585 | 0.639 | 0.709 | 0.707 |
+| gliner | 0.565 | 0.601 | 0.664 | 0.677 |
 | gliner_gretel_large | 0.597 | 0.647 | 0.678 | 0.652 |
 | gliner_gretel_small | 0.493 | 0.541 | 0.569 | 0.544 |
 | openmed | 0.348 | 0.375 | 0.469 | 0.495 |
@@ -66,7 +68,7 @@ Strict-schema error decomposition (raw view, sorted by COR):
 | skyflow | 5,489 | 872 | **619** | 776 |
 | gliner_nvidia | 4,905 | 1,107 | 968 | 1,296 |
 | opf | 4,765 | 878 | 1,338 | **418** |
-| gliner | 3,911 | 1,298 | 1,771 | 1,179 |
+| gliner | 3,453 | 995 | 2,532 | 801 |
 | gliner_gretel_large | 3,349 | 631 | 3,000 | 258 |
 | presidio | 2,987 | 1,603 | 3,586 | 2,465 |
 | gliner_gretel_small | 2,531 | 538 | 3,911 | 217 |
@@ -78,7 +80,7 @@ Reads cleanly:
 - **Skyflow now wins all four schemas** — including strict (0.778, was 0.725 with the old request set that bundled `NAME` + `LOCATION` + `LOCATION_ADDRESS` parents). Switching the canonical mapping to request only the **components** Skyflow's vocabulary actually has (`NAME_GIVEN`/`NAME_FAMILY`, `LOCATION_CITY`/`STATE`/`ZIP`/etc., dropping `DAY`/`MONTH`/`YEAR` sub-units below `DATE`) lifts Strict F1 +5.3, Exact +4.9, Partial +2.0. Type F1 down 0.6 (the parent labels were padding it via boundary-tolerant overlap). Per-category PERSON +6.2 and ADDRESS +11.9 — exactly where the hierarchy mismatch was hurting.
 - **Skyflow's edge is recall.** 619 missed vs OPF's 1,338 — less than half. Largely because Skyflow is the only detector with non-zero `DEMOGRAPHIC` (0.732 F1) and `USERNAME` (0.734 F1) recall on this dataset (raw view, see per-category below).
 - **OPF wins on type confusion + precision.** 878 INC and **418 SPU — the lowest of any detector** (cleanest precision profile of the bunch). With the new Skyflow request set OPF's INC count is now identical to Skyflow's (878 vs 872) — the boundary fix removed Skyflow's previous 433 INC overhang.
-- **gliner_nvidia is the strongest of the 5 new detectors** — Type F1 0.769 fair / 0.755 raw, +5 over default GLiNER. Different from default GLiNER only in base (570M urchade/gliner_large-v2.1 vs ~150M urchade/gliner_multi_pii-v1) and threshold (0.3 vs 0.5). Trade-off: ~3× the latency of default GLiNER.
+- **gliner_nvidia is the strongest of the 5 new detectors** — Type F1 0.769 fair / 0.755 raw, +5 over default GLiNER. Different from default GLiNER only in base (570M urchade/gliner_large-v2.1 vs ~150M urchade/gliner_multi_pii-v1); both now share the standardized 0.7 threshold (gliner_nvidia row above predates that change, see footnote at the top). Trade-off: ~3× the latency of default GLiNER.
 - **gliner_gretel models are conservative** — the small/large variants both under-detect (low SPU 217/258) but miss a lot (3,911 / 3,000 MIS). English-only training on multilingual data shows up as recall failure.
 - **OpenMed and ai4privacy_modernbert disappoint vs their model cards** — both heavily miss (4,079 / 3,748 MIS). Likely a vocab-mismatch issue: they target snake_case OpenPII-style labels and the 300k labels (`GIVENNAME1` / `LASTNAME1`) need taxonomy-mediated mapping that may not survive the deeper boundary work.
 - **Presidio's loss is split across MIS + SPU** (under-recalls *and* over-fires); 1,603 INC despite the lowest F1 of the originals.
