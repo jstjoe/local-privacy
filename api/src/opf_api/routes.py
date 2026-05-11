@@ -8,6 +8,13 @@ from fastapi import APIRouter, HTTPException, Request
 
 from opf_eval.detectors.base import Span
 from opf_eval.taxonomy import CANONICAL_LABELS
+from opf_eval.transforms import (
+    VaultTokenError,
+    label_numbered_renderer,
+    placeholder_renderer,
+    splice_spans,
+    vault_token_renderer,
+)
 
 from .registry import DetectorEntry, detector_categories
 from .schemas import (
@@ -59,38 +66,11 @@ def _validate_categories(categories: list[str] | None) -> set[str] | None:
 
 
 def _placeholder_for(span: Span, fmt: str) -> str:
-    if fmt == "opf_native":
-        raw = span["raw_label"]
-        return f"<{raw.upper()}>"
-    return f"[{span['label']}]"
-
-
-def _splice_spans(
-    text: str,
-    spans: list[Span],
-    render: Callable[[Span], str],
-) -> str:
-    """Replace each non-overlapping span in `text` with `render(span)`.
-
-    Spans sorted by (start, end); overlaps keep the earlier-starting span.
-    """
-    if not spans:
-        return text
-    ordered = sorted(spans, key=lambda s: (s["start"], s["end"]))
-    pieces: list[str] = []
-    cursor = 0
-    for s in ordered:
-        if s["start"] < cursor:
-            continue
-        pieces.append(text[cursor : s["start"]])
-        pieces.append(render(s))
-        cursor = s["end"]
-    pieces.append(text[cursor:])
-    return "".join(pieces)
+    return placeholder_renderer(fmt)(span)
 
 
 def _redact_text(text: str, spans: list[Span], fmt: str) -> str:
-    return _splice_spans(text, spans, lambda s: _placeholder_for(s, fmt))
+    return splice_spans(text, spans, placeholder_renderer(fmt))
 
 
 class _DetectInput(Protocol):
@@ -174,53 +154,17 @@ async def detect(request: Request, body: RedactRequest) -> DetectResponse:
     )
 
 
-def _build_label_numbered_renderer() -> Callable[[Span], str]:
-    """Per-label counter; duplicate (label, text) reuses the same number.
-
-    State lives in this closure — never shared across requests.
-    """
-    counters: dict[str, int] = {}
-    assigned: dict[tuple[str, str], int] = {}
-
-    def render(span: Span) -> str:
-        key = (span["label"], span["text"])
-        if key not in assigned:
-            counters[span["label"]] = counters.get(span["label"], 0) + 1
-            assigned[key] = counters[span["label"]]
-        return f"[{span['label']}_{assigned[key]}]"
-
-    return render
-
-
-def _build_vault_token_renderer(
+def _build_vault_token_renderer_raising_http(
     spans: list[Span],
     client: TokenVaultClient,
 ) -> Callable[[Span], str]:
-    """One batch insert for the unique (label, text) pairs; render uses the map."""
-    unique: list[tuple[str, str]] = []
-    seen: set[tuple[str, str]] = set()
-    for s in spans:
-        key = (s["label"], s["text"])
-        if key not in seen:
-            seen.add(key)
-            unique.append(key)
-
+    """Thin wrapper that converts shared module's `VaultTokenError` into
+    the route-level HTTPException(502). Keeps the shared helper free of
+    FastAPI types."""
     try:
-        token_map = client.tokenize_batch(unique)
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=f"vault_token: {e!r}")
-
-    def render(span: Span) -> str:
-        key = (span["label"], span["text"])
-        tok = token_map.get(key)
-        if tok is None:
-            # Vault couldn't tokenize this label (e.g. unmapped); fall back to
-            # the label-only form so the response is still useful. The caller
-            # can still see something is sensitive.
-            return f"[{span['label']}]"
-        return f"[{span['label']}_{tok}]"
-
-    return render
+        return vault_token_renderer(spans, client)
+    except VaultTokenError as e:
+        raise HTTPException(status_code=502, detail=f"vault_token: {e}")
 
 
 @router.post("/tokenize", response_model=TokenizeResponse)
@@ -231,7 +175,7 @@ async def tokenize(request: Request, body: TokenizeRequest) -> TokenizeResponse:
     if fmt == "label":
         render: Callable[[Span], str] = lambda s: f"[{s['label']}]"  # noqa: E731
     elif fmt == "label_numbered":
-        render = _build_label_numbered_renderer()
+        render = label_numbered_renderer()
     elif fmt == "vault_token":
         client: TokenVaultClient | None = getattr(
             request.app.state, "token_vault_client", None
@@ -248,7 +192,7 @@ async def tokenize(request: Request, body: TokenizeRequest) -> TokenizeResponse:
         # would block the event loop if called directly. Same pattern as the
         # detector call in _run_detect.
         render = await asyncio.to_thread(
-            _build_vault_token_renderer, spans, client
+            _build_vault_token_renderer_raising_http, spans, client
         )
     else:  # pragma: no cover — pydantic Literal blocks other values
         raise HTTPException(status_code=400, detail=f"unknown token_format: {fmt!r}")
@@ -268,7 +212,7 @@ async def tokenize(request: Request, body: TokenizeRequest) -> TokenizeResponse:
         )
         for s in ordered
     ]
-    tokenized = _splice_spans(body.text, spans, render)
+    tokenized = splice_spans(body.text, spans, render)
 
     by_label = Counter(s.label for s in out_spans)
     return TokenizeResponse(
