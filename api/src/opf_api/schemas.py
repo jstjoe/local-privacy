@@ -43,13 +43,20 @@ class SpanOut(BaseModel):
     placeholder: str | None = None
 
 
+class SummaryOut(BaseModel):
+    """Per-response detection summary. `by_label` maps canonical label -> count."""
+
+    span_count: int
+    by_label: dict[str, int]
+
+
 class RedactResponse(BaseModel):
     schema_version: int
     detector: str
     text: str
     detected_spans: list[SpanOut]
     redacted_text: str
-    summary: dict
+    summary: SummaryOut
     warning: str | None = None
 
 
@@ -58,7 +65,7 @@ class DetectResponse(BaseModel):
     detector: str
     text: str
     detected_spans: list[SpanOut]
-    summary: dict
+    summary: SummaryOut
     warning: str | None = None
 
 
@@ -106,7 +113,7 @@ class TokenizeResponse(BaseModel):
     text: str
     detected_spans: list[TokenSpanOut]
     tokenized_text: str
-    summary: dict
+    summary: SummaryOut
     warning: str | None = None
 
 
