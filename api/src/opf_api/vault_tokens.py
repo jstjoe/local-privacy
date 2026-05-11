@@ -75,7 +75,11 @@ class TokenVaultClient:
 
     @classmethod
     def from_env(cls) -> "TokenVaultClient | None":
-        """Build from SKYFLOW_TOKEN_VAULT_* env vars. Returns None if unset."""
+        """Build from SKYFLOW_TOKEN_VAULT_* env vars. Returns None when any
+        required value (URL, vault ID, bearer token) is missing — treating a
+        partial config as "not configured" so callers get a clear 400
+        ('vault not configured') instead of a 502 from an obviously-broken
+        client at request time."""
         url = os.environ.get("SKYFLOW_TOKEN_VAULT_URL")
         vault_id = os.environ.get("SKYFLOW_TOKEN_VAULT_ID")
         if not url or not vault_id:
@@ -86,10 +90,11 @@ class TokenVaultClient:
         )
         if not bearer:
             logger.warning(
-                "SKYFLOW_TOKEN_VAULT_URL/ID set but no bearer token; "
-                "vault_token format will fail at request time",
+                "SKYFLOW_TOKEN_VAULT_URL/ID set but neither "
+                "SKYFLOW_TOKEN_BEARER_TOKEN nor SKYFLOW_BEARER_TOKEN is set; "
+                "treating token vault as unconfigured",
             )
-            bearer = ""
+            return None
         table = os.environ.get("SKYFLOW_TOKEN_VAULT_TABLE", "entities")
         return cls(vault_url=url, vault_id=vault_id, table=table, bearer_token=bearer)
 

@@ -50,7 +50,12 @@ async def lifespan(app: FastAPI):
             continue
         await registry[name].get()
     logger.info("default=%s eager-loaded=%s", default, eager_names)
-    yield
+    try:
+        yield
+    finally:
+        client = getattr(app.state, "token_vault_client", None)
+        if client is not None:
+            client.close()
 
 
 app = FastAPI(
