@@ -24,6 +24,9 @@ from contextlib import contextmanager
 from presidio_analyzer import AnalyzerEngine
 from presidio_analyzer.nlp_engine import NlpEngineProvider
 
+from ..taxonomy import presidio_to_canonical
+from .base import DetectorResult, Span
+
 
 @contextmanager
 def _silence_presidio_registry_warnings():
@@ -39,9 +42,6 @@ def _silence_presidio_registry_warnings():
         yield
     finally:
         logger.setLevel(prev_level)
-
-from ..taxonomy import presidio_to_canonical
-from .base import DetectorResult, Span
 
 
 # Keyed on ISO 639-1 code (matches what the fixtures emit; new ai4privacy
