@@ -32,9 +32,8 @@ from .detectors.base import Span
 Mode = Literal["redact", "label", "label_number", "label_token"]
 
 
-# Fixed-length asterisk run used by `redact` mode. Matches the shape of
-# the canonical "*******" placeholder while not leaking the original
-# span's character count.
+# Fixed-length asterisk run used by `redact` mode. Always 8 chars
+# regardless of the original span length, so nothing leaks.
 REDACT_PLACEHOLDER = "*" * 8
 
 
