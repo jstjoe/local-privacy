@@ -56,14 +56,26 @@ def splice_pieces(
 ) -> str:
     """Splice pre-rendered replacement strings into `text`.
 
-    `ordered_replacements` must be sorted by span (start, end). Overlap
-    handling matches `splice_spans`: an earlier-starting span wins, a
-    later overlapping span is skipped. Use this when callers have
-    already rendered each span (e.g. to avoid double-calling a renderer
-    once for the response and once for the spliced text).
+    `ordered_replacements` MUST be sorted by span `(start, end)`. The
+    invariant is checked at the top in O(n) — callers that build pairs
+    from a separately-sorted list cost nothing; callers that forget to
+    sort get a `ValueError` instead of silently wrong output. Overlap
+    handling matches `splice_spans`: earlier-starting span wins, later
+    overlapping span is skipped. Use this when callers have already
+    rendered each span (e.g. to avoid double-calling a renderer once
+    for the response and once for the spliced text).
     """
     if not ordered_replacements:
         return text
+    prev_key = (-1, -1)
+    for s, _ in ordered_replacements:
+        key = (s["start"], s["end"])
+        if key < prev_key:
+            raise ValueError(
+                "splice_pieces requires ordered_replacements sorted by "
+                f"(start, end); got {prev_key} before {key}"
+            )
+        prev_key = key
     pieces: list[str] = []
     cursor = 0
     for s, replacement in ordered_replacements:

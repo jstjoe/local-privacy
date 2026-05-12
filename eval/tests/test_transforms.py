@@ -75,6 +75,17 @@ def test_splice_spans_skips_overlap_keeps_earlier():
     assert out == "[A] tail"
 
 
+def test_splice_pieces_rejects_unsorted_input():
+    """Future-proofing for a second caller — splice_pieces raises on
+    out-of-order pairs instead of silently producing wrong output."""
+    unordered = [
+        (_span("EMAIL", "b@x.com", 10, 17), "[EMAIL_2]"),
+        (_span("EMAIL", "a@x.com", 0, 7), "[EMAIL_1]"),
+    ]
+    with pytest.raises(ValueError, match="sorted by"):
+        splice_pieces("a@x.com and b@x.com", unordered)
+
+
 def test_splice_pieces_uses_pre_rendered_strings():
     """splice_pieces lets callers avoid calling the renderer twice — proves
     callers can use a non-idempotent renderer (e.g. one that returns a
