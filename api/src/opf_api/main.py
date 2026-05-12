@@ -11,7 +11,6 @@ from fastapi import FastAPI  # noqa: E402
 
 from .registry import build_default_registry  # noqa: E402
 from .routes import router  # noqa: E402
-from .routes_legacy import legacy_router  # noqa: E402
 from .vault_tokens import TokenVaultClient  # noqa: E402
 
 
@@ -68,4 +67,3 @@ app = FastAPI(
     ),
 )
 app.include_router(router, prefix="/v1")
-app.include_router(legacy_router)

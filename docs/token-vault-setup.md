@@ -1,6 +1,6 @@
-# Token vault setup for `/v1/tokenize` (`vault_token` mode)
+# Token vault setup for `/v1/sanitize` (`label_token` mode)
 
-The `vault_token` token format in `POST /v1/tokenize` inserts each detected
+The `label_token` mode in `POST /v1/sanitize` inserts each detected
 entity value into a Skyflow vault and uses the deterministic
 format-preserving token Skyflow returns as the replacement. Same plaintext →
 same token, forever.
@@ -255,16 +255,16 @@ Set these env vars before starting `uvicorn opf_api.main:app`:
 | `SKYFLOW_BEARER_TOKEN`         | One of   | Reused from the existing Skyflow detector when set.                                         |
 | `SKYFLOW_TOKEN_VAULT_TABLE`    | No       | Default `entities`.                                                                          |
 
-Without these, `/v1/tokenize` with `token_format=vault_token` returns 400.
+Without these, `/v1/sanitize` with `mode=label_token` returns 400.
 With them, it returns 502 if the vault request fails for any reason.
 
 ## Smoke-test
 
 ```bash
-curl -s localhost:8000/v1/tokenize -H 'content-type: application/json' -d '{
+curl -s localhost:8000/v1/sanitize -H 'content-type: application/json' -d '{
   "text": "Email alice@x.com or call +1-415-555-0100.",
   "detector": "presidio",
-  "token_format": "vault_token"
+  "mode": "label_token"
 }' | jq
 
 # Run again — tokens for the same plaintext must match.

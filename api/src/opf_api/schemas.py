@@ -6,11 +6,16 @@ from pydantic import BaseModel, Field
 
 
 DecodeMode = Literal["viterbi", "argmax"]
-PlaceholderFormat = Literal["bracket", "opf_native"]
-TokenFormat = Literal["label", "label_numbered", "vault_token"]
+
+# Four sanitization modes, in increasing strength of identity preservation:
+#   redact        -> "********" (fixed-length asterisks; no information leaks)
+#   label         -> "[EMAIL]" (default; category label only)
+#   label_number  -> "[EMAIL_1]" (per-request counters; duplicates reuse numbers)
+#   label_token   -> "[EMAIL_jRc7QGn]" (deterministic Skyflow vault token)
+SanitizeMode = Literal["redact", "label", "label_number", "label_token"]
 
 
-class RedactRequest(BaseModel):
+class SanitizeRequest(BaseModel):
     text: str
     detector: str | None = Field(
         default=None,
@@ -28,19 +33,24 @@ class RedactRequest(BaseModel):
         default=None,
         description="OPF-only. Ignored by other detectors.",
     )
-    placeholder_format: PlaceholderFormat = Field(
-        default="bracket",
-        description="`bracket` = `[CATEGORY]`. `opf_native` only valid for OPF.",
+    mode: SanitizeMode = Field(
+        default="label",
+        description=(
+            "`redact` -> `********` (fixed asterisks). "
+            "`label` -> `[EMAIL]` (default). "
+            "`label_number` -> `[EMAIL_1]` (per-request counter, duplicates reuse number). "
+            "`label_token` -> `[EMAIL_jRc7QGn]` (deterministic 7-char Skyflow vault token)."
+        ),
     )
 
 
-class SpanOut(BaseModel):
+class SanitizedSpan(BaseModel):
     label: str
     raw_label: str
     start: int
     end: int
     text: str
-    placeholder: str | None = None
+    replacement: str
 
 
 class SummaryOut(BaseModel):
@@ -50,14 +60,25 @@ class SummaryOut(BaseModel):
     by_label: dict[str, int]
 
 
-class RedactResponse(BaseModel):
+class SanitizeResponse(BaseModel):
     schema_version: int
     detector: str
+    mode: SanitizeMode
     text: str
-    detected_spans: list[SpanOut]
-    redacted_text: str
+    detected_spans: list[SanitizedSpan]
+    sanitized_text: str
     summary: SummaryOut
     warning: str | None = None
+
+
+class SpanOut(BaseModel):
+    """Plain span for /v1/detect — no replacement text."""
+
+    label: str
+    raw_label: str
+    start: int
+    end: int
+    text: str
 
 
 class DetectResponse(BaseModel):
@@ -65,54 +86,6 @@ class DetectResponse(BaseModel):
     detector: str
     text: str
     detected_spans: list[SpanOut]
-    summary: SummaryOut
-    warning: str | None = None
-
-
-class TokenizeRequest(BaseModel):
-    text: str
-    detector: str | None = Field(
-        default=None,
-        description="Detector name from /v1/detectors. None = use DEFAULT_DETECTOR env.",
-    )
-    categories: list[str] | None = Field(
-        default=None,
-        description=(
-            "Canonical categories to keep. Valid: PERSON, EMAIL, PHONE, "
-            "ADDRESS, URL, DATE, ACCOUNT, SECRET, USERNAME, DEMOGRAPHIC, "
-            "ORGANIZATION, OCCUPATION, MONEY, VEHICLE, PHYSICAL. None = keep all."
-        ),
-    )
-    decode_mode: DecodeMode | None = Field(
-        default=None,
-        description="OPF-only. Ignored by other detectors.",
-    )
-    token_format: TokenFormat = Field(
-        default="label_numbered",
-        description=(
-            "`label` = `[EMAIL]`. `label_numbered` = `[EMAIL_1]`, numbered per-label "
-            "in order of first appearance, duplicates share a number. "
-            "`vault_token` = `[EMAIL_jRc7QGn]`, deterministic 7-char token from "
-            "the configured Skyflow token vault."
-        ),
-    )
-
-
-class TokenSpanOut(BaseModel):
-    label: str
-    raw_label: str
-    start: int
-    end: int
-    text: str
-    token: str
-
-
-class TokenizeResponse(BaseModel):
-    schema_version: int
-    detector: str
-    text: str
-    detected_spans: list[TokenSpanOut]
-    tokenized_text: str
     summary: SummaryOut
     warning: str | None = None
 
@@ -134,51 +107,3 @@ class HealthResponse(BaseModel):
     default_detector: str
     loaded_detectors: list[str]
     schema_version: int
-
-
-# --- Legacy v0 schemas for back-compat /redact, /detect, /health ---
-
-LegacyOutputMode = Literal["typed", "redacted"]
-
-
-class LegacyRedactRequest(BaseModel):
-    text: str
-    categories: list[str] | None = Field(
-        default=None,
-        description="Legacy: raw OPF labels (private_email, etc.). None = keep all.",
-    )
-    decode_mode: DecodeMode | None = None
-    output_mode: LegacyOutputMode | None = None
-
-
-class LegacySpanOut(BaseModel):
-    label: str
-    start: int
-    end: int
-    text: str
-    placeholder: str
-
-
-class LegacyRedactResponse(BaseModel):
-    schema_version: int
-    summary: dict
-    text: str
-    detected_spans: list[LegacySpanOut]
-    redacted_text: str
-    warning: str | None = None
-
-
-class LegacyDetectResponse(BaseModel):
-    schema_version: int
-    summary: dict
-    text: str
-    detected_spans: list[LegacySpanOut]
-    warning: str | None = None
-
-
-class LegacyHealthResponse(BaseModel):
-    status: Literal["ok"]
-    checkpoint_path: str
-    schema_version: int
-    decode_mode: DecodeMode
-    output_mode: LegacyOutputMode
