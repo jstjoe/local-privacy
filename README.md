@@ -305,7 +305,7 @@ Hit `GET /v1/detectors` to see what's currently registered in your deployment.
 | `OPF_DEVICE`                   | `cpu`, `cuda`, `mps`. Default `cpu`.                                 |
 | `OPF_DECODE_MODE`              | `viterbi` or `argmax`. OPF-only. Default `viterbi`.                  |
 | `SKYFLOW_VAULT_URL` / `_ID` / `_BEARER_TOKEN` | Required for the `skyflow` **detector**.              |
-| `SKYFLOW_TOKEN_VAULT_URL` / `_ID` / `_BEARER_TOKEN` | Required for `/v1/tokenize` `vault_token` mode. See [docs/token-vault-setup.md](docs/token-vault-setup.md). |
+| `SKYFLOW_TOKEN_VAULT_URL` / `_ID` / `_BEARER_TOKEN` | Required for `/v1/sanitize` `label_token` mode. See [docs/token-vault-setup.md](docs/token-vault-setup.md). |
 
 ---
 
@@ -333,7 +333,7 @@ Response (`200`):
   "text": "Email joe@example.com about the trip to Elgin, TX.",
   "detected_spans": [
     {"label": "EMAIL", "raw_label": "EMAIL_ADDRESS",
-     "start": 6, "end": 21, "text": "joe@example.com", "placeholder": null}
+     "start": 6, "end": 21, "text": "joe@example.com"}
   ],
   "summary": {"span_count": 1, "by_label": {"EMAIL": 1}},
   "warning": null
@@ -344,54 +344,24 @@ Errors: `400` unknown detector or unknown category. `502` detector backend failu
 
 ---
 
-### `POST /v1/redact`
+### `POST /v1/sanitize`
 
-Same detection, plus `redacted_text` with each span swapped for a placeholder.
+Detect + rewrite each detected span under the chosen `mode`. Four modes, in increasing strength of identity preservation:
 
-Extra request fields:
+| `mode`         | Looks like         | What it preserves |
+|----------------|--------------------|-------------------|
+| `redact`       | `********`         | Nothing — fixed 8-character asterisk run regardless of span length. |
+| `label`        | `[EMAIL]`          | Category only. Default mode. |
+| `label_number` | `[EMAIL_1]`        | Identity **within one request**. Per-label counter; duplicate `(label, text)` reuses its number. |
+| `label_token`  | `[EMAIL_MGaE1Bo]`  | Identity **across requests and detectors** via a Skyflow vault. Deterministic — same plaintext → same 7-char token forever. |
 
-| Field                | Type                       | Default     | Notes                                                          |
-|----------------------|----------------------------|-------------|----------------------------------------------------------------|
-| `placeholder_format` | `"bracket" \| "opf_native"` | `"bracket"` | `bracket` → `[EMAIL]`. `opf_native` → `<PRIVATE_EMAIL>` (only valid when `detector="opf"`). |
-
-Response adds `redacted_text` and each span carries its rendered `placeholder`:
-
-```json
-{
-  "detector": "presidio",
-  "redacted_text": "Email [EMAIL] about the trip to [ADDRESS].",
-  "detected_spans": [
-    {"label": "EMAIL", "raw_label": "EMAIL_ADDRESS",
-     "start": 6, "end": 21, "text": "joe@example.com",
-     "placeholder": "[EMAIL]"}
-  ],
-  "summary": {"span_count": 2, "by_label": {"EMAIL": 1, "ADDRESS": 1}}
-}
-```
-
-Overlapping spans: the earlier-starting span wins; later overlaps are skipped in `redacted_text` (still listed in `detected_spans`).
-
-Errors: as `/v1/detect`. Plus `400` when `placeholder_format="opf_native"` with a non-OPF detector.
-
----
-
-### `POST /v1/tokenize`
-
-Replaces detected spans with stable **tokens** rather than generic placeholders. Three token formats:
-
-| `token_format`     | Looks like         | Stability                                                              |
-|--------------------|--------------------|------------------------------------------------------------------------|
-| `label`            | `[EMAIL]`          | None — equivalent to `/redact` with `placeholder_format=bracket`.       |
-| `label_numbered`   | `[EMAIL_1]`        | Per request. Numbered in order of first appearance, per label. Duplicate `(label, text)` reuses its number. |
-| `vault_token`      | `[EMAIL_MGaE1Bo]`  | Forever. 7-char alphanumeric deterministic token from a Skyflow vault. Same plaintext → same token, across requests, across detectors. |
-
-Request (defaults `token_format` to `label_numbered`):
+Request:
 
 ```json
 {
   "text": "Email alice@x.com or call +1-415-555-0100.",
   "detector": "presidio",
-  "token_format": "vault_token"
+  "mode": "label_token"
 }
 ```
 
@@ -401,24 +371,27 @@ Response (`200`):
 {
   "schema_version": 1,
   "detector": "presidio",
+  "mode": "label_token",
   "text": "Email alice@x.com or call +1-415-555-0100.",
-  "tokenized_text": "Email [EMAIL_MGaE1Bo] or call [PHONE_vRXiWKZ].",
+  "sanitized_text": "Email [EMAIL_MGaE1Bo] or call [PHONE_vRXiWKZ].",
   "detected_spans": [
     {"label": "EMAIL", "raw_label": "EMAIL_ADDRESS",
      "start": 6, "end": 17, "text": "alice@x.com",
-     "token": "[EMAIL_MGaE1Bo]"},
+     "replacement": "[EMAIL_MGaE1Bo]"},
     {"label": "PHONE", "raw_label": "PHONE_NUMBER",
      "start": 27, "end": 42, "text": "+1-415-555-0100",
-     "token": "[PHONE_vRXiWKZ]"}
+     "replacement": "[PHONE_vRXiWKZ]"}
   ],
   "summary": {"span_count": 2, "by_label": {"EMAIL": 1, "PHONE": 1}},
   "warning": null
 }
 ```
 
-`vault_token` requires `SKYFLOW_TOKEN_VAULT_URL` + `SKYFLOW_TOKEN_VAULT_ID` and a bearer (`SKYFLOW_TOKEN_BEARER_TOKEN`, or falls back to `SKYFLOW_BEARER_TOKEN`). The vault must be configured per [docs/token-vault-setup.md](docs/token-vault-setup.md) — one table with one `tok_<label>` column per canonical label, each `DETERMINISTIC_FPT` with regex `^[A-Za-z0-9]{7}$`.
+Overlapping spans: the earlier-starting span wins; later overlaps are skipped in `sanitized_text` (still listed in `detected_spans`).
 
-Errors: `400` when `vault_token` requested but env not set. `502` when the vault call fails. Spans whose canonical label has no vault column fall back to `[LABEL]` for that span only.
+`label_token` requires `SKYFLOW_TOKEN_VAULT_URL` + `SKYFLOW_TOKEN_VAULT_ID` and a bearer (`SKYFLOW_TOKEN_BEARER_TOKEN`, or falls back to `SKYFLOW_BEARER_TOKEN`). The vault must be configured per [docs/token-vault-setup.md](docs/token-vault-setup.md) — one table with one `tok_<label>` column per canonical label, each `DETERMINISTIC_FPT` with regex `^[A-Za-z0-9]{7}$`.
+
+Errors: `400` for unknown detector / unknown category / `label_token` without vault env. `502` for detector backend failure or vault call failure. Spans whose canonical label has no vault column fall back to `[LABEL]` for that span only.
 
 ---
 
@@ -455,9 +428,3 @@ Liveness + which detectors are loaded.
 ```
 
 Always `200` when the process is up; does not probe detector backends.
-
----
-
-### Legacy endpoints (deprecated)
-
-`POST /redact`, `POST /detect`, `GET /health` — OPF-only, raw OPF label space (`private_email` etc.), kept for back-compat. Prefer the `/v1/*` versions.

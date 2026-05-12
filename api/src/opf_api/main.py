@@ -11,7 +11,6 @@ from fastapi import FastAPI  # noqa: E402
 
 from .registry import build_default_registry  # noqa: E402
 from .routes import router  # noqa: E402
-from .routes_legacy import legacy_router  # noqa: E402
 from .vault_tokens import TokenVaultClient  # noqa: E402
 
 
@@ -19,7 +18,10 @@ logger = logging.getLogger("opf_api")
 logging.basicConfig(level=logging.INFO)
 
 
-SCHEMA_VERSION = 1
+# Bumped to 2 with the /v1/sanitize consolidation: response shape changed
+# (`sanitized_text` replaces `redacted_text`/`tokenized_text`, `replacement`
+# replaces `placeholder`/`token`, new `mode` field on SanitizeResponse).
+SCHEMA_VERSION = 2
 
 
 @asynccontextmanager
@@ -68,4 +70,3 @@ app = FastAPI(
     ),
 )
 app.include_router(router, prefix="/v1")
-app.include_router(legacy_router)

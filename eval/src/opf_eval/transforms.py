@@ -1,4 +1,4 @@
-"""Text-transform helpers for redaction and tokenization.
+"""Text-transform helpers for the /v1/sanitize endpoint and notebook demo.
 
 Single source of truth for the rendering logic shared between the
 FastAPI service (`api/src/opf_api/routes.py`) and the eval-side
@@ -9,15 +9,14 @@ notebook demo. Lives in `opf_eval` because:
 - the helpers themselves are pure-Python span-splice logic with no
   FastAPI dependency.
 
-Three renderer factories cover the five user-facing modes:
+Four renderer factories cover the four user-facing modes:
 
-| Mode             | Factory                          | Notes                                    |
-|------------------|----------------------------------|------------------------------------------|
-| `bracket`        | `placeholder_renderer("bracket")`| `[EMAIL]`                                |
-| `opf_native`     | `placeholder_renderer("opf_native")`| `<RAW_LABEL>` — OPF detector only.     |
-| `label`          | `placeholder_renderer("bracket")`| Same shape as `bracket`; only the field name on `TokenizeResponse` differs. |
-| `label_numbered` | `label_numbered_renderer()`      | Per-label counter, duplicate-aware. State is per closure. |
-| `vault_token`    | `vault_token_renderer(...)`      | One batch insert against a Skyflow vault. |
+| Mode           | Factory                                | Notes                                              |
+|----------------|----------------------------------------|----------------------------------------------------|
+| `redact`       | `redact_renderer()`                    | Fixed-length `********` (no info leak).            |
+| `label`        | `label_renderer()`                     | `[CANONICAL_LABEL]` (default mode).                |
+| `label_number` | `label_number_renderer()`              | Per-label counter, duplicate-aware. Stateful.      |
+| `label_token`  | `label_token_renderer(spans, client)`  | One batch insert against a Skyflow vault.          |
 
 `render_modes` is the convenience entry point for the notebook — it
 runs every requested mode at once and returns a dict for easy display.
@@ -30,7 +29,12 @@ from typing import Callable, Iterable, Literal, Protocol
 from .detectors.base import Span
 
 
-Mode = Literal["bracket", "opf_native", "label", "label_numbered", "vault_token"]
+Mode = Literal["redact", "label", "label_number", "label_token"]
+
+
+# Fixed-length asterisk run used by `redact` mode. Always 8 chars
+# regardless of the original span length, so nothing leaks.
+REDACT_PLACEHOLDER = "*" * 8
 
 
 class TokenizerProtocol(Protocol):
@@ -46,6 +50,44 @@ class TokenizerProtocol(Protocol):
     ) -> dict[tuple[str, str], str]: ...
 
 
+def splice_pieces(
+    text: str,
+    ordered_replacements: list[tuple[Span, str]],
+) -> str:
+    """Splice pre-rendered replacement strings into `text`.
+
+    `ordered_replacements` MUST be sorted by span `(start, end)`. The
+    invariant is checked at the top in O(n) — callers that build pairs
+    from a separately-sorted list cost nothing; callers that forget to
+    sort get a `ValueError` instead of silently wrong output. Overlap
+    handling matches `splice_spans`: earlier-starting span wins, later
+    overlapping span is skipped. Use this when callers have already
+    rendered each span (e.g. to avoid double-calling a renderer once
+    for the response and once for the spliced text).
+    """
+    if not ordered_replacements:
+        return text
+    prev_key = (-1, -1)
+    for s, _ in ordered_replacements:
+        key = (s["start"], s["end"])
+        if key < prev_key:
+            raise ValueError(
+                "splice_pieces requires ordered_replacements sorted by "
+                f"(start, end); got {prev_key} before {key}"
+            )
+        prev_key = key
+    pieces: list[str] = []
+    cursor = 0
+    for s, replacement in ordered_replacements:
+        if s["start"] < cursor:
+            continue
+        pieces.append(text[cursor : s["start"]])
+        pieces.append(replacement)
+        cursor = s["end"]
+    pieces.append(text[cursor:])
+    return "".join(pieces)
+
+
 def splice_spans(
     text: str,
     spans: list[Span],
@@ -54,43 +96,37 @@ def splice_spans(
     """Replace each non-overlapping span in `text` with `render(span)`.
 
     Spans are sorted by `(start, end)`. When two spans overlap the
-    earlier-starting one wins and the later one is skipped, mirroring
-    the original `_redact_text` behaviour.
+    earlier-starting one wins and the later one is skipped. Renders
+    each span exactly once.
     """
     if not spans:
         return text
     ordered = sorted(spans, key=lambda s: (s["start"], s["end"]))
-    pieces: list[str] = []
-    cursor = 0
-    for s in ordered:
-        if s["start"] < cursor:
-            continue
-        pieces.append(text[cursor : s["start"]])
-        pieces.append(render(s))
-        cursor = s["end"]
-    pieces.append(text[cursor:])
-    return "".join(pieces)
+    return splice_pieces(text, [(s, render(s)) for s in ordered])
 
 
-def placeholder_renderer(fmt: str) -> Callable[[Span], str]:
-    """`bracket` -> `[CANONICAL_LABEL]`. `opf_native` -> `<RAW_LABEL>` (upper).
+def redact_renderer() -> Callable[[Span], str]:
+    """Always returns `REDACT_PLACEHOLDER` regardless of span."""
 
-    Anything else is treated as `bracket` to keep the surface forgiving
-    for the notebook (which may pass mode strings through unchanged).
-    """
+    def render(_span: Span) -> str:
+        return REDACT_PLACEHOLDER
+
+    return render
+
+
+def label_renderer() -> Callable[[Span], str]:
+    """`[CANONICAL_LABEL]`."""
 
     def render(span: Span) -> str:
-        if fmt == "opf_native":
-            return f"<{span['raw_label'].upper()}>"
         return f"[{span['label']}]"
 
     return render
 
 
-def label_numbered_renderer() -> Callable[[Span], str]:
+def label_number_renderer() -> Callable[[Span], str]:
     """Per-label counter; duplicate `(label, text)` reuses its number.
 
-    The counter state lives in this closure, so each request / each
+    Counter state lives in this closure, so each request / each
     notebook example gets a fresh numbering — there is no cross-call
     leak.
     """
@@ -112,7 +148,7 @@ class VaultTokenError(RuntimeError):
     as a 502; the notebook can show the error message inline."""
 
 
-def vault_token_renderer(
+def label_token_renderer(
     spans: list[Span],
     client: TokenizerProtocol,
 ) -> Callable[[Span], str]:
@@ -147,7 +183,7 @@ def vault_token_renderer(
     return render
 
 
-VAULT_TOKEN_NOT_CONFIGURED = "(set SKYFLOW_TOKEN_VAULT_* to enable)"
+LABEL_TOKEN_NOT_CONFIGURED = "(set SKYFLOW_TOKEN_VAULT_* to enable)"
 
 
 def render_modes(
@@ -155,33 +191,28 @@ def render_modes(
     spans: list[Span],
     *,
     modes: Iterable[Mode],
-    detector_name: str | None = None,
     token_vault_client: TokenizerProtocol | None = None,
 ) -> dict[str, str]:
     """Run every requested mode at once and return `{mode: rendered_text}`.
 
-    - `opf_native` returns `"—"` unless `detector_name == "opf"`.
-    - `vault_token` returns `VAULT_TOKEN_NOT_CONFIGURED` when
-      `token_vault_client is None`, and the error message on any vault
-      failure (so the notebook stays running instead of bailing).
+    `label_token` returns `LABEL_TOKEN_NOT_CONFIGURED` when
+    `token_vault_client is None`, and the error message inline on any
+    vault failure (so the notebook stays running instead of bailing).
     """
     out: dict[str, str] = {}
     for mode in modes:
-        if mode == "opf_native" and detector_name != "opf":
-            out[mode] = "—"
+        if mode == "label_token" and token_vault_client is None:
+            out[mode] = LABEL_TOKEN_NOT_CONFIGURED
             continue
-        if mode == "vault_token" and token_vault_client is None:
-            out[mode] = VAULT_TOKEN_NOT_CONFIGURED
-            continue
-        if mode in ("bracket", "label"):
-            renderer = placeholder_renderer("bracket")
-        elif mode == "opf_native":
-            renderer = placeholder_renderer("opf_native")
-        elif mode == "label_numbered":
-            renderer = label_numbered_renderer()
-        elif mode == "vault_token":
+        if mode == "redact":
+            renderer = redact_renderer()
+        elif mode == "label":
+            renderer = label_renderer()
+        elif mode == "label_number":
+            renderer = label_number_renderer()
+        elif mode == "label_token":
             try:
-                renderer = vault_token_renderer(spans, token_vault_client)  # type: ignore[arg-type]
+                renderer = label_token_renderer(spans, token_vault_client)  # type: ignore[arg-type]
             except VaultTokenError as e:
                 out[mode] = f"(vault error: {e})"
                 continue

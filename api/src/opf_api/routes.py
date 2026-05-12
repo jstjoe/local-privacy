@@ -10,24 +10,24 @@ from opf_eval.detectors.base import Span
 from opf_eval.taxonomy import CANONICAL_LABELS
 from opf_eval.transforms import (
     VaultTokenError,
-    label_numbered_renderer,
-    placeholder_renderer,
-    splice_spans,
-    vault_token_renderer,
+    label_number_renderer,
+    label_renderer,
+    label_token_renderer,
+    redact_renderer,
+    splice_pieces,
 )
 
 from .registry import DetectorEntry, detector_categories
 from .schemas import (
     DetectorInfo,
     DetectorsResponse,
+    DetectRequest,
     DetectResponse,
     HealthResponse,
-    RedactRequest,
-    RedactResponse,
+    SanitizedSpan,
+    SanitizeRequest,
+    SanitizeResponse,
     SpanOut,
-    TokenizeRequest,
-    TokenizeResponse,
-    TokenSpanOut,
 )
 from .vault_tokens import TokenVaultClient
 
@@ -65,14 +65,6 @@ def _validate_categories(categories: list[str] | None) -> set[str] | None:
     return set(categories)
 
 
-def _placeholder_for(span: Span, fmt: str) -> str:
-    return placeholder_renderer(fmt)(span)
-
-
-def _redact_text(text: str, spans: list[Span], fmt: str) -> str:
-    return splice_spans(text, spans, placeholder_renderer(fmt))
-
-
 class _DetectInput(Protocol):
     text: str
     detector: str | None
@@ -83,7 +75,7 @@ class _DetectInput(Protocol):
 async def _run_detect(request: Request, body: _DetectInput) -> tuple[str, list[Span]]:
     name, entry = _resolve_detector(request, body.detector)
     if body.decode_mode is not None and name != "opf":
-        # Silently no-op rather than 400 — plan 06 says ignore for non-OPF.
+        # Silently no-op rather than 400 — ignore for non-OPF.
         pass
 
     detector = await entry.get()
@@ -100,83 +92,64 @@ async def _run_detect(request: Request, body: _DetectInput) -> tuple[str, list[S
     return name, spans
 
 
-def _to_span_out(span: Span, fmt: str, *, with_placeholder: bool) -> SpanOut:
-    return SpanOut(
-        label=span["label"],
-        raw_label=span["raw_label"],
-        start=span["start"],
-        end=span["end"],
-        text=span["text"],
-        placeholder=_placeholder_for(span, fmt) if with_placeholder else None,
-    )
-
-
-def _check_opf_native(body: RedactRequest, detector_name: str) -> None:
-    if body.placeholder_format == "opf_native" and detector_name != "opf":
-        raise HTTPException(
-            status_code=400,
-            detail="placeholder_format='opf_native' is only valid with detector='opf'",
-        )
-
-
-@router.post("/redact", response_model=RedactResponse)
-async def redact(request: Request, body: RedactRequest) -> RedactResponse:
-    name, _ = _resolve_detector(request, body.detector)
-    _check_opf_native(body, name)
-    name, spans = await _run_detect(request, body)
-    fmt = body.placeholder_format
-    redacted = _redact_text(body.text, spans, fmt)
-    by_label = Counter(s["label"] for s in spans)
-    return RedactResponse(
-        schema_version=request.app.state.schema_version,
-        detector=name,
-        text=body.text,
-        detected_spans=[_to_span_out(s, fmt, with_placeholder=True) for s in spans],
-        redacted_text=redacted,
-        summary={"span_count": len(spans), "by_label": dict(by_label)},
-        warning=None,
-    )
-
-
 @router.post("/detect", response_model=DetectResponse)
-async def detect(request: Request, body: RedactRequest) -> DetectResponse:
-    name, _ = _resolve_detector(request, body.detector)
-    _check_opf_native(body, name)
+async def detect(request: Request, body: DetectRequest) -> DetectResponse:
+    """Detect-only: returns spans, no text rewriting."""
     name, spans = await _run_detect(request, body)
-    by_label = Counter(s["label"] for s in spans)
+    ordered = sorted(spans, key=lambda s: (s["start"], s["end"]))
+    out_spans = [
+        SpanOut(
+            label=s["label"],
+            raw_label=s["raw_label"],
+            start=s["start"],
+            end=s["end"],
+            text=s["text"],
+        )
+        for s in ordered
+    ]
+    by_label = Counter(s.label for s in out_spans)
     return DetectResponse(
         schema_version=request.app.state.schema_version,
         detector=name,
         text=body.text,
-        detected_spans=[_to_span_out(s, body.placeholder_format, with_placeholder=False) for s in spans],
-        summary={"span_count": len(spans), "by_label": dict(by_label)},
+        detected_spans=out_spans,
+        summary={"span_count": len(out_spans), "by_label": dict(by_label)},
         warning=None,
     )
 
 
-def _build_vault_token_renderer_raising_http(
+def _build_label_token_renderer_raising_http(
     spans: list[Span],
     client: TokenVaultClient,
 ) -> Callable[[Span], str]:
-    """Thin wrapper that converts shared module's `VaultTokenError` into
-    the route-level HTTPException(502). Keeps the shared helper free of
-    FastAPI types."""
+    """Thin wrapper that converts the shared module's `VaultTokenError`
+    into a 502 HTTPException. Keeps the shared helper free of FastAPI."""
     try:
-        return vault_token_renderer(spans, client)
+        return label_token_renderer(spans, client)
     except VaultTokenError as e:
-        raise HTTPException(status_code=502, detail=f"vault_token: {e}")
+        raise HTTPException(status_code=502, detail=f"label_token: {e}")
 
 
-@router.post("/tokenize", response_model=TokenizeResponse)
-async def tokenize(request: Request, body: TokenizeRequest) -> TokenizeResponse:
+@router.post("/sanitize", response_model=SanitizeResponse)
+async def sanitize(request: Request, body: SanitizeRequest) -> SanitizeResponse:
+    """Detect + rewrite the input text under the chosen `mode`.
+
+    Modes:
+      - `redact`       -> fixed-length asterisks (`********`)
+      - `label`        -> `[EMAIL]` (default)
+      - `label_number` -> `[EMAIL_1]`, per-request counter
+      - `label_token`  -> `[EMAIL_jRc7QGn]`, deterministic Skyflow vault token
+    """
     name, spans = await _run_detect(request, body)
+    mode = body.mode
 
-    fmt = body.token_format
-    if fmt == "label":
-        render: Callable[[Span], str] = lambda s: f"[{s['label']}]"  # noqa: E731
-    elif fmt == "label_numbered":
-        render = label_numbered_renderer()
-    elif fmt == "vault_token":
+    if mode == "redact":
+        render: Callable[[Span], str] = redact_renderer()
+    elif mode == "label":
+        render = label_renderer()
+    elif mode == "label_number":
+        render = label_number_renderer()
+    elif mode == "label_token":
         client: TokenVaultClient | None = getattr(
             request.app.state, "token_vault_client", None
         )
@@ -184,43 +157,46 @@ async def tokenize(request: Request, body: TokenizeRequest) -> TokenizeResponse:
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    "token_format='vault_token' requires SKYFLOW_TOKEN_VAULT_URL "
+                    "mode='label_token' requires SKYFLOW_TOKEN_VAULT_URL "
                     "and SKYFLOW_TOKEN_VAULT_ID env vars to be set"
                 ),
             )
-        # TokenVaultClient uses httpx.Client (sync) so the Skyflow round-trip
-        # would block the event loop if called directly. Same pattern as the
-        # detector call in _run_detect.
+        # TokenVaultClient uses httpx.Client (sync) — wrap in to_thread so
+        # the Skyflow round-trip doesn't block the event loop.
         render = await asyncio.to_thread(
-            _build_vault_token_renderer_raising_http, spans, client
+            _build_label_token_renderer_raising_http, spans, client
         )
     else:  # pragma: no cover — pydantic Literal blocks other values
-        raise HTTPException(status_code=400, detail=f"unknown token_format: {fmt!r}")
+        raise HTTPException(status_code=400, detail=f"unknown mode: {mode!r}")
 
-    # Render in sorted order first so label_numbered's per-call counter
-    # assigns numbers in document order, then splice using the same renderer
-    # (idempotent — duplicate (label, text) returns the assigned number).
+    # Render each span exactly once in sorted order. Reuse the rendered
+    # strings for both the response (out_spans) and the spliced text via
+    # splice_pieces — no implicit dependency on the renderer being
+    # idempotent across multiple calls.
     ordered = sorted(spans, key=lambda s: (s["start"], s["end"]))
+    rendered_pairs: list[tuple[Span, str]] = [(s, render(s)) for s in ordered]
+
     out_spans = [
-        TokenSpanOut(
+        SanitizedSpan(
             label=s["label"],
             raw_label=s["raw_label"],
             start=s["start"],
             end=s["end"],
             text=s["text"],
-            token=render(s),
+            replacement=replacement,
         )
-        for s in ordered
+        for s, replacement in rendered_pairs
     ]
-    tokenized = splice_spans(body.text, spans, render)
+    sanitized = splice_pieces(body.text, rendered_pairs)
 
     by_label = Counter(s.label for s in out_spans)
-    return TokenizeResponse(
+    return SanitizeResponse(
         schema_version=request.app.state.schema_version,
         detector=name,
+        mode=mode,
         text=body.text,
         detected_spans=out_spans,
-        tokenized_text=tokenized,
+        sanitized_text=sanitized,
         summary={"span_count": len(out_spans), "by_label": dict(by_label)},
         warning=None,
     )
