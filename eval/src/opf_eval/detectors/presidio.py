@@ -17,13 +17,31 @@ To save ~3 GB, swap _lg → _sm. Smaller models hit lower NER quality.
 
 from __future__ import annotations
 
+import logging
 import time
+from contextlib import contextmanager
 
 from presidio_analyzer import AnalyzerEngine
 from presidio_analyzer.nlp_engine import NlpEngineProvider
 
 from ..taxonomy import presidio_to_canonical
 from .base import DetectorResult, Span
+
+
+@contextmanager
+def _silence_presidio_registry_warnings():
+    """Suppress the noisy per-recognizer "language not supported" WARNINGs
+    that presidio-analyzer emits during AnalyzerEngine construction —
+    one per built-in non-English recognizer when the registry is set up
+    English-only. They're informational, not actionable; not worth
+    surfacing to the demo audience."""
+    logger = logging.getLogger("presidio-analyzer")
+    prev_level = logger.level
+    logger.setLevel(logging.ERROR)
+    try:
+        yield
+    finally:
+        logger.setLevel(prev_level)
 
 
 # Keyed on ISO 639-1 code (matches what the fixtures emit; new ai4privacy
@@ -92,9 +110,10 @@ class PresidioDetector:
         )
         nlp_engine = provider.create_engine()
         supported = [m["lang_code"] for m in models]
-        self._analyzer = AnalyzerEngine(
-            nlp_engine=nlp_engine, supported_languages=supported
-        )
+        with _silence_presidio_registry_warnings():
+            self._analyzer = AnalyzerEngine(
+                nlp_engine=nlp_engine, supported_languages=supported
+            )
         self._supported_codes = set(supported)
         self._default_code = "en" if "en" in self._supported_codes else supported[0]
         self._score_threshold = score_threshold

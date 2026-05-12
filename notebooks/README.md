@@ -20,7 +20,8 @@ The setup cell clones two repos:
 - Markdown report rendered inline (headline, per-category, per-language)
 - Optional bar charts: per-category F1 across detectors, latency comparison
 - Raw JSONL outputs in `/content/results/<run_name>/`, copyable to Drive
-- **Section 10 — redaction + tokenization demo**: side-by-side rendering of the same fixtures under five modes (`bracket`, `opf_native`, `label_numbered`, `vault_token`) per detector. Reuses the raw JSONL files from section 5 (no extra detector runs). The `vault_token` column requires a configured Skyflow token vault — see [docs/token-vault-setup.md](../docs/token-vault-setup.md); other modes work without it.
+- **Sanitization section** — side-by-side rendering of the same fixtures under four modes (`redact`, `label`, `label_number`, `label_token`) per detector. Reuses the raw JSONL files from section 5 (no extra detector runs). The `label_token` column requires a configured Skyflow token vault — see [docs/token-vault-setup.md](../docs/token-vault-setup.md); other modes work without it.
+- **Use section** — tiny BM25 search demo over a 20-doc corpus with controlled PII overlap. Sanitizes both the corpus and the queries under every mode, indexes per mode, runs the queries, and prints precision/recall against hand-defined gold relevance sets. Demonstrates that only `label_token` preserves cross-document identity well enough for search / RAG / joins to keep working. Installs [`rank-bm25`](https://pypi.org/project/rank-bm25/) in the setup cell.
 
 ### Detector selection
 
