@@ -14,13 +14,14 @@ from opf_eval.transforms import (
     label_renderer,
     label_token_renderer,
     redact_renderer,
-    splice_spans,
+    splice_pieces,
 )
 
 from .registry import DetectorEntry, detector_categories
 from .schemas import (
     DetectorInfo,
     DetectorsResponse,
+    DetectRequest,
     DetectResponse,
     HealthResponse,
     SanitizedSpan,
@@ -92,7 +93,7 @@ async def _run_detect(request: Request, body: _DetectInput) -> tuple[str, list[S
 
 
 @router.post("/detect", response_model=DetectResponse)
-async def detect(request: Request, body: SanitizeRequest) -> DetectResponse:
+async def detect(request: Request, body: DetectRequest) -> DetectResponse:
     """Detect-only: returns spans, no text rewriting."""
     name, spans = await _run_detect(request, body)
     ordered = sorted(spans, key=lambda s: (s["start"], s["end"]))
@@ -168,10 +169,13 @@ async def sanitize(request: Request, body: SanitizeRequest) -> SanitizeResponse:
     else:  # pragma: no cover — pydantic Literal blocks other values
         raise HTTPException(status_code=400, detail=f"unknown mode: {mode!r}")
 
-    # Render in sorted order first so label_number's per-call counter assigns
-    # numbers in document order, then splice using the same renderer
-    # (idempotent — duplicate (label, text) returns the assigned number).
+    # Render each span exactly once in sorted order. Reuse the rendered
+    # strings for both the response (out_spans) and the spliced text via
+    # splice_pieces — no implicit dependency on the renderer being
+    # idempotent across multiple calls.
     ordered = sorted(spans, key=lambda s: (s["start"], s["end"]))
+    rendered_pairs: list[tuple[Span, str]] = [(s, render(s)) for s in ordered]
+
     out_spans = [
         SanitizedSpan(
             label=s["label"],
@@ -179,11 +183,11 @@ async def sanitize(request: Request, body: SanitizeRequest) -> SanitizeResponse:
             start=s["start"],
             end=s["end"],
             text=s["text"],
-            replacement=render(s),
+            replacement=replacement,
         )
-        for s in ordered
+        for s, replacement in rendered_pairs
     ]
-    sanitized = splice_spans(body.text, spans, render)
+    sanitized = splice_pieces(body.text, rendered_pairs)
 
     by_label = Counter(s.label for s in out_spans)
     return SanitizeResponse(

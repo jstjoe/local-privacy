@@ -18,7 +18,10 @@ logger = logging.getLogger("opf_api")
 logging.basicConfig(level=logging.INFO)
 
 
-SCHEMA_VERSION = 1
+# Bumped to 2 with the /v1/sanitize consolidation: response shape changed
+# (`sanitized_text` replaces `redacted_text`/`tokenized_text`, `replacement`
+# replaces `placeholder`/`token`, new `mode` field on SanitizeResponse).
+SCHEMA_VERSION = 2
 
 
 @asynccontextmanager

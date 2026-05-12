@@ -15,7 +15,9 @@ DecodeMode = Literal["viterbi", "argmax"]
 SanitizeMode = Literal["redact", "label", "label_number", "label_token"]
 
 
-class SanitizeRequest(BaseModel):
+class DetectRequest(BaseModel):
+    """Base request for /v1/detect — no text-rewriting fields."""
+
     text: str
     detector: str | None = Field(
         default=None,
@@ -33,6 +35,12 @@ class SanitizeRequest(BaseModel):
         default=None,
         description="OPF-only. Ignored by other detectors.",
     )
+
+
+class SanitizeRequest(DetectRequest):
+    """Request for /v1/sanitize — DetectRequest plus a `mode` field that
+    picks how detected spans are rewritten."""
+
     mode: SanitizeMode = Field(
         default="label",
         description=(

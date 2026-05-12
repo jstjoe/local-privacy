@@ -109,7 +109,7 @@ def _build_app(
     fake_entry.instance = instance
     app.state.registry = {"fake": fake_entry}
     app.state.default_detector = "fake"
-    app.state.schema_version = 1
+    app.state.schema_version = 2
     app.state.token_vault_client = token_vault_client
     return app
 

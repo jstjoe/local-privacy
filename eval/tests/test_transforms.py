@@ -17,6 +17,7 @@ from opf_eval.transforms import (
     label_token_renderer,
     redact_renderer,
     render_modes,
+    splice_pieces,
     splice_spans,
 )
 
@@ -72,6 +73,35 @@ def test_splice_spans_skips_overlap_keeps_earlier():
     ]
     out = splice_spans("joe@x.com tail", spans, label_renderer())
     assert out == "[A] tail"
+
+
+def test_splice_pieces_uses_pre_rendered_strings():
+    """splice_pieces lets callers avoid calling the renderer twice — proves
+    callers can use a non-idempotent renderer (e.g. one that returns a
+    fresh UUID per call) without the response disagreeing with the
+    spliced text. With splice_spans + a non-idempotent renderer those
+    would diverge."""
+    text = "Joe at joe@example.com lives in Elgin, TX."
+    spans = [
+        _span("EMAIL", "joe@example.com", 7, 22),
+        _span("ADDRESS", "Elgin, TX", 32, 41),
+    ]
+    counter = {"n": 0}
+
+    def fresh_each_call(_span):
+        counter["n"] += 1
+        return f"<R{counter['n']}>"
+
+    ordered = sorted(spans, key=lambda s: (s["start"], s["end"]))
+    pairs = [(s, fresh_each_call(s)) for s in ordered]  # render exactly once
+    spliced = splice_pieces(text, pairs)
+    assert counter["n"] == 2  # one render per span — no double-call
+
+    # The replacement strings in pairs are exactly what ended up in the
+    # spliced text — useful for the route handler reusing them for both
+    # the response and the splice.
+    for _, repl in pairs:
+        assert repl in spliced
 
 
 # --- redact_renderer ------------------------------------------------------

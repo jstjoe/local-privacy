@@ -51,6 +51,32 @@ class TokenizerProtocol(Protocol):
     ) -> dict[tuple[str, str], str]: ...
 
 
+def splice_pieces(
+    text: str,
+    ordered_replacements: list[tuple[Span, str]],
+) -> str:
+    """Splice pre-rendered replacement strings into `text`.
+
+    `ordered_replacements` must be sorted by span (start, end). Overlap
+    handling matches `splice_spans`: an earlier-starting span wins, a
+    later overlapping span is skipped. Use this when callers have
+    already rendered each span (e.g. to avoid double-calling a renderer
+    once for the response and once for the spliced text).
+    """
+    if not ordered_replacements:
+        return text
+    pieces: list[str] = []
+    cursor = 0
+    for s, replacement in ordered_replacements:
+        if s["start"] < cursor:
+            continue
+        pieces.append(text[cursor : s["start"]])
+        pieces.append(replacement)
+        cursor = s["end"]
+    pieces.append(text[cursor:])
+    return "".join(pieces)
+
+
 def splice_spans(
     text: str,
     spans: list[Span],
@@ -59,21 +85,13 @@ def splice_spans(
     """Replace each non-overlapping span in `text` with `render(span)`.
 
     Spans are sorted by `(start, end)`. When two spans overlap the
-    earlier-starting one wins and the later one is skipped.
+    earlier-starting one wins and the later one is skipped. Renders
+    each span exactly once.
     """
     if not spans:
         return text
     ordered = sorted(spans, key=lambda s: (s["start"], s["end"]))
-    pieces: list[str] = []
-    cursor = 0
-    for s in ordered:
-        if s["start"] < cursor:
-            continue
-        pieces.append(text[cursor : s["start"]])
-        pieces.append(render(s))
-        cursor = s["end"]
-    pieces.append(text[cursor:])
-    return "".join(pieces)
+    return splice_pieces(text, [(s, render(s)) for s in ordered])
 
 
 def redact_renderer() -> Callable[[Span], str]:
