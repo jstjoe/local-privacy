@@ -34,6 +34,13 @@ from .taxonomy import (
 )
 
 
+# Shared GLiNER threshold — used by every gliner_* variant for cross-variant
+# comparability. Gretel's recommended setting; trades a bit of recall vs the
+# Nvidia card's 0.3 and the GLiNERDetector default 0.5 in exchange for fewer
+# false positives. Mirrored in api/src/opf_api/registry.py.
+GLINER_THRESHOLD = 0.7
+
+
 def _build_detector(
     name: str,
     *,
@@ -60,13 +67,17 @@ def _build_detector(
     if name == "gliner":
         # Restrict prompts to what this dataset annotates so GLiNER stops
         # over-detecting labels the gold doesn't cover.
-        return GLiNERDetector(prompts=gliner_prompts(dataset_canonicals_set), device=device)
+        return GLiNERDetector(
+            threshold=GLINER_THRESHOLD,
+            prompts=gliner_prompts(dataset_canonicals_set),
+            device=device,
+        )
     if name == "ai4privacy_modernbert":
         return Ai4PrivacyDetector(device=device)
     if name == "gliner_gretel_small":
         return GLiNERDetector(
             model_name="gretelai/gretel-gliner-bi-small-v1.0",
-            threshold=0.7,
+            threshold=GLINER_THRESHOLD,
             prompts=gretel_prompts(),
             label_to_canonical=gretel_to_canonical,
             name="gliner_gretel_small",
@@ -75,18 +86,19 @@ def _build_detector(
     if name == "gliner_gretel_large":
         return GLiNERDetector(
             model_name="gretelai/gretel-gliner-bi-large-v1.0",
-            threshold=0.7,
+            threshold=GLINER_THRESHOLD,
             prompts=gretel_prompts(),
             label_to_canonical=gretel_to_canonical,
             name="gliner_gretel_large",
             device=device,
         )
     if name == "gliner_nvidia":
-        # Same vocabulary as default GLiNER, larger 570M-param base, lower
-        # recommended threshold per model card.
+        # Same vocabulary as default GLiNER, larger 570M-param base. Model
+        # card recommends 0.3 but we run at the shared GLINER_THRESHOLD for
+        # cross-variant comparability — trades some recall for precision.
         return GLiNERDetector(
             model_name="nvidia/gliner-PII",
-            threshold=0.3,
+            threshold=GLINER_THRESHOLD,
             prompts=gliner_prompts(dataset_canonicals_set),
             name="gliner_nvidia",
             device=device,

@@ -20,6 +20,7 @@ The setup cell clones two repos:
 - Markdown report rendered inline (headline, per-category, per-language)
 - Optional bar charts: per-category F1 across detectors, latency comparison
 - Raw JSONL outputs in `/content/results/<run_name>/`, copyable to Drive
+- **Section 10 — redaction + tokenization demo**: side-by-side rendering of the same fixtures under five modes (`bracket`, `opf_native`, `label_numbered`, `vault_token`) per detector. Reuses the raw JSONL files from section 5 (no extra detector runs). The `vault_token` column requires a configured Skyflow token vault — see [docs/token-vault-setup.md](../docs/token-vault-setup.md); other modes work without it.
 
 ### Detector selection
 

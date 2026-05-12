@@ -2,11 +2,19 @@ from __future__ import annotations
 
 import asyncio
 from collections import Counter
+from typing import Callable, Protocol
 
 from fastapi import APIRouter, HTTPException, Request
 
 from opf_eval.detectors.base import Span
 from opf_eval.taxonomy import CANONICAL_LABELS
+from opf_eval.transforms import (
+    VaultTokenError,
+    label_numbered_renderer,
+    placeholder_renderer,
+    splice_spans,
+    vault_token_renderer,
+)
 
 from .registry import DetectorEntry, detector_categories
 from .schemas import (
@@ -17,7 +25,11 @@ from .schemas import (
     RedactRequest,
     RedactResponse,
     SpanOut,
+    TokenizeRequest,
+    TokenizeResponse,
+    TokenSpanOut,
 )
+from .vault_tokens import TokenVaultClient
 
 
 router = APIRouter()
@@ -54,36 +66,22 @@ def _validate_categories(categories: list[str] | None) -> set[str] | None:
 
 
 def _placeholder_for(span: Span, fmt: str) -> str:
-    if fmt == "opf_native":
-        raw = span["raw_label"]
-        return f"<{raw.upper()}>"
-    return f"[{span['label']}]"
+    return placeholder_renderer(fmt)(span)
 
 
 def _redact_text(text: str, spans: list[Span], fmt: str) -> str:
-    if not spans:
-        return text
-    ordered = sorted(spans, key=lambda s: (s["start"], s["end"]))
-    pieces: list[str] = []
-    cursor = 0
-    for s in ordered:
-        if s["start"] < cursor:
-            # Overlap — skip; keeps the earlier-starting placeholder.
-            continue
-        pieces.append(text[cursor : s["start"]])
-        pieces.append(_placeholder_for(s, fmt))
-        cursor = s["end"]
-    pieces.append(text[cursor:])
-    return "".join(pieces)
+    return splice_spans(text, spans, placeholder_renderer(fmt))
 
 
-async def _run_detect(request: Request, body: RedactRequest) -> tuple[str, list[Span]]:
+class _DetectInput(Protocol):
+    text: str
+    detector: str | None
+    categories: list[str] | None
+    decode_mode: object
+
+
+async def _run_detect(request: Request, body: _DetectInput) -> tuple[str, list[Span]]:
     name, entry = _resolve_detector(request, body.detector)
-    if body.placeholder_format == "opf_native" and name != "opf":
-        raise HTTPException(
-            status_code=400,
-            detail="placeholder_format='opf_native' is only valid with detector='opf'",
-        )
     if body.decode_mode is not None and name != "opf":
         # Silently no-op rather than 400 — plan 06 says ignore for non-OPF.
         pass
@@ -113,8 +111,18 @@ def _to_span_out(span: Span, fmt: str, *, with_placeholder: bool) -> SpanOut:
     )
 
 
+def _check_opf_native(body: RedactRequest, detector_name: str) -> None:
+    if body.placeholder_format == "opf_native" and detector_name != "opf":
+        raise HTTPException(
+            status_code=400,
+            detail="placeholder_format='opf_native' is only valid with detector='opf'",
+        )
+
+
 @router.post("/redact", response_model=RedactResponse)
 async def redact(request: Request, body: RedactRequest) -> RedactResponse:
+    name, _ = _resolve_detector(request, body.detector)
+    _check_opf_native(body, name)
     name, spans = await _run_detect(request, body)
     fmt = body.placeholder_format
     redacted = _redact_text(body.text, spans, fmt)
@@ -132,6 +140,8 @@ async def redact(request: Request, body: RedactRequest) -> RedactResponse:
 
 @router.post("/detect", response_model=DetectResponse)
 async def detect(request: Request, body: RedactRequest) -> DetectResponse:
+    name, _ = _resolve_detector(request, body.detector)
+    _check_opf_native(body, name)
     name, spans = await _run_detect(request, body)
     by_label = Counter(s["label"] for s in spans)
     return DetectResponse(
@@ -140,6 +150,78 @@ async def detect(request: Request, body: RedactRequest) -> DetectResponse:
         text=body.text,
         detected_spans=[_to_span_out(s, body.placeholder_format, with_placeholder=False) for s in spans],
         summary={"span_count": len(spans), "by_label": dict(by_label)},
+        warning=None,
+    )
+
+
+def _build_vault_token_renderer_raising_http(
+    spans: list[Span],
+    client: TokenVaultClient,
+) -> Callable[[Span], str]:
+    """Thin wrapper that converts shared module's `VaultTokenError` into
+    the route-level HTTPException(502). Keeps the shared helper free of
+    FastAPI types."""
+    try:
+        return vault_token_renderer(spans, client)
+    except VaultTokenError as e:
+        raise HTTPException(status_code=502, detail=f"vault_token: {e}")
+
+
+@router.post("/tokenize", response_model=TokenizeResponse)
+async def tokenize(request: Request, body: TokenizeRequest) -> TokenizeResponse:
+    name, spans = await _run_detect(request, body)
+
+    fmt = body.token_format
+    if fmt == "label":
+        render: Callable[[Span], str] = lambda s: f"[{s['label']}]"  # noqa: E731
+    elif fmt == "label_numbered":
+        render = label_numbered_renderer()
+    elif fmt == "vault_token":
+        client: TokenVaultClient | None = getattr(
+            request.app.state, "token_vault_client", None
+        )
+        if client is None:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "token_format='vault_token' requires SKYFLOW_TOKEN_VAULT_URL "
+                    "and SKYFLOW_TOKEN_VAULT_ID env vars to be set"
+                ),
+            )
+        # TokenVaultClient uses httpx.Client (sync) so the Skyflow round-trip
+        # would block the event loop if called directly. Same pattern as the
+        # detector call in _run_detect.
+        render = await asyncio.to_thread(
+            _build_vault_token_renderer_raising_http, spans, client
+        )
+    else:  # pragma: no cover — pydantic Literal blocks other values
+        raise HTTPException(status_code=400, detail=f"unknown token_format: {fmt!r}")
+
+    # Render in sorted order first so label_numbered's per-call counter
+    # assigns numbers in document order, then splice using the same renderer
+    # (idempotent — duplicate (label, text) returns the assigned number).
+    ordered = sorted(spans, key=lambda s: (s["start"], s["end"]))
+    out_spans = [
+        TokenSpanOut(
+            label=s["label"],
+            raw_label=s["raw_label"],
+            start=s["start"],
+            end=s["end"],
+            text=s["text"],
+            token=render(s),
+        )
+        for s in ordered
+    ]
+    tokenized = splice_spans(body.text, spans, render)
+
+    by_label = Counter(s.label for s in out_spans)
+    return TokenizeResponse(
+        schema_version=request.app.state.schema_version,
+        detector=name,
+        text=body.text,
+        detected_spans=out_spans,
+        tokenized_text=tokenized,
+        summary={"span_count": len(out_spans), "by_label": dict(by_label)},
         warning=None,
     )
 
