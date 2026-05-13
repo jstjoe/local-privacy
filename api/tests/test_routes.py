@@ -248,6 +248,59 @@ async def test_replace_default_mode_is_label():
 
 
 @pytest.mark.asyncio
+async def test_replace_overlapping_spans_flag_and_splice():
+    # Two overlapping spans on the same text:
+    #   PERSON  start=6  end=20  "Alice Anderson"
+    #   PERSON  start=12 end=20  "Anderson"
+    # Earlier-starting wins. Later overlap stays in detected_spans but
+    # `replaced=false`, and its replacement is NOT spliced into replaced_text.
+    class OverlapDetector:
+        name = "overlap"
+
+        def detect(self, text: str, **_):
+            return {
+                "spans": [
+                    {
+                        "label": "PERSON",
+                        "raw_label": "PERSON_NAME",
+                        "start": 6,
+                        "end": 20,
+                        "text": "Alice Anderson",
+                    },
+                    {
+                        "label": "PERSON",
+                        "raw_label": "PERSON_NAME",
+                        "start": 12,
+                        "end": 20,
+                        "text": "Anderson",
+                    },
+                ],
+                "latency_ms": 0.1,
+                "error": None,
+            }
+
+    async with _client(detector_instance=OverlapDetector()) as c:
+        r = await c.post(
+            "/api/replace",
+            json={"text": "Email Alice Anderson today.", "mode": "label_number"},
+        )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    # Only the earlier-starting span landed; the later overlap was dropped.
+    assert body["replaced_text"] == "Email [PERSON_1] today."
+    # Both spans are still reported, in sorted order, with the flag set
+    # so a client can reconstruct what actually landed.
+    spans = body["detected_spans"]
+    assert len(spans) == 2
+    assert (spans[0]["start"], spans[0]["end"], spans[0]["replaced"]) == (6, 20, True)
+    assert (spans[1]["start"], spans[1]["end"], spans[1]["replaced"]) == (12, 20, False)
+    # The renderer still ran for the suppressed span, so `replacement` is
+    # populated — clients should filter on `replaced=true` if they want only
+    # the strings that landed in `replaced_text`.
+    assert spans[1]["replacement"]
+
+
+@pytest.mark.asyncio
 async def test_replace_redact_mode_fixed_length_asterisks():
     async with _client() as c:
         r = await c.post(

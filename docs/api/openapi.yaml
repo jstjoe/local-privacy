@@ -56,7 +56,7 @@ info:
   contact:
     name: local-privacy
     url: https://github.com/jstjoe/local-privacy
-  version: 0.5.0
+  version: 0.6.0
 servers:
 - url: http://localhost:8000
   description: Local dev
@@ -175,7 +175,8 @@ paths:
 
 
         **Overlapping spans:** the earlier-starting span wins; later overlaps are
-        skipped in `replaced_text` (they still appear in `detected_spans`).
+        skipped in `replaced_text` but still appear in `detected_spans` with `replaced=false`.
+        Filter to `replaced=true` to reconstruct exactly what landed.
 
 
         **`label_token` requirements:** `SKYFLOW_TOKEN_VAULT_URL`, `SKYFLOW_TOKEN_VAULT_ID`,
@@ -693,12 +694,14 @@ components:
         - end: 17
           label: EMAIL
           raw_label: EMAIL_ADDRESS
+          replaced: true
           replacement: '[EMAIL_MGaE1Bo]'
           start: 6
           text: alice@x.com
         - end: 42
           label: PHONE
           raw_label: PHONE_NUMBER
+          replaced: true
           replacement: '[PHONE_vRXiWKZ]'
           start: 27
           text: +1-415-555-0100
@@ -746,9 +749,19 @@ components:
         replacement:
           type: string
           title: Replacement
-          description: The string this span was rewritten to in `replaced_text`.
+          description: The string the renderer produced for this span. Only spliced
+            into `replaced_text` when `replaced=true`; for skipped overlaps this value
+            is still populated (the renderer ran) but did not land.
           examples:
           - '[EMAIL_MGaE1Bo]'
+        replaced:
+          type: boolean
+          title: Replaced
+          description: '`true` if this span was actually spliced into `replaced_text`;
+            `false` if it was suppressed as a later-starting overlap of an earlier-starting
+            span. To reconstruct exactly what changed, filter to `replaced=true`.'
+          examples:
+          - true
       type: object
       required:
       - label
@@ -757,6 +770,7 @@ components:
       - end
       - text
       - replacement
+      - replaced
       title: ReplacedSpan
       description: One detected span plus the string it was rewritten to in `replaced_text`.
     SpanOut:

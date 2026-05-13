@@ -11,7 +11,7 @@
 
 ## Overlapping spans
 
-The earlier-starting span wins. Later overlaps are skipped in `replaced_text` but still appear in `detected_spans`.
+The earlier-starting span wins. Later overlaps are skipped in `replaced_text` but still appear in `detected_spans` with `replaced=false`. Filter to `replaced=true` to reconstruct exactly which spans landed. The `replacement` field is still populated on a `replaced=false` span (the renderer ran), it just wasn't spliced in.
 
 ## `label_token` requirements
 

@@ -104,7 +104,7 @@ OPENAPI_TAGS = [
 
 app = FastAPI(
     title="Privacy-detection API",
-    version="0.5.0",
+    version="0.6.0",
     summary="Unified PII detection across OPF, GLiNER, Presidio, and Skyflow.",
     description=API_DESCRIPTION,
     lifespan=lifespan,

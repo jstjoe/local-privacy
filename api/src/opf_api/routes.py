@@ -228,7 +228,8 @@ def _build_label_token_renderer_raising_http(
         "| `label_token` | `[EMAIL_MGaE1Bo]` | Identity **across requests and detectors** via a "
         "Skyflow vault. Deterministic — same plaintext maps to the same 7-char token forever. |\n\n"
         "**Overlapping spans:** the earlier-starting span wins; later overlaps are skipped in "
-        "`replaced_text` (they still appear in `detected_spans`).\n\n"
+        "`replaced_text` but still appear in `detected_spans` with `replaced=false`. "
+        "Filter to `replaced=true` to reconstruct exactly what landed.\n\n"
         "**`label_token` requirements:** `SKYFLOW_TOKEN_VAULT_URL`, `SKYFLOW_TOKEN_VAULT_ID`, "
         "and a bearer (`SKYFLOW_TOKEN_BEARER_TOKEN`, falling back to `SKYFLOW_BEARER_TOKEN`). "
         "The vault must be configured per the token-vault setup guide — one table with one "
@@ -288,6 +289,19 @@ async def replace(request: Request, body: ReplaceRequest) -> ReplaceResponse:
     ordered = sorted(spans, key=lambda s: (s["start"], s["end"]))
     rendered_pairs: list[tuple[Span, str]] = [(s, render(s)) for s in ordered]
 
+    # Mirror splice_pieces' overlap rule (earlier-starting span wins; later
+    # overlaps are skipped) so each ReplacedSpan can carry a faithful
+    # `replaced` flag. Clients filtering to `replaced=true` get exactly the
+    # set of spans that landed in `replaced_text`.
+    cursor = 0
+    replaced_flags: list[bool] = []
+    for s, _ in rendered_pairs:
+        if s["start"] >= cursor:
+            replaced_flags.append(True)
+            cursor = s["end"]
+        else:
+            replaced_flags.append(False)
+
     out_spans = [
         ReplacedSpan(
             label=s["label"],
@@ -296,10 +310,11 @@ async def replace(request: Request, body: ReplaceRequest) -> ReplaceResponse:
             end=s["end"],
             text=s["text"],
             replacement=replacement,
+            replaced=flag,
         )
-        for s, replacement in rendered_pairs
+        for (s, replacement), flag in zip(rendered_pairs, replaced_flags)
     ]
-    replaced = splice_pieces(body.text, rendered_pairs)
+    replaced_text = splice_pieces(body.text, rendered_pairs)
 
     by_label = Counter(s.label for s in out_spans)
     return ReplaceResponse(
@@ -307,7 +322,7 @@ async def replace(request: Request, body: ReplaceRequest) -> ReplaceResponse:
         mode=mode,
         text=body.text,
         detected_spans=out_spans,
-        replaced_text=replaced,
+        replaced_text=replaced_text,
         summary={"span_count": len(out_spans), "by_label": dict(by_label)},
         warning=None,
     )

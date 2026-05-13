@@ -479,6 +479,7 @@
                 "end": 17,
                 "label": "EMAIL",
                 "raw_label": "EMAIL_ADDRESS",
+                "replaced": true,
                 "replacement": "[EMAIL_MGaE1Bo]",
                 "start": 6,
                 "text": "alice@x.com"
@@ -487,6 +488,7 @@
                 "end": 42,
                 "label": "PHONE",
                 "raw_label": "PHONE_NUMBER",
+                "replaced": true,
                 "replacement": "[PHONE_vRXiWKZ]",
                 "start": 27,
                 "text": "+1-415-555-0100"
@@ -606,8 +608,16 @@
             "title": "Raw Label",
             "type": "string"
           },
+          "replaced": {
+            "description": "`true` if this span was actually spliced into `replaced_text`; `false` if it was suppressed as a later-starting overlap of an earlier-starting span. To reconstruct exactly what changed, filter to `replaced=true`.",
+            "examples": [
+              true
+            ],
+            "title": "Replaced",
+            "type": "boolean"
+          },
           "replacement": {
-            "description": "The string this span was rewritten to in `replaced_text`.",
+            "description": "The string the renderer produced for this span. Only spliced into `replaced_text` when `replaced=true`; for skipped overlaps this value is still populated (the renderer ran) but did not land.",
             "examples": [
               "[EMAIL_MGaE1Bo]"
             ],
@@ -637,7 +647,8 @@
           "start",
           "end",
           "text",
-          "replacement"
+          "replacement",
+          "replaced"
         ],
         "title": "ReplacedSpan",
         "type": "object"
@@ -739,7 +750,7 @@
     "description": "Unified PII detection across **OPF**, **GLiNER**, **Presidio**, and **Skyflow**.\nPick a backend with the `detector` field; canonical labels apply uniformly across all of them.\n\n## Endpoints\n\n- `POST /api/find` \u2014 find sensitive data; return spans only, no text rewriting.\n- `POST /api/replace` \u2014 find spans and replace each one under one of four modes.\n- `GET /api/detectors` \u2014 list registered detectors and their category coverage.\n- `GET /api/health` \u2014 liveness probe; does not exercise detector backends.\n\n## Versioning\n\nThe API is pre-`1.0`. `info.version` is the only version surface today \u2014\nevery breaking change to request or response shape lands as a minor bump\n(`0.x.0 -> 0.(x+1).0`); non-breaking additions land as patch bumps.\n\nURL paths are unversioned (`/api/...`). When the API stabilizes, the\nintent is to move to **header-based date-string versioning** in the style\nof Stripe \u2014 clients will pin to a release date via `API-Version:\n2026-05-13`. Until that header lands, treat `info.version` as the contract.\n\n## Canonical labels\n\nEvery detector's raw output maps into a 15-label taxonomy:\n`PERSON`, `EMAIL`, `PHONE`, `ADDRESS`, `URL`, `DATE`, `ACCOUNT`, `SECRET`, `USERNAME`,\n`DEMOGRAPHIC`, `ORGANIZATION`, `OCCUPATION`, `MONEY`, `VEHICLE`, `PHYSICAL`.\nDetectors vary in coverage \u2014 `GET /api/detectors` reports each detector's category list.\n",
     "summary": "Unified PII detection across OPF, GLiNER, Presidio, and Skyflow.",
     "title": "Privacy-detection API",
-    "version": "0.5.0"
+    "version": "0.6.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -907,7 +918,7 @@
     },
     "/api/replace": {
       "post": {
-        "description": "Find spans, then rewrite each one under the chosen `mode`. Four modes, in increasing strength of identity preservation:\n\n| `mode` | Looks like | What it preserves |\n|---|---|---|\n| `redact` | `********` | Nothing \u2014 fixed 8-char asterisk run regardless of span length. |\n| `label` | `[EMAIL]` | Category only. Default. |\n| `label_number` | `[EMAIL_1]` | Identity **within one request** via per-label counter; duplicate `(label, text)` reuses its number. |\n| `label_token` | `[EMAIL_MGaE1Bo]` | Identity **across requests and detectors** via a Skyflow vault. Deterministic \u2014 same plaintext maps to the same 7-char token forever. |\n\n**Overlapping spans:** the earlier-starting span wins; later overlaps are skipped in `replaced_text` (they still appear in `detected_spans`).\n\n**`label_token` requirements:** `SKYFLOW_TOKEN_VAULT_URL`, `SKYFLOW_TOKEN_VAULT_ID`, and a bearer (`SKYFLOW_TOKEN_BEARER_TOKEN`, falling back to `SKYFLOW_BEARER_TOKEN`). The vault must be configured per the token-vault setup guide \u2014 one table with one `tok_<label>` column per canonical label, each `DETERMINISTIC_FPT` with regex `^[A-Za-z0-9]{7}$`. Spans whose canonical label has no vault column fall back to `[LABEL]` for that span only.",
+        "description": "Find spans, then rewrite each one under the chosen `mode`. Four modes, in increasing strength of identity preservation:\n\n| `mode` | Looks like | What it preserves |\n|---|---|---|\n| `redact` | `********` | Nothing \u2014 fixed 8-char asterisk run regardless of span length. |\n| `label` | `[EMAIL]` | Category only. Default. |\n| `label_number` | `[EMAIL_1]` | Identity **within one request** via per-label counter; duplicate `(label, text)` reuses its number. |\n| `label_token` | `[EMAIL_MGaE1Bo]` | Identity **across requests and detectors** via a Skyflow vault. Deterministic \u2014 same plaintext maps to the same 7-char token forever. |\n\n**Overlapping spans:** the earlier-starting span wins; later overlaps are skipped in `replaced_text` but still appear in `detected_spans` with `replaced=false`. Filter to `replaced=true` to reconstruct exactly what landed.\n\n**`label_token` requirements:** `SKYFLOW_TOKEN_VAULT_URL`, `SKYFLOW_TOKEN_VAULT_ID`, and a bearer (`SKYFLOW_TOKEN_BEARER_TOKEN`, falling back to `SKYFLOW_BEARER_TOKEN`). The vault must be configured per the token-vault setup guide \u2014 one table with one `tok_<label>` column per canonical label, each `DETERMINISTIC_FPT` with regex `^[A-Za-z0-9]{7}$`. Spans whose canonical label has no vault column fall back to `[LABEL]` for that span only.",
         "operationId": "replace_api_replace_post",
         "requestBody": {
           "content": {

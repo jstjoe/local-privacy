@@ -176,8 +176,22 @@ class ReplacedSpan(BaseModel):
     )
     replacement: str = Field(
         ...,
-        description="The string this span was rewritten to in `replaced_text`.",
+        description=(
+            "The string the renderer produced for this span. Only spliced into "
+            "`replaced_text` when `replaced=true`; for skipped overlaps this "
+            "value is still populated (the renderer ran) but did not land."
+        ),
         examples=["[EMAIL_MGaE1Bo]"],
+    )
+    replaced: bool = Field(
+        ...,
+        description=(
+            "`true` if this span was actually spliced into `replaced_text`; "
+            "`false` if it was suppressed as a later-starting overlap of an "
+            "earlier-starting span. To reconstruct exactly what changed, filter "
+            "to `replaced=true`."
+        ),
+        examples=[True],
     )
 
 
@@ -213,6 +227,7 @@ class ReplaceResponse(BaseModel):
                             "end": 17,
                             "text": "alice@x.com",
                             "replacement": "[EMAIL_MGaE1Bo]",
+                            "replaced": True,
                         },
                         {
                             "label": "PHONE",
@@ -221,6 +236,7 @@ class ReplaceResponse(BaseModel):
                             "end": 42,
                             "text": "+1-415-555-0100",
                             "replacement": "[PHONE_vRXiWKZ]",
+                            "replaced": True,
                         },
                     ],
                     "summary": {"span_count": 2, "by_label": {"EMAIL": 1, "PHONE": 1}},
