@@ -13,6 +13,9 @@ on:
       - "docs/api/**"
       - ".github/workflows/openapi.yml"
 
+permissions:
+  contents: read
+
 jobs:
   check:
     runs-on: ubuntu-latest
