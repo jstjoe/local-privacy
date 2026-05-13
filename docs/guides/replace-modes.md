@@ -1,6 +1,6 @@
 # Replace modes
 
-`POST /v1/replace` rewrites each detected span under the chosen `mode`. Four modes, in increasing strength of identity preservation:
+`POST /api/replace` rewrites each detected span under the chosen `mode`. Four modes, in increasing strength of identity preservation:
 
 | `mode` | Looks like | What it preserves |
 |---|---|---|

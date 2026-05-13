@@ -94,7 +94,7 @@
         "type": "object"
       },
       "DetectorsResponse": {
-        "description": "Response from `/v1/detectors`.",
+        "description": "Response from `/api/detectors`.",
         "examples": [
           {
             "default": "opf",
@@ -155,7 +155,7 @@
         "type": "object"
       },
       "FindRequest": {
-        "description": "Base request for `/v1/find` \u2014 no text-rewriting fields.",
+        "description": "Base request for `/api/find` \u2014 no text-rewriting fields.",
         "examples": [
           {
             "categories": [
@@ -196,7 +196,7 @@
                 "type": "null"
               }
             ],
-            "description": "Detector name from `GET /v1/detectors`. Omit to use the server's `DEFAULT_DETECTOR` (set via env, typically `opf`).",
+            "description": "Detector name from `GET /api/detectors`. Omit to use the server's `DEFAULT_DETECTOR` (set via env, typically `opf`).",
             "examples": [
               "presidio",
               "opf",
@@ -238,7 +238,7 @@
         "type": "object"
       },
       "FindResponse": {
-        "description": "Response from `/v1/find`.",
+        "description": "Response from `/api/find`.",
         "examples": [
           {
             "detected_spans": [
@@ -305,7 +305,7 @@
         "type": "object"
       },
       "HealthResponse": {
-        "description": "Response from `/v1/health`.",
+        "description": "Response from `/api/health`.",
         "examples": [
           {
             "default_detector": "opf",
@@ -374,7 +374,7 @@
         "type": "object"
       },
       "ReplaceRequest": {
-        "description": "Request for `/v1/replace` \u2014 `FindRequest` plus a `mode` field that picks\nhow detected spans are rewritten.",
+        "description": "Request for `/api/replace` \u2014 `FindRequest` plus a `mode` field that picks\nhow detected spans are rewritten.",
         "examples": [
           {
             "detector": "presidio",
@@ -413,7 +413,7 @@
                 "type": "null"
               }
             ],
-            "description": "Detector name from `GET /v1/detectors`. Omit to use the server's `DEFAULT_DETECTOR` (set via env, typically `opf`).",
+            "description": "Detector name from `GET /api/detectors`. Omit to use the server's `DEFAULT_DETECTOR` (set via env, typically `opf`).",
             "examples": [
               "presidio",
               "opf",
@@ -471,7 +471,7 @@
         "type": "object"
       },
       "ReplaceResponse": {
-        "description": "Response from `/v1/replace`.",
+        "description": "Response from `/api/replace`.",
         "examples": [
           {
             "detected_spans": [
@@ -643,7 +643,7 @@
         "type": "object"
       },
       "SpanOut": {
-        "description": "Plain span for `/v1/find` \u2014 no replacement text.",
+        "description": "Plain span for `/api/find` \u2014 no replacement text.",
         "properties": {
           "end": {
             "description": "Exclusive character offset in `text`.",
@@ -736,17 +736,17 @@
       "name": "local-privacy",
       "url": "https://github.com/jstjoe/local-privacy"
     },
-    "description": "Unified PII detection across **OPF**, **GLiNER**, **Presidio**, and **Skyflow**.\nPick a backend with the `detector` field; canonical labels apply uniformly across all of them.\n\n## Endpoints\n\n- `POST /v1/find` \u2014 find sensitive data; return spans only, no text rewriting.\n- `POST /v1/replace` \u2014 find spans and replace each one under one of four modes.\n- `GET /v1/detectors` \u2014 list registered detectors and their category coverage.\n- `GET /v1/health` \u2014 liveness probe; does not exercise detector backends.\n\n## Versioning\n\nThe API is pre-`1.0`. `info.version` is the only version surface \u2014 every\nbreaking change to request or response shape lands as a minor bump\n(`0.x.0 -> 0.(x+1).0`). Non-breaking additions land as patch bumps. The\n`/v1/` URL prefix is reserved for the eventual `1.0` cutover.\n\n## Canonical labels\n\nEvery detector's raw output maps into a 15-label taxonomy:\n`PERSON`, `EMAIL`, `PHONE`, `ADDRESS`, `URL`, `DATE`, `ACCOUNT`, `SECRET`, `USERNAME`,\n`DEMOGRAPHIC`, `ORGANIZATION`, `OCCUPATION`, `MONEY`, `VEHICLE`, `PHYSICAL`.\nDetectors vary in coverage \u2014 `GET /v1/detectors` reports each detector's category list.\n",
+    "description": "Unified PII detection across **OPF**, **GLiNER**, **Presidio**, and **Skyflow**.\nPick a backend with the `detector` field; canonical labels apply uniformly across all of them.\n\n## Endpoints\n\n- `POST /api/find` \u2014 find sensitive data; return spans only, no text rewriting.\n- `POST /api/replace` \u2014 find spans and replace each one under one of four modes.\n- `GET /api/detectors` \u2014 list registered detectors and their category coverage.\n- `GET /api/health` \u2014 liveness probe; does not exercise detector backends.\n\n## Versioning\n\nThe API is pre-`1.0`. `info.version` is the only version surface today \u2014\nevery breaking change to request or response shape lands as a minor bump\n(`0.x.0 -> 0.(x+1).0`); non-breaking additions land as patch bumps.\n\nURL paths are unversioned (`/api/...`). When the API stabilizes, the\nintent is to move to **header-based date-string versioning** in the style\nof Stripe \u2014 clients will pin to a release date via `API-Version:\n2026-05-13`. Until that header lands, treat `info.version` as the contract.\n\n## Canonical labels\n\nEvery detector's raw output maps into a 15-label taxonomy:\n`PERSON`, `EMAIL`, `PHONE`, `ADDRESS`, `URL`, `DATE`, `ACCOUNT`, `SECRET`, `USERNAME`,\n`DEMOGRAPHIC`, `ORGANIZATION`, `OCCUPATION`, `MONEY`, `VEHICLE`, `PHYSICAL`.\nDetectors vary in coverage \u2014 `GET /api/detectors` reports each detector's category list.\n",
     "summary": "Unified PII detection across OPF, GLiNER, Presidio, and Skyflow.",
     "title": "Privacy-detection API",
-    "version": "0.4.0"
+    "version": "0.5.0"
   },
   "openapi": "3.1.0",
   "paths": {
-    "/v1/detectors": {
+    "/api/detectors": {
       "get": {
         "description": "Return every detector registered in this deployment plus the canonical categories each can produce. `loaded` flips to `true` after first use (or at startup if the detector is listed in `EAGER_LOAD`). `proxy=true` means the detector calls an external service.",
-        "operationId": "list_detectors_v1_detectors_get",
+        "operationId": "list_detectors_api_detectors_get",
         "responses": {
           "200": {
             "content": {
@@ -765,10 +765,10 @@
         ]
       }
     },
-    "/v1/find": {
+    "/api/find": {
       "post": {
-        "description": "Run the chosen detector over `text` and return canonical-labelled spans.\n\nNo rewriting is performed \u2014 call `/v1/replace` for that.\n\nFilter detector output to a subset of canonical labels with `categories`.\nOPF-only: pass `options.opf.decode_mode` to override the default Viterbi decoding.",
-        "operationId": "find_v1_find_post",
+        "description": "Run the chosen detector over `text` and return canonical-labelled spans.\n\nNo rewriting is performed \u2014 call `/api/replace` for that.\n\nFilter detector output to a subset of canonical labels with `categories`.\nOPF-only: pass `options.opf.decode_mode` to override the default Viterbi decoding.",
+        "operationId": "find_api_find_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -883,10 +883,10 @@
         ]
       }
     },
-    "/v1/health": {
+    "/api/health": {
       "get": {
-        "description": "Always returns `200` when the process is up. Does **not** probe detector backends \u2014 use `/v1/detectors` to inspect which detectors have been loaded.",
-        "operationId": "health_v1_health_get",
+        "description": "Always returns `200` when the process is up. Does **not** probe detector backends \u2014 use `/api/detectors` to inspect which detectors have been loaded.",
+        "operationId": "health_api_health_get",
         "responses": {
           "200": {
             "content": {
@@ -905,10 +905,10 @@
         ]
       }
     },
-    "/v1/replace": {
+    "/api/replace": {
       "post": {
         "description": "Find spans, then rewrite each one under the chosen `mode`. Four modes, in increasing strength of identity preservation:\n\n| `mode` | Looks like | What it preserves |\n|---|---|---|\n| `redact` | `********` | Nothing \u2014 fixed 8-char asterisk run regardless of span length. |\n| `label` | `[EMAIL]` | Category only. Default. |\n| `label_number` | `[EMAIL_1]` | Identity **within one request** via per-label counter; duplicate `(label, text)` reuses its number. |\n| `label_token` | `[EMAIL_MGaE1Bo]` | Identity **across requests and detectors** via a Skyflow vault. Deterministic \u2014 same plaintext maps to the same 7-char token forever. |\n\n**Overlapping spans:** the earlier-starting span wins; later overlaps are skipped in `replaced_text` (they still appear in `detected_spans`).\n\n**`label_token` requirements:** `SKYFLOW_TOKEN_VAULT_URL`, `SKYFLOW_TOKEN_VAULT_ID`, and a bearer (`SKYFLOW_TOKEN_BEARER_TOKEN`, falling back to `SKYFLOW_BEARER_TOKEN`). The vault must be configured per the token-vault setup guide \u2014 one table with one `tok_<label>` column per canonical label, each `DETERMINISTIC_FPT` with regex `^[A-Za-z0-9]{7}$`. Spans whose canonical label has no vault column fall back to `[LABEL]` for that span only.",
-        "operationId": "replace_v1_replace_post",
+        "operationId": "replace_api_replace_post",
         "requestBody": {
           "content": {
             "application/json": {

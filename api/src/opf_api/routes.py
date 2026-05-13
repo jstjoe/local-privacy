@@ -164,7 +164,7 @@ async def _run_find(request: Request, body: _FindInput) -> tuple[str, list[Span]
     summary="Find sensitive data in text",
     description=(
         "Run the chosen detector over `text` and return canonical-labelled spans.\n\n"
-        "No rewriting is performed — call `/v1/replace` for that.\n\n"
+        "No rewriting is performed — call `/api/replace` for that.\n\n"
         "Filter detector output to a subset of canonical labels with `categories`.\n"
         "OPF-only: pass `options.opf.decode_mode` to override the default Viterbi decoding."
     ),
@@ -349,7 +349,7 @@ async def list_detectors(request: Request) -> DetectorsResponse:
     summary="Liveness probe",
     description=(
         "Always returns `200` when the process is up. Does **not** probe detector backends — "
-        "use `/v1/detectors` to inspect which detectors have been loaded."
+        "use `/api/detectors` to inspect which detectors have been loaded."
     ),
     response_description="Liveness status plus which detectors are currently loaded.",
 )

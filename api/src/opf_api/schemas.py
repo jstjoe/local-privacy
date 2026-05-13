@@ -78,7 +78,7 @@ class DetectorOptions(BaseModel):
 
 
 class FindRequest(BaseModel):
-    """Base request for `/v1/find` — no text-rewriting fields."""
+    """Base request for `/api/find` — no text-rewriting fields."""
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -100,7 +100,7 @@ class FindRequest(BaseModel):
     detector: str | None = Field(
         default=None,
         description=(
-            "Detector name from `GET /v1/detectors`. Omit to use the server's "
+            "Detector name from `GET /api/detectors`. Omit to use the server's "
             "`DEFAULT_DETECTOR` (set via env, typically `opf`)."
         ),
         examples=["presidio", "opf", "gliner"],
@@ -127,7 +127,7 @@ class FindRequest(BaseModel):
 
 
 class ReplaceRequest(FindRequest):
-    """Request for `/v1/replace` — `FindRequest` plus a `mode` field that picks
+    """Request for `/api/replace` — `FindRequest` plus a `mode` field that picks
     how detected spans are rewritten."""
 
     model_config = ConfigDict(
@@ -195,7 +195,7 @@ class SummaryOut(BaseModel):
 
 
 class ReplaceResponse(BaseModel):
-    """Response from `/v1/replace`."""
+    """Response from `/api/replace`."""
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -261,7 +261,7 @@ class ReplaceResponse(BaseModel):
 
 
 class SpanOut(BaseModel):
-    """Plain span for `/v1/find` — no replacement text."""
+    """Plain span for `/api/find` — no replacement text."""
 
     label: str = Field(..., description="Canonical label.", examples=["EMAIL"])
     raw_label: str = Field(
@@ -277,7 +277,7 @@ class SpanOut(BaseModel):
 
 
 class FindResponse(BaseModel):
-    """Response from `/v1/find`."""
+    """Response from `/api/find`."""
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -338,7 +338,7 @@ class DetectorInfo(BaseModel):
 
 
 class DetectorsResponse(BaseModel):
-    """Response from `/v1/detectors`."""
+    """Response from `/api/detectors`."""
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -379,7 +379,7 @@ class DetectorsResponse(BaseModel):
 
 
 class HealthResponse(BaseModel):
-    """Response from `/v1/health`."""
+    """Response from `/api/health`."""
 
     model_config = ConfigDict(
         json_schema_extra={

@@ -1,7 +1,7 @@
 """End-to-end route tests using a stub detector — avoids loading real models.
 
 The tests inject a deterministic FakeDetector into the registry and exercise
-the /v1 surface for /find, /replace, /detectors, /health.
+the /api surface for /find, /replace, /detectors, /health.
 """
 
 from __future__ import annotations
@@ -103,7 +103,7 @@ def _build_app(
     token_vault_client=None,
 ) -> FastAPI:
     app = FastAPI()
-    app.include_router(router, prefix="/v1")
+    app.include_router(router, prefix="/api")
     instance = detector_instance or FakeDetector()
     fake_entry = DetectorEntry(name="fake", factory=lambda: instance)
     fake_entry.instance = instance
@@ -119,13 +119,13 @@ def _client(**kwargs):
     return AsyncClient(transport=transport, base_url="http://test")
 
 
-# --- /v1/find -----------------------------------------------------------
+# --- /api/find -----------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_find_default():
     async with _client() as c:
-        r = await c.post("/v1/find", json={"text": "Joe at joe@example.com lives in Elgin, TX."})
+        r = await c.post("/api/find", json={"text": "Joe at joe@example.com lives in Elgin, TX."})
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["detector"] == "fake"
@@ -139,7 +139,7 @@ async def test_find_default():
 async def test_find_filter_categories():
     async with _client() as c:
         r = await c.post(
-            "/v1/find",
+            "/api/find",
             json={
                 "text": "Joe at joe@example.com lives in Elgin, TX.",
                 "categories": ["EMAIL"],
@@ -155,7 +155,7 @@ async def test_find_empty_categories_returns_zero_spans():
     # which means "no filter". Regression guard for that contract.
     async with _client() as c:
         r = await c.post(
-            "/v1/find",
+            "/api/find",
             json={
                 "text": "Joe at joe@example.com lives in Elgin, TX.",
                 "categories": [],
@@ -171,7 +171,7 @@ async def test_find_empty_categories_returns_zero_spans():
 async def test_find_null_categories_returns_all_spans():
     async with _client() as c:
         r = await c.post(
-            "/v1/find",
+            "/api/find",
             json={"text": "Joe at joe@example.com lives in Elgin, TX.", "categories": None},
         )
     assert r.status_code == 200, r.text
@@ -183,7 +183,7 @@ async def test_find_null_categories_returns_all_spans():
 async def test_find_invalid_category():
     async with _client() as c:
         r = await c.post(
-            "/v1/find",
+            "/api/find",
             json={"text": "x", "categories": ["NOT_REAL"]},
         )
     assert r.status_code == 422
@@ -196,7 +196,7 @@ async def test_find_invalid_category():
 async def test_find_unknown_opf_option_rejected():
     async with _client() as c:
         r = await c.post(
-            "/v1/find",
+            "/api/find",
             json={"text": "x", "options": {"opf": {"decod_mode": "argmax"}}},
         )
     assert r.status_code == 422
@@ -211,7 +211,7 @@ async def test_find_unknown_opf_option_rejected():
 async def test_find_valid_opf_options_accepted():
     async with _client() as c:
         r = await c.post(
-            "/v1/find",
+            "/api/find",
             json={
                 "text": "Joe at joe@example.com lives in Elgin, TX.",
                 "options": {"opf": {"decode_mode": "argmax"}},
@@ -225,18 +225,18 @@ async def test_find_valid_opf_options_accepted():
 @pytest.mark.asyncio
 async def test_find_unknown_detector():
     async with _client() as c:
-        r = await c.post("/v1/find", json={"text": "x", "detector": "ghost"})
+        r = await c.post("/api/find", json={"text": "x", "detector": "ghost"})
     assert r.status_code == 400
 
 
-# --- /v1/replace ---------------------------------------------------------
+# --- /api/replace ---------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_replace_default_mode_is_label():
     async with _client() as c:
         r = await c.post(
-            "/v1/replace",
+            "/api/replace",
             json={"text": "Joe at joe@example.com lives in Elgin, TX."},
         )
     assert r.status_code == 200, r.text
@@ -251,7 +251,7 @@ async def test_replace_default_mode_is_label():
 async def test_replace_redact_mode_fixed_length_asterisks():
     async with _client() as c:
         r = await c.post(
-            "/v1/replace",
+            "/api/replace",
             json={"text": "Joe at joe@example.com lives in Elgin, TX.", "mode": "redact"},
         )
     assert r.status_code == 200
@@ -274,7 +274,7 @@ async def test_replace_label_number_duplicate_reuses_number():
     text = "Email Alice (alice@x.com) and Bob (bob@x.com). Alice will reply from alice@x.com."
     async with _client(detector_instance=detector) as c:
         r = await c.post(
-            "/v1/replace",
+            "/api/replace",
             json={"text": text, "mode": "label_number"},
         )
     assert r.status_code == 200, r.text
@@ -298,7 +298,7 @@ async def test_replace_label_number_independent_counters():
     text = "Alice has a@x.com and b@x.com."
     async with _client(detector_instance=detector) as c:
         r = await c.post(
-            "/v1/replace",
+            "/api/replace",
             json={"text": text, "mode": "label_number"},
         )
     assert r.json()["replaced_text"] == "[PERSON_1] has [EMAIL_1] and [EMAIL_2]."
@@ -309,7 +309,7 @@ async def test_replace_label_token():
     vault = FakeTokenVaultClient()
     async with _client(token_vault_client=vault) as c:
         r = await c.post(
-            "/v1/replace",
+            "/api/replace",
             json={
                 "text": "Joe at joe@example.com lives in Elgin, TX.",
                 "mode": "label_token",
@@ -332,7 +332,7 @@ async def test_replace_label_token_dedupe_batch():
     vault = FakeTokenVaultClient()
     async with _client(detector_instance=detector, token_vault_client=vault) as c:
         r = await c.post(
-            "/v1/replace",
+            "/api/replace",
             json={"text": "a@x.com then a@x.com again", "mode": "label_token"},
         )
     assert r.status_code == 200
@@ -345,7 +345,7 @@ async def test_replace_label_token_dedupe_batch():
 async def test_replace_label_token_unconfigured_400():
     async with _client(token_vault_client=None) as c:
         r = await c.post(
-            "/v1/replace",
+            "/api/replace",
             json={"text": "joe@example.com", "mode": "label_token"},
         )
     assert r.status_code == 400
@@ -357,7 +357,7 @@ async def test_replace_label_token_vault_failure_502():
     vault = FakeTokenVaultClient(raise_on_call=True)
     async with _client(token_vault_client=vault) as c:
         r = await c.post(
-            "/v1/replace",
+            "/api/replace",
             json={"text": "joe@example.com", "mode": "label_token"},
         )
     assert r.status_code == 502
@@ -368,7 +368,7 @@ async def test_replace_label_token_vault_failure_502():
 async def test_replace_filter_categories():
     async with _client() as c:
         r = await c.post(
-            "/v1/replace",
+            "/api/replace",
             json={
                 "text": "Joe at joe@example.com lives in Elgin, TX.",
                 "mode": "label_number",
@@ -384,7 +384,7 @@ async def test_replace_filter_categories():
 async def test_replace_unknown_detector():
     async with _client() as c:
         r = await c.post(
-            "/v1/replace",
+            "/api/replace",
             json={"text": "x", "detector": "ghost", "mode": "label"},
         )
     assert r.status_code == 400
@@ -394,7 +394,7 @@ async def test_replace_unknown_detector():
 async def test_replace_no_spans_passthrough():
     async with _client() as c:
         r = await c.post(
-            "/v1/replace",
+            "/api/replace",
             json={"text": "nothing to detect here", "mode": "label_number"},
         )
     body = r.json()
@@ -403,13 +403,13 @@ async def test_replace_no_spans_passthrough():
     assert body["summary"] == {"span_count": 0, "by_label": {}}
 
 
-# --- /v1/detectors + /v1/health ------------------------------------------
+# --- /api/detectors + /api/health ------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_list_detectors():
     async with _client() as c:
-        r = await c.get("/v1/detectors")
+        r = await c.get("/api/detectors")
     body = r.json()
     assert body["default"] == "fake"
     assert body["detectors"][0]["name"] == "fake"
@@ -419,7 +419,7 @@ async def test_list_detectors():
 @pytest.mark.asyncio
 async def test_health():
     async with _client() as c:
-        r = await c.get("/v1/health")
+        r = await c.get("/api/health")
     body = r.json()
     assert body["status"] == "ok"
     assert body["default_detector"] == "fake"

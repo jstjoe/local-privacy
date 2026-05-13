@@ -3,7 +3,7 @@
 Distinct from `opf_eval.detectors.skyflow`, which uses the Detect API. This
 module inserts already-detected entity values into a vault configured with
 deterministic format-preserving tokens (7-char alphanumeric), and returns
-the tokens back to the /v1/tokenize endpoint.
+the tokens back to the `/api/replace` route (`label_token` mode).
 
 Vault schema (one row per insert; only one column populated per row):
 
@@ -50,9 +50,9 @@ def column_for_label(canonical_label: str) -> str | None:
 class TokenVaultClient:
     """Inserts entity values into the token vault and returns deterministic tokens.
 
-    Single batch call per /v1/tokenize request. One record per unique
-    (label, value) pair; the corresponding `tok_<label>` field carries the
-    plaintext, all other fields omitted.
+    Single batch call per `/api/replace` (`label_token` mode) request. One
+    record per unique (label, value) pair; the corresponding `tok_<label>`
+    field carries the plaintext, all other fields omitted.
     """
 
     def __init__(

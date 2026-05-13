@@ -12,25 +12,32 @@ info:
     ## Endpoints
 
 
-    - `POST /v1/find` — find sensitive data; return spans only, no text rewriting.
+    - `POST /api/find` — find sensitive data; return spans only, no text rewriting.
 
-    - `POST /v1/replace` — find spans and replace each one under one of four modes.
+    - `POST /api/replace` — find spans and replace each one under one of four modes.
 
-    - `GET /v1/detectors` — list registered detectors and their category coverage.
+    - `GET /api/detectors` — list registered detectors and their category coverage.
 
-    - `GET /v1/health` — liveness probe; does not exercise detector backends.
+    - `GET /api/health` — liveness probe; does not exercise detector backends.
 
 
     ## Versioning
 
 
-    The API is pre-`1.0`. `info.version` is the only version surface — every
+    The API is pre-`1.0`. `info.version` is the only version surface today —
 
-    breaking change to request or response shape lands as a minor bump
+    every breaking change to request or response shape lands as a minor bump
 
-    (`0.x.0 -> 0.(x+1).0`). Non-breaking additions land as patch bumps. The
+    (`0.x.0 -> 0.(x+1).0`); non-breaking additions land as patch bumps.
 
-    `/v1/` URL prefix is reserved for the eventual `1.0` cutover.
+
+    URL paths are unversioned (`/api/...`). When the API stabilizes, the
+
+    intent is to move to **header-based date-string versioning** in the style
+
+    of Stripe — clients will pin to a release date via `API-Version:
+
+    2026-05-13`. Until that header lands, treat `info.version` as the contract.
 
 
     ## Canonical labels
@@ -42,19 +49,19 @@ info:
 
     `DEMOGRAPHIC`, `ORGANIZATION`, `OCCUPATION`, `MONEY`, `VEHICLE`, `PHYSICAL`.
 
-    Detectors vary in coverage — `GET /v1/detectors` reports each detector''s category
+    Detectors vary in coverage — `GET /api/detectors` reports each detector''s category
     list.
 
     '
   contact:
     name: local-privacy
     url: https://github.com/jstjoe/local-privacy
-  version: 0.4.0
+  version: 0.5.0
 servers:
 - url: http://localhost:8000
   description: Local dev
 paths:
-  /v1/find:
+  /api/find:
     post:
       tags:
       - Find
@@ -63,13 +70,13 @@ paths:
         spans.
 
 
-        No rewriting is performed — call `/v1/replace` for that.
+        No rewriting is performed — call `/api/replace` for that.
 
 
         Filter detector output to a subset of canonical labels with `categories`.
 
         OPF-only: pass `options.opf.decode_mode` to override the default Viterbi decoding.'
-      operationId: find_v1_find_post
+      operationId: find_api_find_post
       requestBody:
         content:
           application/json:
@@ -141,7 +148,7 @@ paths:
                   summary: Token vault call failed
                   value:
                     detail: 'label_token: vault insert failed: 401'
-  /v1/replace:
+  /api/replace:
     post:
       tags:
       - Replace
@@ -177,7 +184,7 @@ paths:
         one `tok_<label>` column per canonical label, each `DETERMINISTIC_FPT` with
         regex `^[A-Za-z0-9]{7}$`. Spans whose canonical label has no vault column
         fall back to `[LABEL]` for that span only.'
-      operationId: replace_v1_replace_post
+      operationId: replace_api_replace_post
       requestBody:
         content:
           application/json:
@@ -250,7 +257,7 @@ paths:
                   summary: Token vault call failed
                   value:
                     detail: 'label_token: vault insert failed: 401'
-  /v1/detectors:
+  /api/detectors:
     get:
       tags:
       - Meta
@@ -259,7 +266,7 @@ paths:
         categories each can produce. `loaded` flips to `true` after first use (or
         at startup if the detector is listed in `EAGER_LOAD`). `proxy=true` means
         the detector calls an external service.
-      operationId: list_detectors_v1_detectors_get
+      operationId: list_detectors_api_detectors_get
       responses:
         '200':
           description: Registry snapshot.
@@ -267,15 +274,15 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DetectorsResponse'
-  /v1/health:
+  /api/health:
     get:
       tags:
       - Meta
       summary: Liveness probe
       description: Always returns `200` when the process is up. Does **not** probe
-        detector backends — use `/v1/detectors` to inspect which detectors have been
+        detector backends — use `/api/detectors` to inspect which detectors have been
         loaded.
-      operationId: health_v1_health_get
+      operationId: health_api_health_get
       responses:
         '200':
           description: Liveness status plus which detectors are currently loaded.
@@ -380,7 +387,7 @@ components:
       - default
       - detectors
       title: DetectorsResponse
-      description: Response from `/v1/detectors`.
+      description: Response from `/api/detectors`.
       examples:
       - default: opf
         detectors:
@@ -416,7 +423,7 @@ components:
           - type: string
           - type: 'null'
           title: Detector
-          description: Detector name from `GET /v1/detectors`. Omit to use the server's
+          description: Detector name from `GET /api/detectors`. Omit to use the server's
             `DEFAULT_DETECTOR` (set via env, typically `opf`).
           examples:
           - presidio
@@ -449,7 +456,7 @@ components:
       required:
       - text
       title: FindRequest
-      description: Base request for `/v1/find` — no text-rewriting fields.
+      description: Base request for `/api/find` — no text-rewriting fields.
       examples:
       - categories:
         - EMAIL
@@ -486,7 +493,7 @@ components:
       - detected_spans
       - summary
       title: FindResponse
-      description: Response from `/v1/find`.
+      description: Response from `/api/find`.
       examples:
       - detected_spans:
         - end: 21
@@ -527,7 +534,7 @@ components:
       - default_detector
       - loaded_detectors
       title: HealthResponse
-      description: Response from `/v1/health`.
+      description: Response from `/api/health`.
       examples:
       - default_detector: opf
         loaded_detectors:
@@ -566,7 +573,7 @@ components:
           - type: string
           - type: 'null'
           title: Detector
-          description: Detector name from `GET /v1/detectors`. Omit to use the server's
+          description: Detector name from `GET /api/detectors`. Omit to use the server's
             `DEFAULT_DETECTOR` (set via env, typically `opf`).
           examples:
           - presidio
@@ -616,7 +623,7 @@ components:
       required:
       - text
       title: ReplaceRequest
-      description: 'Request for `/v1/replace` — `FindRequest` plus a `mode` field
+      description: 'Request for `/api/replace` — `FindRequest` plus a `mode` field
         that picks
 
         how detected spans are rewritten.'
@@ -680,7 +687,7 @@ components:
       - replaced_text
       - summary
       title: ReplaceResponse
-      description: Response from `/v1/replace`.
+      description: Response from `/api/replace`.
       examples:
       - detected_spans:
         - end: 17
@@ -792,7 +799,7 @@ components:
       - end
       - text
       title: SpanOut
-      description: Plain span for `/v1/find` — no replacement text.
+      description: Plain span for `/api/find` — no replacement text.
     SummaryOut:
       properties:
         span_count:
