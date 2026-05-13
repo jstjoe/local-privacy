@@ -10,9 +10,16 @@
     </style>
   </head>
   <body>
+    <!--
+      data-url carries a `?v=__CACHE_BUST__` query string. The Pages deploy
+      workflow substitutes the literal `__CACHE_BUST__` with the deploying
+      commit SHA so each release forces browsers (and Scalar's client-side
+      cache) to refetch the spec. Locally the unsubstituted token is fine —
+      static servers ignore query strings and serve openapi.json directly.
+    -->
     <script
       id="api-reference"
-      data-url="./api/openapi.json"
+      data-url="./api/openapi.json?v=__CACHE_BUST__"
       data-configuration='{"theme":"purple","layout":"modern","defaultHttpClient":{"targetKey":"shell","clientKey":"curl"}}'
     ></script>
     <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
