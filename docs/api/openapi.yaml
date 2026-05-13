@@ -65,7 +65,7 @@ paths:
     post:
       tags:
       - Find
-      summary: Find sensitive data in text
+      summary: Find sensitive data
       description: 'Run the chosen detector over `text` and return canonical-labelled
         spans.
 
@@ -152,7 +152,7 @@ paths:
     post:
       tags:
       - Replace
-      summary: Replace sensitive data in text
+      summary: Replace sensitive data
       description: 'Find spans, then rewrite each one under the chosen `mode`. Four
         modes, in increasing strength of identity preservation:
 
