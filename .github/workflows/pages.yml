@@ -27,6 +27,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Clone OPF source (workspace member, gitignored locally)
+        run: git clone --depth 1 https://github.com/openai/privacy-filter privacy-filter
+
       - name: Install uv
         uses: astral-sh/setup-uv@v3
         with:
