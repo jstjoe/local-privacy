@@ -60,8 +60,8 @@ Pick a backend with the `detector` field; canonical labels apply uniformly acros
 
 ## Endpoints
 
-- `POST /v1/detect` — return spans only, no text rewriting.
-- `POST /v1/sanitize` — detect and rewrite spans under one of four modes.
+- `POST /v1/find` — find sensitive data; return spans only, no text rewriting.
+- `POST /v1/replace` — find spans and replace each one under one of four modes.
 - `GET /v1/detectors` — list registered detectors and their category coverage.
 - `GET /v1/health` — liveness probe; does not exercise detector backends.
 
@@ -82,13 +82,13 @@ Detectors vary in coverage — `GET /v1/detectors` reports each detector's categ
 
 OPENAPI_TAGS = [
     {
-        "name": "Detect",
-        "description": "Detection-only endpoint. Returns spans without rewriting the input.",
+        "name": "Find",
+        "description": "Find-only endpoint. Returns spans without rewriting the input.",
     },
     {
-        "name": "Sanitize",
+        "name": "Replace",
         "description": (
-            "Detection plus rewriting under one of four modes: "
+            "Find plus rewriting under one of four modes: "
             "`redact`, `label`, `label_number`, `label_token`."
         ),
     },
@@ -100,7 +100,7 @@ OPENAPI_TAGS = [
 
 app = FastAPI(
     title="Privacy-detection API",
-    version="0.3.0",
+    version="0.4.0",
     summary="Unified PII detection across OPF, GLiNER, Presidio, and Skyflow.",
     description=API_DESCRIPTION,
     lifespan=lifespan,

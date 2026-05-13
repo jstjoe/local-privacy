@@ -10,12 +10,12 @@ from opf_eval.taxonomy import CANONICAL_LABELS
 
 DecodeMode = Literal["viterbi", "argmax"]
 
-# Four sanitization modes, in increasing strength of identity preservation:
+# Four replacement modes, in increasing strength of identity preservation:
 #   redact        -> "********" (fixed-length asterisks; no information leaks)
 #   label         -> "[EMAIL]" (default; category label only)
 #   label_number  -> "[EMAIL_1]" (per-request counters; duplicates reuse numbers)
 #   label_token   -> "[EMAIL_jRc7QGn]" (deterministic Skyflow vault token)
-SanitizeMode = Literal["redact", "label", "label_number", "label_token"]
+ReplaceMode = Literal["redact", "label", "label_number", "label_token"]
 
 
 class CanonicalLabel(str, Enum):
@@ -77,8 +77,8 @@ class DetectorOptions(BaseModel):
     )
 
 
-class DetectRequest(BaseModel):
-    """Base request for `/v1/detect` — no text-rewriting fields."""
+class FindRequest(BaseModel):
+    """Base request for `/v1/find` — no text-rewriting fields."""
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -126,8 +126,8 @@ class DetectRequest(BaseModel):
     )
 
 
-class SanitizeRequest(DetectRequest):
-    """Request for `/v1/sanitize` — `DetectRequest` plus a `mode` field that picks
+class ReplaceRequest(FindRequest):
+    """Request for `/v1/replace` — `FindRequest` plus a `mode` field that picks
     how detected spans are rewritten."""
 
     model_config = ConfigDict(
@@ -142,7 +142,7 @@ class SanitizeRequest(DetectRequest):
         }
     )
 
-    mode: SanitizeMode = Field(
+    mode: ReplaceMode = Field(
         default="label",
         description=(
             "How to rewrite each detected span. "
@@ -156,8 +156,8 @@ class SanitizeRequest(DetectRequest):
     )
 
 
-class SanitizedSpan(BaseModel):
-    """One detected span plus the string it was rewritten to in `sanitized_text`."""
+class ReplacedSpan(BaseModel):
+    """One detected span plus the string it was rewritten to in `replaced_text`."""
 
     label: str = Field(
         ...,
@@ -176,7 +176,7 @@ class SanitizedSpan(BaseModel):
     )
     replacement: str = Field(
         ...,
-        description="The string this span was rewritten to in `sanitized_text`.",
+        description="The string this span was rewritten to in `replaced_text`.",
         examples=["[EMAIL_MGaE1Bo]"],
     )
 
@@ -194,8 +194,8 @@ class SummaryOut(BaseModel):
     )
 
 
-class SanitizeResponse(BaseModel):
-    """Response from `/v1/sanitize`."""
+class ReplaceResponse(BaseModel):
+    """Response from `/v1/replace`."""
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -204,7 +204,7 @@ class SanitizeResponse(BaseModel):
                     "detector": "presidio",
                     "mode": "label_token",
                     "text": "Email alice@x.com or call +1-415-555-0100.",
-                    "sanitized_text": "Email [EMAIL_MGaE1Bo] or call [PHONE_vRXiWKZ].",
+                    "replaced_text": "Email [EMAIL_MGaE1Bo] or call [PHONE_vRXiWKZ].",
                     "detected_spans": [
                         {
                             "label": "EMAIL",
@@ -235,16 +235,16 @@ class SanitizeResponse(BaseModel):
         description="Detector that produced the spans.",
         examples=["presidio"],
     )
-    mode: SanitizeMode = Field(
+    mode: ReplaceMode = Field(
         ..., description="Echo of the request `mode`.", examples=["label_token"]
     )
     text: str = Field(
         ..., description="Echo of the request `text`.", examples=["Email alice@x.com."]
     )
-    detected_spans: list[SanitizedSpan] = Field(
+    detected_spans: list[ReplacedSpan] = Field(
         ..., description="Spans detected by the chosen detector, with their replacements."
     )
-    sanitized_text: str = Field(
+    replaced_text: str = Field(
         ...,
         description=(
             "`text` with each detected span replaced by its `replacement`. "
@@ -261,7 +261,7 @@ class SanitizeResponse(BaseModel):
 
 
 class SpanOut(BaseModel):
-    """Plain span for `/v1/detect` — no replacement text."""
+    """Plain span for `/v1/find` — no replacement text."""
 
     label: str = Field(..., description="Canonical label.", examples=["EMAIL"])
     raw_label: str = Field(
@@ -276,8 +276,8 @@ class SpanOut(BaseModel):
     )
 
 
-class DetectResponse(BaseModel):
-    """Response from `/v1/detect`."""
+class FindResponse(BaseModel):
+    """Response from `/v1/find`."""
 
     model_config = ConfigDict(
         json_schema_extra={

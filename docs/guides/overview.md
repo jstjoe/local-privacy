@@ -4,8 +4,8 @@ The `opf-api` service exposes every benchmark detector in this repo behind one H
 
 ## What it does
 
-- `POST /v1/detect` — return PII spans without rewriting the input text.
-- `POST /v1/sanitize` — detect and rewrite spans under one of four modes.
+- `POST /v1/find` — find sensitive data; return spans without rewriting the input text.
+- `POST /v1/replace` — find spans and replace each one under one of four modes.
 - `GET /v1/detectors` — list registered detectors and their canonical category coverage.
 - `GET /v1/health` — liveness probe.
 

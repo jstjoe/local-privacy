@@ -12,9 +12,9 @@ info:
     ## Endpoints
 
 
-    - `POST /v1/detect` — return spans only, no text rewriting.
+    - `POST /v1/find` — find sensitive data; return spans only, no text rewriting.
 
-    - `POST /v1/sanitize` — detect and rewrite spans under one of four modes.
+    - `POST /v1/replace` — find spans and replace each one under one of four modes.
 
     - `GET /v1/detectors` — list registered detectors and their category coverage.
 
@@ -49,32 +49,32 @@ info:
   contact:
     name: local-privacy
     url: https://github.com/jstjoe/local-privacy
-  version: 0.3.0
+  version: 0.4.0
 servers:
 - url: http://localhost:8000
   description: Local dev
 paths:
-  /v1/detect:
+  /v1/find:
     post:
       tags:
-      - Detect
-      summary: Detect PII spans in text
+      - Find
+      summary: Find sensitive data in text
       description: 'Run the chosen detector over `text` and return canonical-labelled
         spans.
 
 
-        No rewriting is performed — call `/v1/sanitize` for that.
+        No rewriting is performed — call `/v1/replace` for that.
 
 
         Filter detector output to a subset of canonical labels with `categories`.
 
         OPF-only: pass `options.opf.decode_mode` to override the default Viterbi decoding.'
-      operationId: detect_v1_detect_post
+      operationId: find_v1_find_post
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/DetectRequest'
+              $ref: '#/components/schemas/FindRequest'
         required: true
       responses:
         '200':
@@ -82,7 +82,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DetectResponse'
+                $ref: '#/components/schemas/FindResponse'
         '400':
           description: Unknown detector or missing config for the chosen mode.
           content:
@@ -141,12 +141,12 @@ paths:
                   summary: Token vault call failed
                   value:
                     detail: 'label_token: vault insert failed: 401'
-  /v1/sanitize:
+  /v1/replace:
     post:
       tags:
-      - Sanitize
-      summary: Detect and rewrite PII spans
-      description: 'Detect spans, then rewrite each one under the chosen `mode`. Four
+      - Replace
+      summary: Replace sensitive data in text
+      description: 'Find spans, then rewrite each one under the chosen `mode`. Four
         modes, in increasing strength of identity preservation:
 
 
@@ -168,7 +168,7 @@ paths:
 
 
         **Overlapping spans:** the earlier-starting span wins; later overlaps are
-        skipped in `sanitized_text` (they still appear in `detected_spans`).
+        skipped in `replaced_text` (they still appear in `detected_spans`).
 
 
         **`label_token` requirements:** `SKYFLOW_TOKEN_VAULT_URL`, `SKYFLOW_TOKEN_VAULT_ID`,
@@ -177,21 +177,21 @@ paths:
         one `tok_<label>` column per canonical label, each `DETERMINISTIC_FPT` with
         regex `^[A-Za-z0-9]{7}$`. Spans whose canonical label has no vault column
         fall back to `[LABEL]` for that span only.'
-      operationId: sanitize_v1_sanitize_post
+      operationId: replace_v1_replace_post
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SanitizeRequest'
+              $ref: '#/components/schemas/ReplaceRequest'
         required: true
       responses:
         '200':
-          description: Sanitized text, the spans that were rewritten, and per-label
+          description: Replaced text, the spans that were rewritten, and per-label
             counts.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SanitizeResponse'
+                $ref: '#/components/schemas/ReplaceResponse'
         '400':
           description: Unknown detector or missing config for the chosen mode.
           content:
@@ -306,103 +306,6 @@ components:
       title: CanonicalLabel
       description: Canonical PII category. Every detector's raw output maps into this
         taxonomy.
-    DetectRequest:
-      properties:
-        text:
-          type: string
-          title: Text
-          description: Free-form text to scan for PII.
-          examples:
-          - Email joe@example.com about the trip to Elgin, TX.
-        detector:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Detector
-          description: Detector name from `GET /v1/detectors`. Omit to use the server's
-            `DEFAULT_DETECTOR` (set via env, typically `opf`).
-          examples:
-          - presidio
-          - opf
-          - gliner
-        categories:
-          anyOf:
-          - items:
-              $ref: '#/components/schemas/CanonicalLabel'
-            type: array
-          - type: 'null'
-          title: Categories
-          description: Canonical categories to keep. Omit or set to `null` to keep
-            every category the detector produces. An empty list `[]` is a deliberate
-            "match nothing" filter and returns zero spans — use `null` if you mean
-            "no filter". Values outside the canonical taxonomy are rejected with `422`.
-          examples:
-          - - EMAIL
-            - PHONE
-        options:
-          anyOf:
-          - $ref: '#/components/schemas/DetectorOptions'
-          - type: 'null'
-          description: Per-detector options namespace. The entry matching the top-level
-            `detector` is consulted; other entries are accepted but ignored.
-          examples:
-          - opf:
-              decode_mode: argmax
-      type: object
-      required:
-      - text
-      title: DetectRequest
-      description: Base request for `/v1/detect` — no text-rewriting fields.
-      examples:
-      - categories:
-        - EMAIL
-        detector: presidio
-        text: Email joe@example.com about the trip to Elgin, TX.
-    DetectResponse:
-      properties:
-        detector:
-          type: string
-          title: Detector
-          description: Detector that produced the spans.
-        text:
-          type: string
-          title: Text
-          description: Echo of the request `text`.
-        detected_spans:
-          items:
-            $ref: '#/components/schemas/SpanOut'
-          type: array
-          title: Detected Spans
-          description: Spans detected by the chosen detector.
-        summary:
-          $ref: '#/components/schemas/SummaryOut'
-        warning:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Warning
-          description: Non-fatal warning surfaced by the detector backend, if any.
-      type: object
-      required:
-      - detector
-      - text
-      - detected_spans
-      - summary
-      title: DetectResponse
-      description: Response from `/v1/detect`.
-      examples:
-      - detected_spans:
-        - end: 21
-          label: EMAIL
-          raw_label: EMAIL_ADDRESS
-          start: 6
-          text: joe@example.com
-        detector: presidio
-        summary:
-          by_label:
-            EMAIL: 1
-          span_count: 1
-        text: Email joe@example.com about the trip to Elgin, TX.
     DetectorInfo:
       properties:
         name:
@@ -500,6 +403,103 @@ components:
           loaded: false
           name: skyflow
           proxy: true
+    FindRequest:
+      properties:
+        text:
+          type: string
+          title: Text
+          description: Free-form text to scan for PII.
+          examples:
+          - Email joe@example.com about the trip to Elgin, TX.
+        detector:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Detector
+          description: Detector name from `GET /v1/detectors`. Omit to use the server's
+            `DEFAULT_DETECTOR` (set via env, typically `opf`).
+          examples:
+          - presidio
+          - opf
+          - gliner
+        categories:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/CanonicalLabel'
+            type: array
+          - type: 'null'
+          title: Categories
+          description: Canonical categories to keep. Omit or set to `null` to keep
+            every category the detector produces. An empty list `[]` is a deliberate
+            "match nothing" filter and returns zero spans — use `null` if you mean
+            "no filter". Values outside the canonical taxonomy are rejected with `422`.
+          examples:
+          - - EMAIL
+            - PHONE
+        options:
+          anyOf:
+          - $ref: '#/components/schemas/DetectorOptions'
+          - type: 'null'
+          description: Per-detector options namespace. The entry matching the top-level
+            `detector` is consulted; other entries are accepted but ignored.
+          examples:
+          - opf:
+              decode_mode: argmax
+      type: object
+      required:
+      - text
+      title: FindRequest
+      description: Base request for `/v1/find` — no text-rewriting fields.
+      examples:
+      - categories:
+        - EMAIL
+        detector: presidio
+        text: Email joe@example.com about the trip to Elgin, TX.
+    FindResponse:
+      properties:
+        detector:
+          type: string
+          title: Detector
+          description: Detector that produced the spans.
+        text:
+          type: string
+          title: Text
+          description: Echo of the request `text`.
+        detected_spans:
+          items:
+            $ref: '#/components/schemas/SpanOut'
+          type: array
+          title: Detected Spans
+          description: Spans detected by the chosen detector.
+        summary:
+          $ref: '#/components/schemas/SummaryOut'
+        warning:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Warning
+          description: Non-fatal warning surfaced by the detector backend, if any.
+      type: object
+      required:
+      - detector
+      - text
+      - detected_spans
+      - summary
+      title: FindResponse
+      description: Response from `/v1/find`.
+      examples:
+      - detected_spans:
+        - end: 21
+          label: EMAIL
+          raw_label: EMAIL_ADDRESS
+          start: 6
+          text: joe@example.com
+        detector: presidio
+        summary:
+          by_label:
+            EMAIL: 1
+          span_count: 1
+        text: Email joe@example.com about the trip to Elgin, TX.
     HealthResponse:
       properties:
         status:
@@ -553,7 +553,7 @@ components:
       type: object
       title: OpfOptions
       description: Options that only apply when `detector` is `opf`.
-    SanitizeRequest:
+    ReplaceRequest:
       properties:
         text:
           type: string
@@ -615,8 +615,8 @@ components:
       type: object
       required:
       - text
-      title: SanitizeRequest
-      description: 'Request for `/v1/sanitize` — `DetectRequest` plus a `mode` field
+      title: ReplaceRequest
+      description: 'Request for `/v1/replace` — `FindRequest` plus a `mode` field
         that picks
 
         how detected spans are rewritten.'
@@ -624,7 +624,7 @@ components:
       - detector: presidio
         mode: label_token
         text: Email alice@x.com or call +1-415-555-0100.
-    SanitizeResponse:
+    ReplaceResponse:
       properties:
         detector:
           type: string
@@ -651,13 +651,13 @@ components:
           - Email alice@x.com.
         detected_spans:
           items:
-            $ref: '#/components/schemas/SanitizedSpan'
+            $ref: '#/components/schemas/ReplacedSpan'
           type: array
           title: Detected Spans
           description: Spans detected by the chosen detector, with their replacements.
-        sanitized_text:
+        replaced_text:
           type: string
-          title: Sanitized Text
+          title: Replaced Text
           description: '`text` with each detected span replaced by its `replacement`.
             Overlapping spans: the earlier-starting span wins; later overlaps are
             skipped here (they still appear in `detected_spans`).'
@@ -677,10 +677,10 @@ components:
       - mode
       - text
       - detected_spans
-      - sanitized_text
+      - replaced_text
       - summary
-      title: SanitizeResponse
-      description: Response from `/v1/sanitize`.
+      title: ReplaceResponse
+      description: Response from `/v1/replace`.
       examples:
       - detected_spans:
         - end: 17
@@ -697,14 +697,14 @@ components:
           text: +1-415-555-0100
         detector: presidio
         mode: label_token
-        sanitized_text: Email [EMAIL_MGaE1Bo] or call [PHONE_vRXiWKZ].
+        replaced_text: Email [EMAIL_MGaE1Bo] or call [PHONE_vRXiWKZ].
         summary:
           by_label:
             EMAIL: 1
             PHONE: 1
           span_count: 2
         text: Email alice@x.com or call +1-415-555-0100.
-    SanitizedSpan:
+    ReplacedSpan:
       properties:
         label:
           type: string
@@ -739,7 +739,7 @@ components:
         replacement:
           type: string
           title: Replacement
-          description: The string this span was rewritten to in `sanitized_text`.
+          description: The string this span was rewritten to in `replaced_text`.
           examples:
           - '[EMAIL_MGaE1Bo]'
       type: object
@@ -750,8 +750,8 @@ components:
       - end
       - text
       - replacement
-      title: SanitizedSpan
-      description: One detected span plus the string it was rewritten to in `sanitized_text`.
+      title: ReplacedSpan
+      description: One detected span plus the string it was rewritten to in `replaced_text`.
     SpanOut:
       properties:
         label:
@@ -792,7 +792,7 @@ components:
       - end
       - text
       title: SpanOut
-      description: Plain span for `/v1/detect` — no replacement text.
+      description: Plain span for `/v1/find` — no replacement text.
     SummaryOut:
       properties:
         span_count:
@@ -818,10 +818,10 @@ components:
       description: Per-response detection summary. `by_label` maps canonical label
         to count.
 tags:
-- name: Detect
-  description: Detection-only endpoint. Returns spans without rewriting the input.
-- name: Sanitize
-  description: 'Detection plus rewriting under one of four modes: `redact`, `label`,
-    `label_number`, `label_token`.'
+- name: Find
+  description: Find-only endpoint. Returns spans without rewriting the input.
+- name: Replace
+  description: 'Find plus rewriting under one of four modes: `redact`, `label`, `label_number`,
+    `label_token`.'
 - name: Meta
   description: Registry and liveness endpoints.

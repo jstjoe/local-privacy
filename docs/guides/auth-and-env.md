@@ -11,7 +11,7 @@ The API itself is unauthenticated today — front it with whatever your deployme
 | `OPF_DEVICE` | `cpu`, `cuda`, `mps`. Default `cpu`. |
 | `OPF_DECODE_MODE` | `viterbi` or `argmax`. OPF-only. Default `viterbi`. |
 | `SKYFLOW_VAULT_URL` / `SKYFLOW_VAULT_ID` / `SKYFLOW_BEARER_TOKEN` | Required for the `skyflow` **detector** (proxy backend). |
-| `SKYFLOW_TOKEN_VAULT_URL` / `SKYFLOW_TOKEN_VAULT_ID` / `SKYFLOW_TOKEN_BEARER_TOKEN` | Required for `/v1/sanitize` `label_token` mode. See [token vault setup](../token-vault-setup.md). |
+| `SKYFLOW_TOKEN_VAULT_URL` / `SKYFLOW_TOKEN_VAULT_ID` / `SKYFLOW_TOKEN_BEARER_TOKEN` | Required for `/v1/replace` `label_token` mode. See [token vault setup](../token-vault-setup.md). |
 
 `SKYFLOW_TOKEN_BEARER_TOKEN` falls back to `SKYFLOW_BEARER_TOKEN` when unset, so a single bearer can power both the detector proxy and the token vault when they live in the same Skyflow account.
 

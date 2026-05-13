@@ -1,6 +1,6 @@
-# Sanitization modes
+# Replace modes
 
-`POST /v1/sanitize` rewrites each detected span under the chosen `mode`. Four modes, in increasing strength of identity preservation:
+`POST /v1/replace` rewrites each detected span under the chosen `mode`. Four modes, in increasing strength of identity preservation:
 
 | `mode` | Looks like | What it preserves |
 |---|---|---|
@@ -11,7 +11,7 @@
 
 ## Overlapping spans
 
-The earlier-starting span wins. Later overlaps are skipped in `sanitized_text` but still appear in `detected_spans`.
+The earlier-starting span wins. Later overlaps are skipped in `replaced_text` but still appear in `detected_spans`.
 
 ## `label_token` requirements
 
