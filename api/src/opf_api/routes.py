@@ -147,9 +147,11 @@ async def _run_detect(request: Request, body: _DetectInput) -> tuple[str, list[S
         raise HTTPException(status_code=502, detail=f"{name}: {result['error']}")
 
     spans: list[Span] = list(result.get("spans") or [])
-    if body.categories:
-        # CanonicalLabel inherits str, so membership lookup against the raw
-        # detector label works without coercion.
+    if body.categories is not None:
+        # Empty list is a deliberate "match nothing" filter, not "no filter".
+        # Omit the field (or send null) to keep every category. CanonicalLabel
+        # inherits str, so membership lookup against the raw detector label
+        # works without coercion.
         allow = set(body.categories)
         spans = [s for s in spans if s["label"] in allow]
     return name, spans

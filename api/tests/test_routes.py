@@ -150,6 +150,36 @@ async def test_detect_filter_categories():
 
 
 @pytest.mark.asyncio
+async def test_detect_empty_categories_returns_zero_spans():
+    # `[]` is a deliberate "match nothing" filter — distinct from `None`,
+    # which means "no filter". Regression guard for that contract.
+    async with _client() as c:
+        r = await c.post(
+            "/v1/detect",
+            json={
+                "text": "Joe at joe@example.com lives in Elgin, TX.",
+                "categories": [],
+            },
+        )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["detected_spans"] == []
+    assert body["summary"] == {"span_count": 0, "by_label": {}}
+
+
+@pytest.mark.asyncio
+async def test_detect_null_categories_returns_all_spans():
+    async with _client() as c:
+        r = await c.post(
+            "/v1/detect",
+            json={"text": "Joe at joe@example.com lives in Elgin, TX.", "categories": None},
+        )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert {s["label"] for s in body["detected_spans"]} == {"EMAIL", "ADDRESS"}
+
+
+@pytest.mark.asyncio
 async def test_detect_invalid_category():
     async with _client() as c:
         r = await c.post(

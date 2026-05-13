@@ -108,9 +108,11 @@ class DetectRequest(BaseModel):
     categories: list[CanonicalLabel] | None = Field(
         default=None,
         description=(
-            "Canonical categories to keep. Omit or set to null to keep every "
-            "category the detector produces. Values that aren't in the canonical "
-            "taxonomy are rejected with `422`."
+            "Canonical categories to keep. Omit or set to `null` to keep every "
+            "category the detector produces. An empty list `[]` is a deliberate "
+            "\"match nothing\" filter and returns zero spans — use `null` if you "
+            "mean \"no filter\". Values outside the canonical taxonomy are "
+            "rejected with `422`."
         ),
         examples=[["EMAIL", "PHONE"]],
     )
