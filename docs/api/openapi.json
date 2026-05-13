@@ -186,7 +186,7 @@
               ]
             ],
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/CanonicalLabel"
             },
             "title": "Categories",
             "type": "array"
@@ -745,7 +745,7 @@
   "paths": {
     "/v1/detect": {
       "post": {
-        "description": "Run the chosen detector over `text` and return canonical-labelled spans.\n\nNo rewriting is performed \u2014 call `/v1/sanitize` for that.\n\nFilter detector output to a subset of canonical labels with `categories`.\nOPF-only: pass `decode_mode` to override the default Viterbi decoding.",
+        "description": "Run the chosen detector over `text` and return canonical-labelled spans.\n\nNo rewriting is performed \u2014 call `/v1/sanitize` for that.\n\nFilter detector output to a subset of canonical labels with `categories`.\nOPF-only: pass `options.opf.decode_mode` to override the default Viterbi decoding.",
         "operationId": "detect_v1_detect_post",
         "requestBody": {
           "content": {

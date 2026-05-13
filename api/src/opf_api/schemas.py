@@ -315,7 +315,7 @@ class DetectorInfo(BaseModel):
     """One row in the detector registry."""
 
     name: str = Field(..., description="Registry key.", examples=["opf"])
-    categories: list[str] = Field(
+    categories: list[CanonicalLabel] = Field(
         ...,
         description="Canonical categories this detector can produce.",
         examples=[["PERSON", "EMAIL", "PHONE"]],

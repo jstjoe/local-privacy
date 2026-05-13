@@ -68,7 +68,7 @@ paths:
 
         Filter detector output to a subset of canonical labels with `categories`.
 
-        OPF-only: pass `decode_mode` to override the default Viterbi decoding.'
+        OPF-only: pass `options.opf.decode_mode` to override the default Viterbi decoding.'
       operationId: detect_v1_detect_post
       requestBody:
         content:
@@ -412,7 +412,7 @@ components:
           - opf
         categories:
           items:
-            type: string
+            $ref: '#/components/schemas/CanonicalLabel'
           type: array
           title: Categories
           description: Canonical categories this detector can produce.

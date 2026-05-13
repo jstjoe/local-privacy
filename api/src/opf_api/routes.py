@@ -164,7 +164,7 @@ async def _run_detect(request: Request, body: _DetectInput) -> tuple[str, list[S
         "Run the chosen detector over `text` and return canonical-labelled spans.\n\n"
         "No rewriting is performed — call `/v1/sanitize` for that.\n\n"
         "Filter detector output to a subset of canonical labels with `categories`.\n"
-        "OPF-only: pass `decode_mode` to override the default Viterbi decoding."
+        "OPF-only: pass `options.opf.decode_mode` to override the default Viterbi decoding."
     ),
     response_description="Detected spans plus per-label counts.",
     responses={

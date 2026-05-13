@@ -178,6 +178,21 @@ async def test_detect_unknown_opf_option_rejected():
 
 
 @pytest.mark.asyncio
+async def test_detect_valid_opf_options_accepted():
+    async with _client() as c:
+        r = await c.post(
+            "/v1/detect",
+            json={
+                "text": "Joe at joe@example.com lives in Elgin, TX.",
+                "options": {"opf": {"decode_mode": "argmax"}},
+            },
+        )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert {s["label"] for s in body["detected_spans"]} == {"EMAIL", "ADDRESS"}
+
+
+@pytest.mark.asyncio
 async def test_detect_unknown_detector():
     async with _client() as c:
         r = await c.post("/v1/detect", json={"text": "x", "detector": "ghost"})
