@@ -35,6 +35,53 @@ from .vault_tokens import TokenVaultClient
 router = APIRouter()
 
 
+_ERROR_400_EXAMPLE = {
+    "description": "Unknown detector, unknown category, or missing config for the chosen mode.",
+    "content": {
+        "application/json": {
+            "examples": {
+                "unknown_detector": {
+                    "summary": "Unknown detector",
+                    "value": {
+                        "detail": "unknown detector 'foo'; available: ['gliner', 'opf', 'presidio']"
+                    },
+                },
+                "unknown_category": {
+                    "summary": "Unknown canonical category",
+                    "value": {
+                        "detail": "unknown canonical categories: ['FOO']. Valid: ['ACCOUNT', 'ADDRESS', ...]"
+                    },
+                },
+                "label_token_unconfigured": {
+                    "summary": "label_token mode without vault env",
+                    "value": {
+                        "detail": "mode='label_token' requires SKYFLOW_TOKEN_VAULT_URL and SKYFLOW_TOKEN_VAULT_ID env vars to be set"
+                    },
+                },
+            }
+        }
+    },
+}
+
+_ERROR_502_EXAMPLE = {
+    "description": "Detector backend failure or vault call failure.",
+    "content": {
+        "application/json": {
+            "examples": {
+                "detector_failure": {
+                    "summary": "Detector backend errored",
+                    "value": {"detail": "skyflow: upstream 503"},
+                },
+                "vault_failure": {
+                    "summary": "Token vault call failed",
+                    "value": {"detail": "label_token: vault insert failed: 401"},
+                },
+            }
+        }
+    },
+}
+
+
 _VALID_CATEGORIES = set(CANONICAL_LABELS)
 
 
@@ -92,7 +139,20 @@ async def _run_detect(request: Request, body: _DetectInput) -> tuple[str, list[S
     return name, spans
 
 
-@router.post("/detect", response_model=DetectResponse)
+@router.post(
+    "/detect",
+    response_model=DetectResponse,
+    tags=["Detect"],
+    summary="Detect PII spans in text",
+    description=(
+        "Run the chosen detector over `text` and return canonical-labelled spans.\n\n"
+        "No rewriting is performed — call `/v1/sanitize` for that.\n\n"
+        "Filter detector output to a subset of canonical labels with `categories`.\n"
+        "OPF-only: pass `decode_mode` to override the default Viterbi decoding."
+    ),
+    response_description="Detected spans plus per-label counts.",
+    responses={400: _ERROR_400_EXAMPLE, 502: _ERROR_502_EXAMPLE},
+)
 async def detect(request: Request, body: DetectRequest) -> DetectResponse:
     """Detect-only: returns spans, no text rewriting."""
     name, spans = await _run_detect(request, body)
@@ -130,7 +190,34 @@ def _build_label_token_renderer_raising_http(
         raise HTTPException(status_code=502, detail=f"label_token: {e}")
 
 
-@router.post("/sanitize", response_model=SanitizeResponse)
+@router.post(
+    "/sanitize",
+    response_model=SanitizeResponse,
+    tags=["Sanitize"],
+    summary="Detect and rewrite PII spans",
+    description=(
+        "Detect spans, then rewrite each one under the chosen `mode`. Four modes, "
+        "in increasing strength of identity preservation:\n\n"
+        "| `mode` | Looks like | What it preserves |\n"
+        "|---|---|---|\n"
+        "| `redact` | `********` | Nothing — fixed 8-char asterisk run regardless of span length. |\n"
+        "| `label` | `[EMAIL]` | Category only. Default. |\n"
+        "| `label_number` | `[EMAIL_1]` | Identity **within one request** via per-label counter; "
+        "duplicate `(label, text)` reuses its number. |\n"
+        "| `label_token` | `[EMAIL_MGaE1Bo]` | Identity **across requests and detectors** via a "
+        "Skyflow vault. Deterministic — same plaintext maps to the same 7-char token forever. |\n\n"
+        "**Overlapping spans:** the earlier-starting span wins; later overlaps are skipped in "
+        "`sanitized_text` (they still appear in `detected_spans`).\n\n"
+        "**`label_token` requirements:** `SKYFLOW_TOKEN_VAULT_URL`, `SKYFLOW_TOKEN_VAULT_ID`, "
+        "and a bearer (`SKYFLOW_TOKEN_BEARER_TOKEN`, falling back to `SKYFLOW_BEARER_TOKEN`). "
+        "The vault must be configured per the token-vault setup guide — one table with one "
+        "`tok_<label>` column per canonical label, each `DETERMINISTIC_FPT` with regex "
+        "`^[A-Za-z0-9]{7}$`. Spans whose canonical label has no vault column fall back to "
+        "`[LABEL]` for that span only."
+    ),
+    response_description="Sanitized text, the spans that were rewritten, and per-label counts.",
+    responses={400: _ERROR_400_EXAMPLE, 502: _ERROR_502_EXAMPLE},
+)
 async def sanitize(request: Request, body: SanitizeRequest) -> SanitizeResponse:
     """Detect + rewrite the input text under the chosen `mode`.
 
@@ -202,7 +289,19 @@ async def sanitize(request: Request, body: SanitizeRequest) -> SanitizeResponse:
     )
 
 
-@router.get("/detectors", response_model=DetectorsResponse)
+@router.get(
+    "/detectors",
+    response_model=DetectorsResponse,
+    tags=["Meta"],
+    summary="List registered detectors",
+    description=(
+        "Return every detector registered in this deployment plus the canonical categories "
+        "each can produce. `loaded` flips to `true` after first use (or at startup if the "
+        "detector is listed in `EAGER_LOAD`). `proxy=true` means the detector calls an "
+        "external service."
+    ),
+    response_description="Registry snapshot.",
+)
 async def list_detectors(request: Request) -> DetectorsResponse:
     registry: dict[str, DetectorEntry] = request.app.state.registry
     items = [
@@ -219,7 +318,17 @@ async def list_detectors(request: Request) -> DetectorsResponse:
     )
 
 
-@router.get("/health", response_model=HealthResponse)
+@router.get(
+    "/health",
+    response_model=HealthResponse,
+    tags=["Meta"],
+    summary="Liveness probe",
+    description=(
+        "Always returns `200` when the process is up. Does **not** probe detector backends — "
+        "use `/v1/detectors` to inspect which detectors have been loaded."
+    ),
+    response_description="Liveness status plus which detectors are currently loaded.",
+)
 async def health(request: Request) -> HealthResponse:
     registry: dict[str, DetectorEntry] = request.app.state.registry
     loaded = sorted(name for name, e in registry.items() if e.loaded)
