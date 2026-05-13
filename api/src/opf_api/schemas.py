@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from enum import Enum
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from opf_eval.taxonomy import CANONICAL_LABELS
 
 
 DecodeMode = Literal["viterbi", "argmax"]
@@ -15,12 +18,63 @@ DecodeMode = Literal["viterbi", "argmax"]
 SanitizeMode = Literal["redact", "label", "label_number", "label_token"]
 
 
-CANONICAL_LABEL_DESCRIPTION = (
-    "Canonical categories to keep. Valid values: PERSON, EMAIL, PHONE, "
-    "ADDRESS, URL, DATE, ACCOUNT, SECRET, USERNAME, DEMOGRAPHIC, "
-    "ORGANIZATION, OCCUPATION, MONEY, VEHICLE, PHYSICAL. "
-    "Omit or set to null to keep all categories the detector produces."
+class CanonicalLabel(str, Enum):
+    """Canonical PII category. Every detector's raw output maps into this taxonomy."""
+
+    PERSON = "PERSON"
+    EMAIL = "EMAIL"
+    PHONE = "PHONE"
+    ADDRESS = "ADDRESS"
+    URL = "URL"
+    DATE = "DATE"
+    ACCOUNT = "ACCOUNT"
+    SECRET = "SECRET"
+    USERNAME = "USERNAME"
+    DEMOGRAPHIC = "DEMOGRAPHIC"
+    ORGANIZATION = "ORGANIZATION"
+    OCCUPATION = "OCCUPATION"
+    MONEY = "MONEY"
+    VEHICLE = "VEHICLE"
+    PHYSICAL = "PHYSICAL"
+
+
+# Guardrail: enum must mirror opf_eval.taxonomy.CANONICAL_LABELS exactly.
+# Failing here at import time is loud and immediate.
+assert {m.value for m in CanonicalLabel} == set(CANONICAL_LABELS), (
+    "CanonicalLabel enum drifted from opf_eval.taxonomy.CANONICAL_LABELS: "
+    f"enum={sorted(m.value for m in CanonicalLabel)} "
+    f"taxonomy={sorted(CANONICAL_LABELS)}"
 )
+
+
+class OpfOptions(BaseModel):
+    """Options that only apply when `detector` is `opf`."""
+
+    model_config = ConfigDict(extra="forbid")  # catch typos like `decod_mode`
+
+    decode_mode: DecodeMode = Field(
+        default="viterbi",
+        description=(
+            "OPF decode strategy. `viterbi` (default) maximises sequence probability; "
+            "`argmax` picks the most likely label per token independently. "
+            "**Currently advisory** — the OPF detector reads its decode mode from the "
+            "server's `OPF_DECODE_MODE` env at startup; per-request override is "
+            "reserved for a follow-up that extends `OPFDetector.detect()`."
+        ),
+        examples=["viterbi"],
+    )
+
+
+class DetectorOptions(BaseModel):
+    """Per-detector options namespace. Each key carries options for that one
+    detector. Only the entry matching the top-level `detector` is consulted —
+    other keys are accepted but ignored, so a client can carry one options
+    blob across detector swaps without restructuring it."""
+
+    opf: OpfOptions | None = Field(
+        default=None,
+        description="Options for the `opf` detector. Ignored by other detectors.",
+    )
 
 
 class DetectRequest(BaseModel):
@@ -51,19 +105,22 @@ class DetectRequest(BaseModel):
         ),
         examples=["presidio", "opf", "gliner"],
     )
-    categories: list[str] | None = Field(
-        default=None,
-        description=CANONICAL_LABEL_DESCRIPTION,
-        examples=[["EMAIL", "PHONE"]],
-    )
-    decode_mode: DecodeMode | None = Field(
+    categories: list[CanonicalLabel] | None = Field(
         default=None,
         description=(
-            "OPF-only decode strategy. Ignored by every other detector. "
-            "`viterbi` (default) maximises sequence probability; "
-            "`argmax` picks the most likely label per token independently."
+            "Canonical categories to keep. Omit or set to null to keep every "
+            "category the detector produces. Values that aren't in the canonical "
+            "taxonomy are rejected with `422`."
         ),
-        examples=["viterbi"],
+        examples=[["EMAIL", "PHONE"]],
+    )
+    options: DetectorOptions | None = Field(
+        default=None,
+        description=(
+            "Per-detector options namespace. The entry matching the top-level "
+            "`detector` is consulted; other entries are accepted but ignored."
+        ),
+        examples=[{"opf": {"decode_mode": "argmax"}}],
     )
 
 
@@ -142,7 +199,6 @@ class SanitizeResponse(BaseModel):
         json_schema_extra={
             "examples": [
                 {
-                    "schema_version": 2,
                     "detector": "presidio",
                     "mode": "label_token",
                     "text": "Email alice@x.com or call +1-415-555-0100.",
@@ -172,14 +228,6 @@ class SanitizeResponse(BaseModel):
         }
     )
 
-    schema_version: int = Field(
-        ...,
-        description=(
-            "Payload schema version. Bumps when field names or semantics change. "
-            "Independent of `info.version` in the OpenAPI spec."
-        ),
-        examples=[2],
-    )
     detector: str = Field(
         ...,
         description="Detector that produced the spans.",
@@ -233,7 +281,6 @@ class DetectResponse(BaseModel):
         json_schema_extra={
             "examples": [
                 {
-                    "schema_version": 2,
                     "detector": "presidio",
                     "text": "Email joe@example.com about the trip to Elgin, TX.",
                     "detected_spans": [
@@ -252,11 +299,6 @@ class DetectResponse(BaseModel):
         }
     )
 
-    schema_version: int = Field(
-        ...,
-        description="Payload schema version. Independent of the OpenAPI `info.version`.",
-        examples=[2],
-    )
     detector: str = Field(..., description="Detector that produced the spans.")
     text: str = Field(..., description="Echo of the request `text`.")
     detected_spans: list[SpanOut] = Field(
@@ -344,7 +386,6 @@ class HealthResponse(BaseModel):
                     "status": "ok",
                     "default_detector": "opf",
                     "loaded_detectors": ["opf"],
-                    "schema_version": 2,
                 }
             ]
         }
@@ -358,9 +399,4 @@ class HealthResponse(BaseModel):
         ...,
         description="Names of detectors that have been initialised so far.",
         examples=[["opf"]],
-    )
-    schema_version: int = Field(
-        ...,
-        description="Payload schema version. Independent of the OpenAPI `info.version`.",
-        examples=[2],
     )

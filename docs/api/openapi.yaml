@@ -2,25 +2,54 @@ openapi: 3.1.0
 info:
   title: Privacy-detection API
   summary: Unified PII detection across OPF, GLiNER, Presidio, and Skyflow.
-  description: "Unified PII detection across **OPF**, **GLiNER**, **Presidio**, and\
-    \ **Skyflow**.\nPick a backend with the `detector` field; canonical labels apply\
-    \ uniformly across all of them.\n\n## Endpoints\n\n- `POST /v1/detect` — return\
-    \ spans only, no text rewriting.\n- `POST /v1/sanitize` — detect and rewrite spans\
-    \ under one of four modes.\n- `GET /v1/detectors` — list registered detectors\
-    \ and their category coverage.\n- `GET /v1/health` — liveness probe; does not\
-    \ exercise detector backends.\n\n## Versioning\n\nTwo version numbers appear in\
-    \ this API. They are independent:\n\n- `info.version` (this spec) — tracks the\
-    \ OpenAPI contract.\n- `schema_version` (response payload field) — tracks the\
-    \ request/response payload shape.\n  Currently `2`. Bumps when payload field names\
-    \ or semantics change. Clients should pin on this.\n\n## Canonical labels\n\n\
-    Every detector's raw output maps into a 15-label taxonomy:\n`PERSON`, `EMAIL`,\
-    \ `PHONE`, `ADDRESS`, `URL`, `DATE`, `ACCOUNT`, `SECRET`, `USERNAME`,\n`DEMOGRAPHIC`,\
-    \ `ORGANIZATION`, `OCCUPATION`, `MONEY`, `VEHICLE`, `PHYSICAL`.\nDetectors vary\
-    \ in coverage — `GET /v1/detectors` reports each detector's category list.\n"
+  description: 'Unified PII detection across **OPF**, **GLiNER**, **Presidio**, and
+    **Skyflow**.
+
+    Pick a backend with the `detector` field; canonical labels apply uniformly across
+    all of them.
+
+
+    ## Endpoints
+
+
+    - `POST /v1/detect` — return spans only, no text rewriting.
+
+    - `POST /v1/sanitize` — detect and rewrite spans under one of four modes.
+
+    - `GET /v1/detectors` — list registered detectors and their category coverage.
+
+    - `GET /v1/health` — liveness probe; does not exercise detector backends.
+
+
+    ## Versioning
+
+
+    The API is pre-`1.0`. `info.version` is the only version surface — every
+
+    breaking change to request or response shape lands as a minor bump
+
+    (`0.x.0 -> 0.(x+1).0`). Non-breaking additions land as patch bumps. The
+
+    `/v1/` URL prefix is reserved for the eventual `1.0` cutover.
+
+
+    ## Canonical labels
+
+
+    Every detector''s raw output maps into a 15-label taxonomy:
+
+    `PERSON`, `EMAIL`, `PHONE`, `ADDRESS`, `URL`, `DATE`, `ACCOUNT`, `SECRET`, `USERNAME`,
+
+    `DEMOGRAPHIC`, `ORGANIZATION`, `OCCUPATION`, `MONEY`, `VEHICLE`, `PHYSICAL`.
+
+    Detectors vary in coverage — `GET /v1/detectors` reports each detector''s category
+    list.
+
+    '
   contact:
     name: local-privacy
     url: https://github.com/jstjoe/local-privacy
-  version: 0.2.0
+  version: 0.3.0
 servers:
 - url: http://localhost:8000
   description: Local dev
@@ -55,8 +84,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/DetectResponse'
         '400':
-          description: Unknown detector, unknown category, or missing config for the
-            chosen mode.
+          description: Unknown detector or missing config for the chosen mode.
           content:
             application/json:
               examples:
@@ -65,16 +93,41 @@ paths:
                   value:
                     detail: 'unknown detector ''foo''; available: [''gliner'', ''opf'',
                       ''presidio'']'
-                unknown_category:
-                  summary: Unknown canonical category
-                  value:
-                    detail: 'unknown canonical categories: [''FOO'']. Valid: [''ACCOUNT'',
-                      ''ADDRESS'', ...]'
                 label_token_unconfigured:
                   summary: label_token mode without vault env
                   value:
                     detail: mode='label_token' requires SKYFLOW_TOKEN_VAULT_URL and
                       SKYFLOW_TOKEN_VAULT_ID env vars to be set
+        '422':
+          description: 'Request body failed Pydantic validation. Common causes: a
+            value in `categories` that isn''t a canonical label, an unknown key in
+            `options.opf`, or a wrong type on any field.'
+          content:
+            application/json:
+              examples:
+                bad_category:
+                  summary: Non-canonical value in `categories`
+                  value:
+                    detail:
+                    - type: enum
+                      loc:
+                      - body
+                      - categories
+                      - 0
+                      msg: Input should be 'PERSON', 'EMAIL', 'PHONE', ...
+                      input: FOO
+                unknown_opf_option:
+                  summary: Unknown key in `options.opf`
+                  value:
+                    detail:
+                    - type: extra_forbidden
+                      loc:
+                      - body
+                      - options
+                      - opf
+                      - decod_mode
+                      msg: Extra inputs are not permitted
+                      input: argmax
         '502':
           description: Detector backend failure or vault call failure.
           content:
@@ -88,12 +141,6 @@ paths:
                   summary: Token vault call failed
                   value:
                     detail: 'label_token: vault insert failed: 401'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
   /v1/sanitize:
     post:
       tags:
@@ -146,8 +193,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/SanitizeResponse'
         '400':
-          description: Unknown detector, unknown category, or missing config for the
-            chosen mode.
+          description: Unknown detector or missing config for the chosen mode.
           content:
             application/json:
               examples:
@@ -156,16 +202,41 @@ paths:
                   value:
                     detail: 'unknown detector ''foo''; available: [''gliner'', ''opf'',
                       ''presidio'']'
-                unknown_category:
-                  summary: Unknown canonical category
-                  value:
-                    detail: 'unknown canonical categories: [''FOO'']. Valid: [''ACCOUNT'',
-                      ''ADDRESS'', ...]'
                 label_token_unconfigured:
                   summary: label_token mode without vault env
                   value:
                     detail: mode='label_token' requires SKYFLOW_TOKEN_VAULT_URL and
                       SKYFLOW_TOKEN_VAULT_ID env vars to be set
+        '422':
+          description: 'Request body failed Pydantic validation. Common causes: a
+            value in `categories` that isn''t a canonical label, an unknown key in
+            `options.opf`, or a wrong type on any field.'
+          content:
+            application/json:
+              examples:
+                bad_category:
+                  summary: Non-canonical value in `categories`
+                  value:
+                    detail:
+                    - type: enum
+                      loc:
+                      - body
+                      - categories
+                      - 0
+                      msg: Input should be 'PERSON', 'EMAIL', 'PHONE', ...
+                      input: FOO
+                unknown_opf_option:
+                  summary: Unknown key in `options.opf`
+                  value:
+                    detail:
+                    - type: extra_forbidden
+                      loc:
+                      - body
+                      - options
+                      - opf
+                      - decod_mode
+                      msg: Extra inputs are not permitted
+                      input: argmax
         '502':
           description: Detector backend failure or vault call failure.
           content:
@@ -179,12 +250,6 @@ paths:
                   summary: Token vault call failed
                   value:
                     detail: 'label_token: vault insert failed: 401'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
   /v1/detectors:
     get:
       tags:
@@ -220,6 +285,27 @@ paths:
                 $ref: '#/components/schemas/HealthResponse'
 components:
   schemas:
+    CanonicalLabel:
+      type: string
+      enum:
+      - PERSON
+      - EMAIL
+      - PHONE
+      - ADDRESS
+      - URL
+      - DATE
+      - ACCOUNT
+      - SECRET
+      - USERNAME
+      - DEMOGRAPHIC
+      - ORGANIZATION
+      - OCCUPATION
+      - MONEY
+      - VEHICLE
+      - PHYSICAL
+      title: CanonicalLabel
+      description: Canonical PII category. Every detector's raw output maps into this
+        taxonomy.
     DetectRequest:
       properties:
         text:
@@ -242,30 +328,25 @@ components:
         categories:
           anyOf:
           - items:
-              type: string
+              $ref: '#/components/schemas/CanonicalLabel'
             type: array
           - type: 'null'
           title: Categories
-          description: 'Canonical categories to keep. Valid values: PERSON, EMAIL,
-            PHONE, ADDRESS, URL, DATE, ACCOUNT, SECRET, USERNAME, DEMOGRAPHIC, ORGANIZATION,
-            OCCUPATION, MONEY, VEHICLE, PHYSICAL. Omit or set to null to keep all
-            categories the detector produces.'
+          description: Canonical categories to keep. Omit or set to null to keep every
+            category the detector produces. Values that aren't in the canonical taxonomy
+            are rejected with `422`.
           examples:
           - - EMAIL
             - PHONE
-        decode_mode:
+        options:
           anyOf:
-          - type: string
-            enum:
-            - viterbi
-            - argmax
+          - $ref: '#/components/schemas/DetectorOptions'
           - type: 'null'
-          title: Decode Mode
-          description: OPF-only decode strategy. Ignored by every other detector.
-            `viterbi` (default) maximises sequence probability; `argmax` picks the
-            most likely label per token independently.
+          description: Per-detector options namespace. The entry matching the top-level
+            `detector` is consulted; other entries are accepted but ignored.
           examples:
-          - viterbi
+          - opf:
+              decode_mode: argmax
       type: object
       required:
       - text
@@ -278,12 +359,6 @@ components:
         text: Email joe@example.com about the trip to Elgin, TX.
     DetectResponse:
       properties:
-        schema_version:
-          type: integer
-          title: Schema Version
-          description: Payload schema version. Independent of the OpenAPI `info.version`.
-          examples:
-          - 2
         detector:
           type: string
           title: Detector
@@ -308,7 +383,6 @@ components:
           description: Non-fatal warning surfaced by the detector backend, if any.
       type: object
       required:
-      - schema_version
       - detector
       - text
       - detected_spans
@@ -323,7 +397,6 @@ components:
           start: 6
           text: joe@example.com
         detector: presidio
-        schema_version: 2
         summary:
           by_label:
             EMAIL: 1
@@ -368,6 +441,23 @@ components:
       - proxy
       title: DetectorInfo
       description: One row in the detector registry.
+    DetectorOptions:
+      properties:
+        opf:
+          anyOf:
+          - $ref: '#/components/schemas/OpfOptions'
+          - type: 'null'
+          description: Options for the `opf` detector. Ignored by other detectors.
+      type: object
+      title: DetectorOptions
+      description: 'Per-detector options namespace. Each key carries options for that
+        one
+
+        detector. Only the entry matching the top-level `detector` is consulted —
+
+        other keys are accepted but ignored, so a client can carry one options
+
+        blob across detector swaps without restructuring it.'
     DetectorsResponse:
       properties:
         default:
@@ -409,15 +499,6 @@ components:
           loaded: false
           name: skyflow
           proxy: true
-    HTTPValidationError:
-      properties:
-        detail:
-          items:
-            $ref: '#/components/schemas/ValidationError'
-          type: array
-          title: Detail
-      type: object
-      title: HTTPValidationError
     HealthResponse:
       properties:
         status:
@@ -439,26 +520,38 @@ components:
           description: Names of detectors that have been initialised so far.
           examples:
           - - opf
-        schema_version:
-          type: integer
-          title: Schema Version
-          description: Payload schema version. Independent of the OpenAPI `info.version`.
-          examples:
-          - 2
       type: object
       required:
       - status
       - default_detector
       - loaded_detectors
-      - schema_version
       title: HealthResponse
       description: Response from `/v1/health`.
       examples:
       - default_detector: opf
         loaded_detectors:
         - opf
-        schema_version: 2
         status: ok
+    OpfOptions:
+      properties:
+        decode_mode:
+          type: string
+          enum:
+          - viterbi
+          - argmax
+          title: Decode Mode
+          description: OPF decode strategy. `viterbi` (default) maximises sequence
+            probability; `argmax` picks the most likely label per token independently.
+            **Currently advisory** — the OPF detector reads its decode mode from the
+            server's `OPF_DECODE_MODE` env at startup; per-request override is reserved
+            for a follow-up that extends `OPFDetector.detect()`.
+          default: viterbi
+          examples:
+          - viterbi
+      additionalProperties: false
+      type: object
+      title: OpfOptions
+      description: Options that only apply when `detector` is `opf`.
     SanitizeRequest:
       properties:
         text:
@@ -481,30 +574,25 @@ components:
         categories:
           anyOf:
           - items:
-              type: string
+              $ref: '#/components/schemas/CanonicalLabel'
             type: array
           - type: 'null'
           title: Categories
-          description: 'Canonical categories to keep. Valid values: PERSON, EMAIL,
-            PHONE, ADDRESS, URL, DATE, ACCOUNT, SECRET, USERNAME, DEMOGRAPHIC, ORGANIZATION,
-            OCCUPATION, MONEY, VEHICLE, PHYSICAL. Omit or set to null to keep all
-            categories the detector produces.'
+          description: Canonical categories to keep. Omit or set to null to keep every
+            category the detector produces. Values that aren't in the canonical taxonomy
+            are rejected with `422`.
           examples:
           - - EMAIL
             - PHONE
-        decode_mode:
+        options:
           anyOf:
-          - type: string
-            enum:
-            - viterbi
-            - argmax
+          - $ref: '#/components/schemas/DetectorOptions'
           - type: 'null'
-          title: Decode Mode
-          description: OPF-only decode strategy. Ignored by every other detector.
-            `viterbi` (default) maximises sequence probability; `argmax` picks the
-            most likely label per token independently.
+          description: Per-detector options namespace. The entry matching the top-level
+            `detector` is consulted; other entries are accepted but ignored.
           examples:
-          - viterbi
+          - opf:
+              decode_mode: argmax
         mode:
           type: string
           enum:
@@ -536,13 +624,6 @@ components:
         text: Email alice@x.com or call +1-415-555-0100.
     SanitizeResponse:
       properties:
-        schema_version:
-          type: integer
-          title: Schema Version
-          description: Payload schema version. Bumps when field names or semantics
-            change. Independent of `info.version` in the OpenAPI spec.
-          examples:
-          - 2
         detector:
           type: string
           title: Detector
@@ -590,7 +671,6 @@ components:
           description: Non-fatal warning surfaced by the detector backend, if any.
       type: object
       required:
-      - schema_version
       - detector
       - mode
       - text
@@ -616,7 +696,6 @@ components:
         detector: presidio
         mode: label_token
         sanitized_text: Email [EMAIL_MGaE1Bo] or call [PHONE_vRXiWKZ].
-        schema_version: 2
         summary:
           by_label:
             EMAIL: 1
@@ -736,32 +815,6 @@ components:
       title: SummaryOut
       description: Per-response detection summary. `by_label` maps canonical label
         to count.
-    ValidationError:
-      properties:
-        loc:
-          items:
-            anyOf:
-            - type: string
-            - type: integer
-          type: array
-          title: Location
-        msg:
-          type: string
-          title: Message
-        type:
-          type: string
-          title: Error Type
-        input:
-          title: Input
-        ctx:
-          type: object
-          title: Context
-      type: object
-      required:
-      - loc
-      - msg
-      - type
-      title: ValidationError
 tags:
 - name: Detect
   description: Detection-only endpoint. Returns spans without rewriting the input.

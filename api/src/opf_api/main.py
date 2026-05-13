@@ -19,12 +19,6 @@ logger = logging.getLogger("opf_api")
 logging.basicConfig(level=logging.INFO)
 
 
-# Bumped to 2 with the /v1/sanitize consolidation: response shape changed
-# (`sanitized_text` replaces `redacted_text`/`tokenized_text`, `replacement`
-# replaces `placeholder`/`token`, new `mode` field on SanitizeResponse).
-SCHEMA_VERSION = 2
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     registry = build_default_registry()
@@ -36,7 +30,6 @@ async def lifespan(app: FastAPI):
         )
     app.state.registry = registry
     app.state.default_detector = default
-    app.state.schema_version = SCHEMA_VERSION
     app.state.token_vault_client = TokenVaultClient.from_env()
     if app.state.token_vault_client is None:
         logger.info(
@@ -74,11 +67,10 @@ Pick a backend with the `detector` field; canonical labels apply uniformly acros
 
 ## Versioning
 
-Two version numbers appear in this API. They are independent:
-
-- `info.version` (this spec) — tracks the OpenAPI contract.
-- `schema_version` (response payload field) — tracks the request/response payload shape.
-  Currently `2`. Bumps when payload field names or semantics change. Clients should pin on this.
+The API is pre-`1.0`. `info.version` is the only version surface — every
+breaking change to request or response shape lands as a minor bump
+(`0.x.0 -> 0.(x+1).0`). Non-breaking additions land as patch bumps. The
+`/v1/` URL prefix is reserved for the eventual `1.0` cutover.
 
 ## Canonical labels
 
@@ -108,7 +100,7 @@ OPENAPI_TAGS = [
 
 app = FastAPI(
     title="Privacy-detection API",
-    version="0.2.0",
+    version="0.3.0",
     summary="Unified PII detection across OPF, GLiNER, Presidio, and Skyflow.",
     description=API_DESCRIPTION,
     lifespan=lifespan,

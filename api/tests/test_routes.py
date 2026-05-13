@@ -109,7 +109,6 @@ def _build_app(
     fake_entry.instance = instance
     app.state.registry = {"fake": fake_entry}
     app.state.default_detector = "fake"
-    app.state.schema_version = 2
     app.state.token_vault_client = token_vault_client
     return app
 
@@ -157,8 +156,25 @@ async def test_detect_invalid_category():
             "/v1/detect",
             json={"text": "x", "categories": ["NOT_REAL"]},
         )
-    assert r.status_code == 400
-    assert "NOT_REAL" in r.json()["detail"]
+    assert r.status_code == 422
+    detail = r.json()["detail"]
+    # Pydantic returns a list of per-field errors; the bad input must be there.
+    assert any("NOT_REAL" == err.get("input") for err in detail), detail
+
+
+@pytest.mark.asyncio
+async def test_detect_unknown_opf_option_rejected():
+    async with _client() as c:
+        r = await c.post(
+            "/v1/detect",
+            json={"text": "x", "options": {"opf": {"decod_mode": "argmax"}}},
+        )
+    assert r.status_code == 422
+    detail = r.json()["detail"]
+    assert any(
+        err.get("type") == "extra_forbidden" and "decod_mode" in err.get("loc", [])
+        for err in detail
+    ), detail
 
 
 @pytest.mark.asyncio

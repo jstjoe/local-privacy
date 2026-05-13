@@ -29,9 +29,4 @@ Then visit one of `/scalar`, `/docs`, `/redoc`. The OpenAPI spec itself lives at
 
 ## Versioning
 
-Two version numbers appear in this API. They are independent.
-
-- `info.version` (in this OpenAPI spec) tracks the contract. Currently `0.2.0`.
-- `schema_version` (in every response payload) tracks request/response payload shape. Currently `2`. Clients should pin on this.
-
-A future field rename or semantic shift bumps `schema_version`. A new endpoint, new field, or doc-only change does not.
+The API is pre-`1.0`. `info.version` (in this OpenAPI spec) is the only version surface — currently `0.3.0`. Each breaking change to request or response shape lands as a minor bump (`0.x.0 -> 0.(x+1).0`); non-breaking additions land as patch bumps. The `/v1/` URL prefix is reserved for the eventual `1.0` cutover.
