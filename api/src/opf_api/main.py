@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 os.environ.setdefault("OPF_MOE_TRITON", "0")
 
 from fastapi import FastAPI  # noqa: E402
+from scalar_fastapi import get_scalar_api_reference  # noqa: E402
 
 from .registry import build_default_registry  # noqa: E402
 from .routes import router  # noqa: E402
@@ -60,13 +61,72 @@ async def lifespan(app: FastAPI):
             client.close()
 
 
+API_DESCRIPTION = """\
+Unified PII detection across **OPF**, **GLiNER**, **Presidio**, and **Skyflow**.
+Pick a backend with the `detector` field; canonical labels apply uniformly across all of them.
+
+## Endpoints
+
+- `POST /v1/detect` — return spans only, no text rewriting.
+- `POST /v1/sanitize` — detect and rewrite spans under one of four modes.
+- `GET /v1/detectors` — list registered detectors and their category coverage.
+- `GET /v1/health` — liveness probe; does not exercise detector backends.
+
+## Versioning
+
+Two version numbers appear in this API. They are independent:
+
+- `info.version` (this spec) — tracks the OpenAPI contract.
+- `schema_version` (response payload field) — tracks the request/response payload shape.
+  Currently `2`. Bumps when payload field names or semantics change. Clients should pin on this.
+
+## Canonical labels
+
+Every detector's raw output maps into a 15-label taxonomy:
+`PERSON`, `EMAIL`, `PHONE`, `ADDRESS`, `URL`, `DATE`, `ACCOUNT`, `SECRET`, `USERNAME`,
+`DEMOGRAPHIC`, `ORGANIZATION`, `OCCUPATION`, `MONEY`, `VEHICLE`, `PHYSICAL`.
+Detectors vary in coverage — `GET /v1/detectors` reports each detector's category list.
+"""
+
+OPENAPI_TAGS = [
+    {
+        "name": "Detect",
+        "description": "Detection-only endpoint. Returns spans without rewriting the input.",
+    },
+    {
+        "name": "Sanitize",
+        "description": (
+            "Detection plus rewriting under one of four modes: "
+            "`redact`, `label`, `label_number`, `label_token`."
+        ),
+    },
+    {
+        "name": "Meta",
+        "description": "Registry and liveness endpoints.",
+    },
+]
+
 app = FastAPI(
     title="Privacy-detection API",
     version="0.2.0",
+    summary="Unified PII detection across OPF, GLiNER, Presidio, and Skyflow.",
+    description=API_DESCRIPTION,
     lifespan=lifespan,
-    description=(
-        "Unified PII detection across OPF, GLiNER, Presidio, and Skyflow. "
-        "Pick a backend with the `detector` field; canonical labels apply uniformly."
-    ),
+    openapi_tags=OPENAPI_TAGS,
+    contact={
+        "name": "local-privacy",
+        "url": "https://github.com/jstjoe/local-privacy",
+    },
+    servers=[
+        {"url": "http://localhost:8000", "description": "Local dev"},
+    ],
 )
 app.include_router(router, prefix="/v1")
+
+
+@app.get("/scalar", include_in_schema=False)
+async def scalar_html():
+    return get_scalar_api_reference(
+        openapi_url=app.openapi_url,
+        title=app.title,
+    )

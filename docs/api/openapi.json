@@ -1,0 +1,1015 @@
+{
+  "components": {
+    "schemas": {
+      "DetectRequest": {
+        "description": "Base request for `/v1/detect` \u2014 no text-rewriting fields.",
+        "examples": [
+          {
+            "categories": [
+              "EMAIL"
+            ],
+            "detector": "presidio",
+            "text": "Email joe@example.com about the trip to Elgin, TX."
+          }
+        ],
+        "properties": {
+          "categories": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Canonical categories to keep. Valid values: PERSON, EMAIL, PHONE, ADDRESS, URL, DATE, ACCOUNT, SECRET, USERNAME, DEMOGRAPHIC, ORGANIZATION, OCCUPATION, MONEY, VEHICLE, PHYSICAL. Omit or set to null to keep all categories the detector produces.",
+            "examples": [
+              [
+                "EMAIL",
+                "PHONE"
+              ]
+            ],
+            "title": "Categories"
+          },
+          "decode_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "viterbi",
+                  "argmax"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "OPF-only decode strategy. Ignored by every other detector. `viterbi` (default) maximises sequence probability; `argmax` picks the most likely label per token independently.",
+            "examples": [
+              "viterbi"
+            ],
+            "title": "Decode Mode"
+          },
+          "detector": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Detector name from `GET /v1/detectors`. Omit to use the server's `DEFAULT_DETECTOR` (set via env, typically `opf`).",
+            "examples": [
+              "presidio",
+              "opf",
+              "gliner"
+            ],
+            "title": "Detector"
+          },
+          "text": {
+            "description": "Free-form text to scan for PII.",
+            "examples": [
+              "Email joe@example.com about the trip to Elgin, TX."
+            ],
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "DetectRequest",
+        "type": "object"
+      },
+      "DetectResponse": {
+        "description": "Response from `/v1/detect`.",
+        "examples": [
+          {
+            "detected_spans": [
+              {
+                "end": 21,
+                "label": "EMAIL",
+                "raw_label": "EMAIL_ADDRESS",
+                "start": 6,
+                "text": "joe@example.com"
+              }
+            ],
+            "detector": "presidio",
+            "schema_version": 2,
+            "summary": {
+              "by_label": {
+                "EMAIL": 1
+              },
+              "span_count": 1
+            },
+            "text": "Email joe@example.com about the trip to Elgin, TX."
+          }
+        ],
+        "properties": {
+          "detected_spans": {
+            "description": "Spans detected by the chosen detector.",
+            "items": {
+              "$ref": "#/components/schemas/SpanOut"
+            },
+            "title": "Detected Spans",
+            "type": "array"
+          },
+          "detector": {
+            "description": "Detector that produced the spans.",
+            "title": "Detector",
+            "type": "string"
+          },
+          "schema_version": {
+            "description": "Payload schema version. Independent of the OpenAPI `info.version`.",
+            "examples": [
+              2
+            ],
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/SummaryOut"
+          },
+          "text": {
+            "description": "Echo of the request `text`.",
+            "title": "Text",
+            "type": "string"
+          },
+          "warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Non-fatal warning surfaced by the detector backend, if any.",
+            "title": "Warning"
+          }
+        },
+        "required": [
+          "schema_version",
+          "detector",
+          "text",
+          "detected_spans",
+          "summary"
+        ],
+        "title": "DetectResponse",
+        "type": "object"
+      },
+      "DetectorInfo": {
+        "description": "One row in the detector registry.",
+        "properties": {
+          "categories": {
+            "description": "Canonical categories this detector can produce.",
+            "examples": [
+              [
+                "PERSON",
+                "EMAIL",
+                "PHONE"
+              ]
+            ],
+            "items": {
+              "type": "string"
+            },
+            "title": "Categories",
+            "type": "array"
+          },
+          "loaded": {
+            "description": "`true` once the detector has been initialised. Flips on first use, or at startup if listed in `EAGER_LOAD`.",
+            "examples": [
+              true
+            ],
+            "title": "Loaded",
+            "type": "boolean"
+          },
+          "name": {
+            "description": "Registry key.",
+            "examples": [
+              "opf"
+            ],
+            "title": "Name",
+            "type": "string"
+          },
+          "proxy": {
+            "description": "`true` if the detector calls an external service (e.g. Skyflow).",
+            "examples": [
+              false
+            ],
+            "title": "Proxy",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "categories",
+          "loaded",
+          "proxy"
+        ],
+        "title": "DetectorInfo",
+        "type": "object"
+      },
+      "DetectorsResponse": {
+        "description": "Response from `/v1/detectors`.",
+        "examples": [
+          {
+            "default": "opf",
+            "detectors": [
+              {
+                "categories": [
+                  "PERSON",
+                  "EMAIL"
+                ],
+                "loaded": false,
+                "name": "gliner",
+                "proxy": false
+              },
+              {
+                "categories": [
+                  "PERSON",
+                  "EMAIL",
+                  "PHONE"
+                ],
+                "loaded": true,
+                "name": "opf",
+                "proxy": false
+              },
+              {
+                "categories": [
+                  "PERSON",
+                  "EMAIL"
+                ],
+                "loaded": false,
+                "name": "skyflow",
+                "proxy": true
+              }
+            ]
+          }
+        ],
+        "properties": {
+          "default": {
+            "description": "Detector used when a request omits the `detector` field.",
+            "examples": [
+              "opf"
+            ],
+            "title": "Default",
+            "type": "string"
+          },
+          "detectors": {
+            "items": {
+              "$ref": "#/components/schemas/DetectorInfo"
+            },
+            "title": "Detectors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "default",
+          "detectors"
+        ],
+        "title": "DetectorsResponse",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HealthResponse": {
+        "description": "Response from `/v1/health`.",
+        "examples": [
+          {
+            "default_detector": "opf",
+            "loaded_detectors": [
+              "opf"
+            ],
+            "schema_version": 2,
+            "status": "ok"
+          }
+        ],
+        "properties": {
+          "default_detector": {
+            "description": "Detector used when requests omit `detector`.",
+            "examples": [
+              "opf"
+            ],
+            "title": "Default Detector",
+            "type": "string"
+          },
+          "loaded_detectors": {
+            "description": "Names of detectors that have been initialised so far.",
+            "examples": [
+              [
+                "opf"
+              ]
+            ],
+            "items": {
+              "type": "string"
+            },
+            "title": "Loaded Detectors",
+            "type": "array"
+          },
+          "schema_version": {
+            "description": "Payload schema version. Independent of the OpenAPI `info.version`.",
+            "examples": [
+              2
+            ],
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "status": {
+            "const": "ok",
+            "description": "Always `ok` when this endpoint responds.",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "default_detector",
+          "loaded_detectors",
+          "schema_version"
+        ],
+        "title": "HealthResponse",
+        "type": "object"
+      },
+      "SanitizeRequest": {
+        "description": "Request for `/v1/sanitize` \u2014 `DetectRequest` plus a `mode` field that picks\nhow detected spans are rewritten.",
+        "examples": [
+          {
+            "detector": "presidio",
+            "mode": "label_token",
+            "text": "Email alice@x.com or call +1-415-555-0100."
+          }
+        ],
+        "properties": {
+          "categories": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Canonical categories to keep. Valid values: PERSON, EMAIL, PHONE, ADDRESS, URL, DATE, ACCOUNT, SECRET, USERNAME, DEMOGRAPHIC, ORGANIZATION, OCCUPATION, MONEY, VEHICLE, PHYSICAL. Omit or set to null to keep all categories the detector produces.",
+            "examples": [
+              [
+                "EMAIL",
+                "PHONE"
+              ]
+            ],
+            "title": "Categories"
+          },
+          "decode_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "viterbi",
+                  "argmax"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "OPF-only decode strategy. Ignored by every other detector. `viterbi` (default) maximises sequence probability; `argmax` picks the most likely label per token independently.",
+            "examples": [
+              "viterbi"
+            ],
+            "title": "Decode Mode"
+          },
+          "detector": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Detector name from `GET /v1/detectors`. Omit to use the server's `DEFAULT_DETECTOR` (set via env, typically `opf`).",
+            "examples": [
+              "presidio",
+              "opf",
+              "gliner"
+            ],
+            "title": "Detector"
+          },
+          "mode": {
+            "default": "label",
+            "description": "How to rewrite each detected span. `redact` -> `********` (fixed asterisks). `label` -> `[EMAIL]` (default). `label_number` -> `[EMAIL_1]` (per-request counter; duplicates reuse the number). `label_token` -> `[EMAIL_jRc7QGn]` (deterministic 7-char Skyflow vault token; requires `SKYFLOW_TOKEN_VAULT_*` env).",
+            "enum": [
+              "redact",
+              "label",
+              "label_number",
+              "label_token"
+            ],
+            "examples": [
+              "label",
+              "label_token"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "text": {
+            "description": "Free-form text to scan for PII.",
+            "examples": [
+              "Email joe@example.com about the trip to Elgin, TX."
+            ],
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "SanitizeRequest",
+        "type": "object"
+      },
+      "SanitizeResponse": {
+        "description": "Response from `/v1/sanitize`.",
+        "examples": [
+          {
+            "detected_spans": [
+              {
+                "end": 17,
+                "label": "EMAIL",
+                "raw_label": "EMAIL_ADDRESS",
+                "replacement": "[EMAIL_MGaE1Bo]",
+                "start": 6,
+                "text": "alice@x.com"
+              },
+              {
+                "end": 42,
+                "label": "PHONE",
+                "raw_label": "PHONE_NUMBER",
+                "replacement": "[PHONE_vRXiWKZ]",
+                "start": 27,
+                "text": "+1-415-555-0100"
+              }
+            ],
+            "detector": "presidio",
+            "mode": "label_token",
+            "sanitized_text": "Email [EMAIL_MGaE1Bo] or call [PHONE_vRXiWKZ].",
+            "schema_version": 2,
+            "summary": {
+              "by_label": {
+                "EMAIL": 1,
+                "PHONE": 1
+              },
+              "span_count": 2
+            },
+            "text": "Email alice@x.com or call +1-415-555-0100."
+          }
+        ],
+        "properties": {
+          "detected_spans": {
+            "description": "Spans detected by the chosen detector, with their replacements.",
+            "items": {
+              "$ref": "#/components/schemas/SanitizedSpan"
+            },
+            "title": "Detected Spans",
+            "type": "array"
+          },
+          "detector": {
+            "description": "Detector that produced the spans.",
+            "examples": [
+              "presidio"
+            ],
+            "title": "Detector",
+            "type": "string"
+          },
+          "mode": {
+            "description": "Echo of the request `mode`.",
+            "enum": [
+              "redact",
+              "label",
+              "label_number",
+              "label_token"
+            ],
+            "examples": [
+              "label_token"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "sanitized_text": {
+            "description": "`text` with each detected span replaced by its `replacement`. Overlapping spans: the earlier-starting span wins; later overlaps are skipped here (they still appear in `detected_spans`).",
+            "examples": [
+              "Email [EMAIL_MGaE1Bo]."
+            ],
+            "title": "Sanitized Text",
+            "type": "string"
+          },
+          "schema_version": {
+            "description": "Payload schema version. Bumps when field names or semantics change. Independent of `info.version` in the OpenAPI spec.",
+            "examples": [
+              2
+            ],
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/SummaryOut"
+          },
+          "text": {
+            "description": "Echo of the request `text`.",
+            "examples": [
+              "Email alice@x.com."
+            ],
+            "title": "Text",
+            "type": "string"
+          },
+          "warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Non-fatal warning surfaced by the detector backend, if any.",
+            "title": "Warning"
+          }
+        },
+        "required": [
+          "schema_version",
+          "detector",
+          "mode",
+          "text",
+          "detected_spans",
+          "sanitized_text",
+          "summary"
+        ],
+        "title": "SanitizeResponse",
+        "type": "object"
+      },
+      "SanitizedSpan": {
+        "description": "One detected span plus the string it was rewritten to in `sanitized_text`.",
+        "properties": {
+          "end": {
+            "description": "Exclusive character offset in `text`.",
+            "examples": [
+              17
+            ],
+            "title": "End",
+            "type": "integer"
+          },
+          "label": {
+            "description": "Canonical label for the span (e.g. `EMAIL`, `PERSON`).",
+            "examples": [
+              "EMAIL"
+            ],
+            "title": "Label",
+            "type": "string"
+          },
+          "raw_label": {
+            "description": "Detector's native label before mapping into the canonical taxonomy.",
+            "examples": [
+              "EMAIL_ADDRESS"
+            ],
+            "title": "Raw Label",
+            "type": "string"
+          },
+          "replacement": {
+            "description": "The string this span was rewritten to in `sanitized_text`.",
+            "examples": [
+              "[EMAIL_MGaE1Bo]"
+            ],
+            "title": "Replacement",
+            "type": "string"
+          },
+          "start": {
+            "description": "Inclusive character offset in `text`.",
+            "examples": [
+              6
+            ],
+            "title": "Start",
+            "type": "integer"
+          },
+          "text": {
+            "description": "Substring of the original input.",
+            "examples": [
+              "alice@x.com"
+            ],
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "raw_label",
+          "start",
+          "end",
+          "text",
+          "replacement"
+        ],
+        "title": "SanitizedSpan",
+        "type": "object"
+      },
+      "SpanOut": {
+        "description": "Plain span for `/v1/detect` \u2014 no replacement text.",
+        "properties": {
+          "end": {
+            "description": "Exclusive character offset in `text`.",
+            "examples": [
+              21
+            ],
+            "title": "End",
+            "type": "integer"
+          },
+          "label": {
+            "description": "Canonical label.",
+            "examples": [
+              "EMAIL"
+            ],
+            "title": "Label",
+            "type": "string"
+          },
+          "raw_label": {
+            "description": "Detector's native label before mapping into the canonical taxonomy.",
+            "examples": [
+              "EMAIL_ADDRESS"
+            ],
+            "title": "Raw Label",
+            "type": "string"
+          },
+          "start": {
+            "description": "Inclusive character offset in `text`.",
+            "examples": [
+              6
+            ],
+            "title": "Start",
+            "type": "integer"
+          },
+          "text": {
+            "description": "Substring of the original input.",
+            "examples": [
+              "joe@example.com"
+            ],
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "raw_label",
+          "start",
+          "end",
+          "text"
+        ],
+        "title": "SpanOut",
+        "type": "object"
+      },
+      "SummaryOut": {
+        "description": "Per-response detection summary. `by_label` maps canonical label to count.",
+        "properties": {
+          "by_label": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "Count of spans per canonical label.",
+            "examples": [
+              {
+                "EMAIL": 1,
+                "PHONE": 1
+              }
+            ],
+            "title": "By Label",
+            "type": "object"
+          },
+          "span_count": {
+            "description": "Total number of spans detected.",
+            "examples": [
+              2
+            ],
+            "title": "Span Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "span_count",
+          "by_label"
+        ],
+        "title": "SummaryOut",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "contact": {
+      "name": "local-privacy",
+      "url": "https://github.com/jstjoe/local-privacy"
+    },
+    "description": "Unified PII detection across **OPF**, **GLiNER**, **Presidio**, and **Skyflow**.\nPick a backend with the `detector` field; canonical labels apply uniformly across all of them.\n\n## Endpoints\n\n- `POST /v1/detect` \u2014 return spans only, no text rewriting.\n- `POST /v1/sanitize` \u2014 detect and rewrite spans under one of four modes.\n- `GET /v1/detectors` \u2014 list registered detectors and their category coverage.\n- `GET /v1/health` \u2014 liveness probe; does not exercise detector backends.\n\n## Versioning\n\nTwo version numbers appear in this API. They are independent:\n\n- `info.version` (this spec) \u2014 tracks the OpenAPI contract.\n- `schema_version` (response payload field) \u2014 tracks the request/response payload shape.\n  Currently `2`. Bumps when payload field names or semantics change. Clients should pin on this.\n\n## Canonical labels\n\nEvery detector's raw output maps into a 15-label taxonomy:\n`PERSON`, `EMAIL`, `PHONE`, `ADDRESS`, `URL`, `DATE`, `ACCOUNT`, `SECRET`, `USERNAME`,\n`DEMOGRAPHIC`, `ORGANIZATION`, `OCCUPATION`, `MONEY`, `VEHICLE`, `PHYSICAL`.\nDetectors vary in coverage \u2014 `GET /v1/detectors` reports each detector's category list.\n",
+    "summary": "Unified PII detection across OPF, GLiNER, Presidio, and Skyflow.",
+    "title": "Privacy-detection API",
+    "version": "0.2.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/v1/detect": {
+      "post": {
+        "description": "Run the chosen detector over `text` and return canonical-labelled spans.\n\nNo rewriting is performed \u2014 call `/v1/sanitize` for that.\n\nFilter detector output to a subset of canonical labels with `categories`.\nOPF-only: pass `decode_mode` to override the default Viterbi decoding.",
+        "operationId": "detect_v1_detect_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DetectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DetectResponse"
+                }
+              }
+            },
+            "description": "Detected spans plus per-label counts."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "label_token_unconfigured": {
+                    "summary": "label_token mode without vault env",
+                    "value": {
+                      "detail": "mode='label_token' requires SKYFLOW_TOKEN_VAULT_URL and SKYFLOW_TOKEN_VAULT_ID env vars to be set"
+                    }
+                  },
+                  "unknown_category": {
+                    "summary": "Unknown canonical category",
+                    "value": {
+                      "detail": "unknown canonical categories: ['FOO']. Valid: ['ACCOUNT', 'ADDRESS', ...]"
+                    }
+                  },
+                  "unknown_detector": {
+                    "summary": "Unknown detector",
+                    "value": {
+                      "detail": "unknown detector 'foo'; available: ['gliner', 'opf', 'presidio']"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Unknown detector, unknown category, or missing config for the chosen mode."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "detector_failure": {
+                    "summary": "Detector backend errored",
+                    "value": {
+                      "detail": "skyflow: upstream 503"
+                    }
+                  },
+                  "vault_failure": {
+                    "summary": "Token vault call failed",
+                    "value": {
+                      "detail": "label_token: vault insert failed: 401"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Detector backend failure or vault call failure."
+          }
+        },
+        "summary": "Detect PII spans in text",
+        "tags": [
+          "Detect"
+        ]
+      }
+    },
+    "/v1/detectors": {
+      "get": {
+        "description": "Return every detector registered in this deployment plus the canonical categories each can produce. `loaded` flips to `true` after first use (or at startup if the detector is listed in `EAGER_LOAD`). `proxy=true` means the detector calls an external service.",
+        "operationId": "list_detectors_v1_detectors_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DetectorsResponse"
+                }
+              }
+            },
+            "description": "Registry snapshot."
+          }
+        },
+        "summary": "List registered detectors",
+        "tags": [
+          "Meta"
+        ]
+      }
+    },
+    "/v1/health": {
+      "get": {
+        "description": "Always returns `200` when the process is up. Does **not** probe detector backends \u2014 use `/v1/detectors` to inspect which detectors have been loaded.",
+        "operationId": "health_v1_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "Liveness status plus which detectors are currently loaded."
+          }
+        },
+        "summary": "Liveness probe",
+        "tags": [
+          "Meta"
+        ]
+      }
+    },
+    "/v1/sanitize": {
+      "post": {
+        "description": "Detect spans, then rewrite each one under the chosen `mode`. Four modes, in increasing strength of identity preservation:\n\n| `mode` | Looks like | What it preserves |\n|---|---|---|\n| `redact` | `********` | Nothing \u2014 fixed 8-char asterisk run regardless of span length. |\n| `label` | `[EMAIL]` | Category only. Default. |\n| `label_number` | `[EMAIL_1]` | Identity **within one request** via per-label counter; duplicate `(label, text)` reuses its number. |\n| `label_token` | `[EMAIL_MGaE1Bo]` | Identity **across requests and detectors** via a Skyflow vault. Deterministic \u2014 same plaintext maps to the same 7-char token forever. |\n\n**Overlapping spans:** the earlier-starting span wins; later overlaps are skipped in `sanitized_text` (they still appear in `detected_spans`).\n\n**`label_token` requirements:** `SKYFLOW_TOKEN_VAULT_URL`, `SKYFLOW_TOKEN_VAULT_ID`, and a bearer (`SKYFLOW_TOKEN_BEARER_TOKEN`, falling back to `SKYFLOW_BEARER_TOKEN`). The vault must be configured per the token-vault setup guide \u2014 one table with one `tok_<label>` column per canonical label, each `DETERMINISTIC_FPT` with regex `^[A-Za-z0-9]{7}$`. Spans whose canonical label has no vault column fall back to `[LABEL]` for that span only.",
+        "operationId": "sanitize_v1_sanitize_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SanitizeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SanitizeResponse"
+                }
+              }
+            },
+            "description": "Sanitized text, the spans that were rewritten, and per-label counts."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "label_token_unconfigured": {
+                    "summary": "label_token mode without vault env",
+                    "value": {
+                      "detail": "mode='label_token' requires SKYFLOW_TOKEN_VAULT_URL and SKYFLOW_TOKEN_VAULT_ID env vars to be set"
+                    }
+                  },
+                  "unknown_category": {
+                    "summary": "Unknown canonical category",
+                    "value": {
+                      "detail": "unknown canonical categories: ['FOO']. Valid: ['ACCOUNT', 'ADDRESS', ...]"
+                    }
+                  },
+                  "unknown_detector": {
+                    "summary": "Unknown detector",
+                    "value": {
+                      "detail": "unknown detector 'foo'; available: ['gliner', 'opf', 'presidio']"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Unknown detector, unknown category, or missing config for the chosen mode."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "detector_failure": {
+                    "summary": "Detector backend errored",
+                    "value": {
+                      "detail": "skyflow: upstream 503"
+                    }
+                  },
+                  "vault_failure": {
+                    "summary": "Token vault call failed",
+                    "value": {
+                      "detail": "label_token: vault insert failed: 401"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Detector backend failure or vault call failure."
+          }
+        },
+        "summary": "Detect and rewrite PII spans",
+        "tags": [
+          "Sanitize"
+        ]
+      }
+    }
+  },
+  "servers": [
+    {
+      "description": "Local dev",
+      "url": "http://localhost:8000"
+    }
+  ],
+  "tags": [
+    {
+      "description": "Detection-only endpoint. Returns spans without rewriting the input.",
+      "name": "Detect"
+    },
+    {
+      "description": "Detection plus rewriting under one of four modes: `redact`, `label`, `label_number`, `label_token`.",
+      "name": "Sanitize"
+    },
+    {
+      "description": "Registry and liveness endpoints.",
+      "name": "Meta"
+    }
+  ]
+}

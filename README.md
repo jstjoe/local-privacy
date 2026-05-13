@@ -227,7 +227,7 @@ PII-Masking-300k doesn't label these, so the harness doesn't grade them — but 
 - **Organization / work:** `EVENT`, `OCCUPATION`, `ORGANIZATION`, `ORGANIZATION_ID`, `PROJECT`
 - **Other:** `DURATION`, `FILENAME`, `LANGUAGE`, `PRODUCT`, `VEHICLE_ID`
 
-Source: `DeidentifyStringRequest.entity_types` enum in [detect.openapi.json](detect.openapi.json).
+Source: `DeidentifyStringRequest.entity_types` enum in the Skyflow Detect API spec.
 
 ### Hit-rate tuning (historical context)
 
@@ -268,7 +268,7 @@ The greedy per-category breakdown stays under the raw view (single per-label tab
 
 ## API server
 
-The `api/` directory is a unified FastAPI service exposing all benchmark detectors behind one contract. Pick the backend with the `detector` field; canonical labels apply uniformly across all of them. Interactive docs at `/docs` (Swagger) and `/redoc`. Container build profiles in [api/Dockerfile](api/Dockerfile).
+The `api/` directory is a unified FastAPI service exposing every benchmark detector behind one HTTP contract. Pick the backend with the `detector` field on each request; canonical labels apply uniformly across all of them. Container build profiles in [api/Dockerfile](api/Dockerfile).
 
 Run locally:
 
@@ -276,27 +276,23 @@ Run locally:
 DEFAULT_DETECTOR=opf EAGER_LOAD=opf uvicorn opf_api.main:app --reload
 ```
 
-### Concepts
+### API reference
 
-**Detectors** — registered backends (lazy-loaded):
+The full reference is generated from the live FastAPI app and published to GitHub Pages. The committed spec lives at [docs/api/openapi.json](docs/api/openapi.json) and is regenerated with:
 
-| Name                     | Backend                                                 | Notes                                                       |
-|--------------------------|---------------------------------------------------------|-------------------------------------------------------------|
-| `opf`                    | OPF local model, ~2.8 GB                                | Trained categories only.                                    |
-| `skyflow`                | HTTP proxy to Skyflow Detect API                        | Requires `SKYFLOW_VAULT_*` env. `proxy: true` in `/v1/detectors`. |
-| `presidio`               | Microsoft Presidio, English spaCy model                 | Registered only if `presidio-analyzer` is installed.        |
-| `presidio_multilang`     | Presidio with all 6 spaCy languages                     | Each `<lang>_core_news_lg` model must be installed.         |
-| `gliner`                 | `urchade/gliner_multi_pii-v1`, multilingual             | Registered only if `gliner` is installed.                   |
-| `gliner_nvidia`          | `nvidia/gliner-PII`, 570M params                        | Same vocabulary as `gliner`; GPU recommended.               |
-| `gliner_gretel_small`    | `gretelai/gretel-gliner-bi-small-v1.0`                  | Uses Gretel's label space.                                  |
-| `gliner_gretel_large`    | `gretelai/gretel-gliner-bi-large-v1.0`                  | Uses Gretel's label space.                                  |
-| `ai4privacy_modernbert`  | ModernBERT-based multilingual anonymiser (~150M params) | Requires `transformers`. 8 languages (en, fr, de, es, it, nl, hi, te). |
+```sh
+uv run --package opf-api opf-api-export-openapi --out docs/api
+```
 
-Hit `GET /v1/detectors` to see what's currently registered in your deployment.
+Three in-app reference UIs render the same spec — `/scalar` (Scalar), `/docs` (Swagger UI with try-it-out), `/redoc` (ReDoc). The narrative guides live under [docs/guides/](docs/guides/):
 
-**Canonical labels (15)** — `PERSON`, `EMAIL`, `PHONE`, `ADDRESS`, `URL`, `DATE`, `ACCOUNT`, `SECRET`, `USERNAME`, `DEMOGRAPHIC`, `ORGANIZATION`, `OCCUPATION`, `MONEY`, `VEHICLE`, `PHYSICAL`. Every detector's raw output maps into this taxonomy. The `categories` request filter accepts any of these. Different detectors cover different subsets — `/v1/detectors` reports each detector's category list.
+- [overview](docs/guides/overview.md) — what the API does and how to run it.
+- [detectors](docs/guides/detectors.md) — the registered backends.
+- [labels](docs/guides/labels.md) — the 15-label canonical taxonomy.
+- [sanitize modes](docs/guides/sanitize-modes.md) — the four `/v1/sanitize` modes.
+- [auth and env](docs/guides/auth-and-env.md) — env-var matrix and error codes.
 
-#### Server env
+### Server env
 
 | Variable                       | Notes                                                                |
 |--------------------------------|----------------------------------------------------------------------|
@@ -306,125 +302,3 @@ Hit `GET /v1/detectors` to see what's currently registered in your deployment.
 | `OPF_DECODE_MODE`              | `viterbi` or `argmax`. OPF-only. Default `viterbi`.                  |
 | `SKYFLOW_VAULT_URL` / `_ID` / `_BEARER_TOKEN` | Required for the `skyflow` **detector**.              |
 | `SKYFLOW_TOKEN_VAULT_URL` / `_ID` / `_BEARER_TOKEN` | Required for `/v1/sanitize` `label_token` mode. See [docs/token-vault-setup.md](docs/token-vault-setup.md). |
-
----
-
-### `POST /v1/detect`
-
-Returns detected spans. No text rewriting.
-
-Request:
-
-```json
-{
-  "text": "Email joe@example.com about the trip to Elgin, TX.",
-  "detector": "presidio",        // optional, defaults to DEFAULT_DETECTOR
-  "categories": ["EMAIL"],       // optional canonical filter
-  "decode_mode": "viterbi"       // optional, OPF-only
-}
-```
-
-Response (`200`):
-
-```json
-{
-  "schema_version": 1,
-  "detector": "presidio",
-  "text": "Email joe@example.com about the trip to Elgin, TX.",
-  "detected_spans": [
-    {"label": "EMAIL", "raw_label": "EMAIL_ADDRESS",
-     "start": 6, "end": 21, "text": "joe@example.com"}
-  ],
-  "summary": {"span_count": 1, "by_label": {"EMAIL": 1}},
-  "warning": null
-}
-```
-
-Errors: `400` unknown detector or unknown category. `502` detector backend failure.
-
----
-
-### `POST /v1/sanitize`
-
-Detect + rewrite each detected span under the chosen `mode`. Four modes, in increasing strength of identity preservation:
-
-| `mode`         | Looks like         | What it preserves |
-|----------------|--------------------|-------------------|
-| `redact`       | `********`         | Nothing — fixed 8-character asterisk run regardless of span length. |
-| `label`        | `[EMAIL]`          | Category only. Default mode. |
-| `label_number` | `[EMAIL_1]`        | Identity **within one request**. Per-label counter; duplicate `(label, text)` reuses its number. |
-| `label_token`  | `[EMAIL_MGaE1Bo]`  | Identity **across requests and detectors** via a Skyflow vault. Deterministic — same plaintext → same 7-char token forever. |
-
-Request:
-
-```json
-{
-  "text": "Email alice@x.com or call +1-415-555-0100.",
-  "detector": "presidio",
-  "mode": "label_token"
-}
-```
-
-Response (`200`):
-
-```json
-{
-  "schema_version": 1,
-  "detector": "presidio",
-  "mode": "label_token",
-  "text": "Email alice@x.com or call +1-415-555-0100.",
-  "sanitized_text": "Email [EMAIL_MGaE1Bo] or call [PHONE_vRXiWKZ].",
-  "detected_spans": [
-    {"label": "EMAIL", "raw_label": "EMAIL_ADDRESS",
-     "start": 6, "end": 17, "text": "alice@x.com",
-     "replacement": "[EMAIL_MGaE1Bo]"},
-    {"label": "PHONE", "raw_label": "PHONE_NUMBER",
-     "start": 27, "end": 42, "text": "+1-415-555-0100",
-     "replacement": "[PHONE_vRXiWKZ]"}
-  ],
-  "summary": {"span_count": 2, "by_label": {"EMAIL": 1, "PHONE": 1}},
-  "warning": null
-}
-```
-
-Overlapping spans: the earlier-starting span wins; later overlaps are skipped in `sanitized_text` (still listed in `detected_spans`).
-
-`label_token` requires `SKYFLOW_TOKEN_VAULT_URL` + `SKYFLOW_TOKEN_VAULT_ID` and a bearer (`SKYFLOW_TOKEN_BEARER_TOKEN`, or falls back to `SKYFLOW_BEARER_TOKEN`). The vault must be configured per [docs/token-vault-setup.md](docs/token-vault-setup.md) — one table with one `tok_<label>` column per canonical label, each `DETERMINISTIC_FPT` with regex `^[A-Za-z0-9]{7}$`.
-
-Errors: `400` for unknown detector / unknown category / `label_token` without vault env. `502` for detector backend failure or vault call failure. Spans whose canonical label has no vault column fall back to `[LABEL]` for that span only.
-
----
-
-### `GET /v1/detectors`
-
-Lists registered detectors plus the categories each can produce.
-
-```json
-{
-  "default": "opf",
-  "detectors": [
-    {"name": "gliner",  "categories": ["PERSON", "EMAIL", "..."], "loaded": false, "proxy": false},
-    {"name": "opf",     "categories": ["PERSON", "EMAIL", "..."], "loaded": true,  "proxy": false},
-    {"name": "skyflow", "categories": ["PERSON", "EMAIL", "..."], "loaded": false, "proxy": true}
-  ]
-}
-```
-
-`loaded` flips to `true` after first use (or at startup if listed in `EAGER_LOAD`). `proxy=true` means the detector calls an external service.
-
----
-
-### `GET /v1/health`
-
-Liveness + which detectors are loaded.
-
-```json
-{
-  "status": "ok",
-  "default_detector": "opf",
-  "loaded_detectors": ["opf"],
-  "schema_version": 1
-}
-```
-
-Always `200` when the process is up; does not probe detector backends.

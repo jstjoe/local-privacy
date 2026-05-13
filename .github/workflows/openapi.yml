@@ -1,0 +1,52 @@
+name: OpenAPI spec freshness
+
+on:
+  pull_request:
+    paths:
+      - "api/**"
+      - "docs/api/**"
+      - ".github/workflows/openapi.yml"
+  push:
+    branches: [main]
+    paths:
+      - "api/**"
+      - "docs/api/**"
+      - ".github/workflows/openapi.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clone OPF source (workspace member, gitignored locally)
+        run: git clone --depth 1 https://github.com/openai/privacy-filter privacy-filter
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install opf-api with docs extra
+        run: uv sync --package opf-api --extra docs
+
+      - name: Regenerate spec to a temp dir
+        run: uv run --package opf-api opf-api-export-openapi --out /tmp/fresh
+
+      - name: Diff against committed spec
+        run: |
+          set -e
+          fail=0
+          for f in openapi.json openapi.yaml; do
+            if ! diff -u "docs/api/$f" "/tmp/fresh/$f"; then
+              echo "::error file=docs/api/$f::$f is stale — regenerate with: uv run --package opf-api opf-api-export-openapi --out docs/api"
+              fail=1
+            fi
+          done
+          exit $fail
