@@ -8,6 +8,7 @@ Output:
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import shutil
 import time
@@ -156,6 +157,43 @@ def _copy_reused_raw_files(
     return present, sorted(copied)
 
 
+def _free_detector(det: object) -> None:
+    """Best-effort release of GPU memory held by a detector instance.
+
+    Called between iterations of the per-detector loop so the next model
+    isn't allocating against VRAM already pinned by the previous one. The
+    CUDA caching allocator does not return memory to the driver until
+    `empty_cache()` is called, even after the Python object is gone.
+    """
+    close = getattr(det, "close", None)
+    if callable(close):
+        try:
+            close()
+        except Exception:  # noqa: BLE001 — cleanup must not raise
+            pass
+    # Drop common heavy attributes if the detector stashes them.
+    for attr in ("_opf", "_model", "model", "_pipeline", "pipeline", "_engine", "engine"):
+        if hasattr(det, attr):
+            try:
+                setattr(det, attr, None)
+            except Exception:  # noqa: BLE001
+                pass
+    gc.collect()
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()
+        mps = getattr(torch.backends, "mps", None)
+        if mps is not None and getattr(mps, "is_available", lambda: False)():
+            empty = getattr(getattr(torch, "mps", None), "empty_cache", None)
+            if callable(empty):
+                empty()
+    except ImportError:
+        pass
+
+
 def run(
     fixtures: Path,
     detector_names: list[str],
@@ -210,54 +248,62 @@ def run(
             opf_calibration_path=opf_calibration_path,
             device=device,
         )
-        out_path = out_dir / f"raw_{name}.jsonl"
-        t0 = time.perf_counter()
-        with out_path.open("w") as f:
-            if name.startswith("skyflow") and skyflow_workers > 1:
-                with ThreadPoolExecutor(max_workers=skyflow_workers) as ex:
-                    futures = {
-                        ex.submit(det.detect, ex_["text"], language=ex_.get("language")): ex_
-                        for ex_ in examples
-                    }
-                    for fut in futures:
-                        ex_ = futures[fut]
-                        result = fut.result()
+        try:
+            out_path = out_dir / f"raw_{name}.jsonl"
+            t0 = time.perf_counter()
+            with out_path.open("w") as f:
+                if name.startswith("skyflow") and skyflow_workers > 1:
+                    with ThreadPoolExecutor(max_workers=skyflow_workers) as ex:
+                        futures = {
+                            ex.submit(det.detect, ex_["text"], language=ex_.get("language")): ex_
+                            for ex_ in examples
+                        }
+                        for fut in futures:
+                            ex_ = futures[fut]
+                            result = fut.result()
+                            f.write(
+                                json.dumps(
+                                    {
+                                        "id": ex_["id"],
+                                        "detector": name,
+                                        **result,
+                                    },
+                                    ensure_ascii=False,
+                                )
+                                + "\n"
+                            )
+                else:
+                    throttle_s = (
+                        skyflow_min_interval_ms / 1000.0
+                        if name.startswith("skyflow")
+                        else 0.0
+                    )
+                    last_call = 0.0
+                    for ex_ in examples:
+                        if throttle_s:
+                            wait = throttle_s - (time.perf_counter() - last_call)
+                            if wait > 0:
+                                time.sleep(wait)
+                        last_call = time.perf_counter()
+                        result = det.detect(ex_["text"], language=ex_.get("language"))
                         f.write(
                             json.dumps(
-                                {
-                                    "id": ex_["id"],
-                                    "detector": name,
-                                    **result,
-                                },
+                                {"id": ex_["id"], "detector": name, **result},
                                 ensure_ascii=False,
                             )
                             + "\n"
                         )
-            else:
-                throttle_s = (
-                    skyflow_min_interval_ms / 1000.0
-                    if name.startswith("skyflow")
-                    else 0.0
-                )
-                last_call = 0.0
-                for ex_ in examples:
-                    if throttle_s:
-                        wait = throttle_s - (time.perf_counter() - last_call)
-                        if wait > 0:
-                            time.sleep(wait)
-                    last_call = time.perf_counter()
-                    result = det.detect(ex_["text"], language=ex_.get("language"))
-                    f.write(
-                        json.dumps(
-                            {"id": ex_["id"], "detector": name, **result},
-                            ensure_ascii=False,
-                        )
-                        + "\n"
-                    )
-        elapsed = time.perf_counter() - t0
-        print(f"[{name}] {len(examples)} examples in {elapsed:.1f}s -> {out_path}")
-        if hasattr(det, "close"):
-            det.close()
+            elapsed = time.perf_counter() - t0
+            print(f"[{name}] {len(examples)} examples in {elapsed:.1f}s -> {out_path}")
+        finally:
+            # Release the detector's resources before building the next one.
+            # Without this, each model's weights sit in VRAM until Python's
+            # GC happens to fire and CUDA's caching allocator releases — by
+            # which point the next detector has already tried (and failed)
+            # to allocate. Running multiple GPU detectors in sequence on a
+            # T4 (14 GB) OOMs on the third or fourth without explicit cleanup.
+            _free_detector(det)
+            del det
 
 
 def main() -> None:
