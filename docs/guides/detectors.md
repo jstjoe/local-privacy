@@ -5,7 +5,7 @@ Detectors are registered backends, lazy-loaded on first use unless eager-loaded 
 | Name | Backend | Notes |
 |---|---|---|
 | `opf` | OPF local model, ~2.8 GB | Trained categories only. |
-| `skyflow` | HTTP proxy to Skyflow Detect API | Requires `SKYFLOW_VAULT_*` env. `proxy: true` in `/v1/detectors`. |
+| `skyflow` | HTTP proxy to Skyflow Detect API | Requires `SKYFLOW_VAULT_*` env. `proxy: true` in `/api/detectors`. |
 | `presidio` | Microsoft Presidio, English spaCy model | Registered only if `presidio-analyzer` is installed. |
 | `presidio_multilang` | Presidio with all 6 spaCy languages | Each `<lang>_core_news_lg` model must be installed. |
 | `gliner` | `urchade/gliner_multi_pii-v1`, multilingual | Registered only if `gliner` is installed. |
@@ -14,7 +14,7 @@ Detectors are registered backends, lazy-loaded on first use unless eager-loaded 
 | `gliner_gretel_large` | `gretelai/gretel-gliner-bi-large-v1.0` | Uses Gretel's label space. |
 | `ai4privacy_modernbert` | ModernBERT-based multilingual anonymiser (~150M params) | Requires `transformers`. 8 languages (en, fr, de, es, it, nl, hi, te). |
 
-Hit `GET /v1/detectors` to see what's currently registered in your deployment.
+Hit `GET /api/detectors` to see what's currently registered in your deployment.
 
 ## Eager-loading
 

@@ -1,0 +1,30 @@
+# Replace modes
+
+`POST /api/replace` rewrites each detected span under the chosen `mode`. Four modes, in increasing strength of identity preservation:
+
+| `mode` | Looks like | What it preserves |
+|---|---|---|
+| `redact` | `********` | Nothing — fixed 8-character asterisk run regardless of span length. |
+| `label` | `[EMAIL]` | Category only. Default mode. |
+| `label_number` | `[EMAIL_1]` | Identity **within one request**. Per-label counter; duplicate `(label, text)` reuses its number. Dropped-overlap spans still consume a counter slot — see overlap notes below. |
+| `label_token` | `[EMAIL_MGaE1Bo]` | Identity **across requests and detectors** via a Skyflow vault. Deterministic — same plaintext maps to the same 7-char token forever. |
+
+## Overlapping spans
+
+The earlier-starting span wins. Later overlaps are skipped in `replaced_text` but still appear in `detected_spans` with `replaced=false`. Filter to `replaced=true` to reconstruct exactly which spans landed. The `replacement` field is still populated on a `replaced=false` span (the renderer ran), it just wasn't spliced in.
+
+**`label_number` numbering quirk.** Because the renderer runs for every span before overlap suppression, a dropped span consumes its label's counter. If a `PERSON` overlap is dropped between `[PERSON_1]` and the next kept `PERSON`, that next span lands as `[PERSON_3]`, not `[PERSON_2]` — the gap is the dropped span (visible as `replaced=false` in `detected_spans`). Not a bug; just worth knowing if a downstream system expects contiguous numbering.
+
+## `label_token` requirements
+
+This mode requires three env vars on the server:
+
+- `SKYFLOW_TOKEN_VAULT_URL`
+- `SKYFLOW_TOKEN_VAULT_ID`
+- A bearer token: `SKYFLOW_TOKEN_BEARER_TOKEN`, falling back to `SKYFLOW_BEARER_TOKEN`.
+
+The vault must be configured per the [token vault setup guide](../token-vault-setup.md): one table with one `tok_<label>` column per canonical label, each `DETERMINISTIC_FPT` with regex `^[A-Za-z0-9]{7}$`.
+
+Spans whose canonical label has no matching vault column fall back to `[LABEL]` for that span only — the rest of the response is unchanged.
+
+A request that asks for `label_token` against a server without the vault env returns `400` with a remediation message in `detail`.

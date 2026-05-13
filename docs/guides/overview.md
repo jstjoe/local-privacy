@@ -4,10 +4,10 @@ The `opf-api` service exposes every benchmark detector in this repo behind one H
 
 ## What it does
 
-- `POST /v1/detect` — return PII spans without rewriting the input text.
-- `POST /v1/sanitize` — detect and rewrite spans under one of four modes.
-- `GET /v1/detectors` — list registered detectors and their canonical category coverage.
-- `GET /v1/health` — liveness probe.
+- `POST /api/find` — find sensitive data; return spans without rewriting the input text.
+- `POST /api/replace` — find spans and replace each one under one of four modes.
+- `GET /api/detectors` — list registered detectors and their canonical category coverage.
+- `GET /api/health` — liveness probe.
 
 ## Reference UIs
 
@@ -29,4 +29,6 @@ Then visit one of `/scalar`, `/docs`, `/redoc`. The OpenAPI spec itself lives at
 
 ## Versioning
 
-The API is pre-`1.0`. `info.version` (in this OpenAPI spec) is the only version surface — currently `0.3.0`. Each breaking change to request or response shape lands as a minor bump (`0.x.0 -> 0.(x+1).0`); non-breaking additions land as patch bumps. The `/v1/` URL prefix is reserved for the eventual `1.0` cutover.
+The API is pre-`1.0`. `info.version` (in this OpenAPI spec) is the only version surface today — currently `0.6.0`. Each breaking change to request or response shape lands as a minor bump (`0.x.0 -> 0.(x+1).0`); non-breaking additions land as patch bumps.
+
+URL paths are unversioned (`/api/...`). When the API stabilizes, the intent is to move to **header-based date-string versioning** in the style of Stripe — clients will pin to a release date via `API-Version: 2026-05-13`. Until that header lands, treat `info.version` as the contract.

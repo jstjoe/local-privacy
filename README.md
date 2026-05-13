@@ -289,7 +289,7 @@ Three in-app reference UIs render the same spec — `/scalar` (Scalar), `/docs` 
 - [overview](docs/guides/overview.md) — what the API does and how to run it.
 - [detectors](docs/guides/detectors.md) — the registered backends.
 - [labels](docs/guides/labels.md) — the 15-label canonical taxonomy.
-- [sanitize modes](docs/guides/sanitize-modes.md) — the four `/v1/sanitize` modes.
+- [replace modes](docs/guides/replace-modes.md) — the four `/api/replace` modes.
 - [auth and env](docs/guides/auth-and-env.md) — env-var matrix and error codes.
 
 ### Server env
@@ -301,4 +301,4 @@ Three in-app reference UIs render the same spec — `/scalar` (Scalar), `/docs` 
 | `OPF_DEVICE`                   | `cpu`, `cuda`, `mps`. Default `cpu`.                                 |
 | `OPF_DECODE_MODE`              | `viterbi` or `argmax`. OPF-only. Default `viterbi`.                  |
 | `SKYFLOW_VAULT_URL` / `_ID` / `_BEARER_TOKEN` | Required for the `skyflow` **detector**.              |
-| `SKYFLOW_TOKEN_VAULT_URL` / `_ID` / `_BEARER_TOKEN` | Required for `/v1/sanitize` `label_token` mode. See [docs/token-vault-setup.md](docs/token-vault-setup.md). |
+| `SKYFLOW_TOKEN_VAULT_URL` / `_ID` / `_BEARER_TOKEN` | Required for `/api/replace` `label_token` mode. See [docs/token-vault-setup.md](docs/token-vault-setup.md). |

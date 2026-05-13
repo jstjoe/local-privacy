@@ -81,7 +81,7 @@ def _device() -> str:
     return os.environ.get("OPF_DEVICE", "cpu")
 
 
-# All GLiNER variants run at the same threshold so /v1/detect output is
+# All GLiNER variants run at the same threshold so /api/find output is
 # comparable across them and operators have one knob to reason about.
 # Gretel's own recommendation is 0.7; nvidia's model card suggests 0.3
 # but that produces noticeably more false positives — 0.7 was chosen as

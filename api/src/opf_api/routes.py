@@ -22,12 +22,12 @@ from .schemas import (
     DetectorInfo,
     DetectorsResponse,
     DetectorOptions,
-    DetectRequest,
-    DetectResponse,
+    FindRequest,
+    FindResponse,
     HealthResponse,
-    SanitizedSpan,
-    SanitizeRequest,
-    SanitizeResponse,
+    ReplacedSpan,
+    ReplaceRequest,
+    ReplaceResponse,
     SpanOut,
 )
 from .vault_tokens import TokenVaultClient
@@ -129,14 +129,14 @@ def _resolve_detector(request: Request, name: str | None) -> tuple[str, Detector
     return chosen, entry
 
 
-class _DetectInput(Protocol):
+class _FindInput(Protocol):
     text: str
     detector: str | None
     categories: list[CanonicalLabel] | None
     options: DetectorOptions | None
 
 
-async def _run_detect(request: Request, body: _DetectInput) -> tuple[str, list[Span]]:
+async def _run_find(request: Request, body: _FindInput) -> tuple[str, list[Span]]:
     name, entry = _resolve_detector(request, body.detector)
 
     detector = await entry.get()
@@ -158,13 +158,13 @@ async def _run_detect(request: Request, body: _DetectInput) -> tuple[str, list[S
 
 
 @router.post(
-    "/detect",
-    response_model=DetectResponse,
-    tags=["Detect"],
-    summary="Detect PII spans in text",
+    "/find",
+    response_model=FindResponse,
+    tags=["Find"],
+    summary="Find sensitive data in text",
     description=(
         "Run the chosen detector over `text` and return canonical-labelled spans.\n\n"
-        "No rewriting is performed — call `/v1/sanitize` for that.\n\n"
+        "No rewriting is performed — call `/api/replace` for that.\n\n"
         "Filter detector output to a subset of canonical labels with `categories`.\n"
         "OPF-only: pass `options.opf.decode_mode` to override the default Viterbi decoding."
     ),
@@ -175,9 +175,9 @@ async def _run_detect(request: Request, body: _DetectInput) -> tuple[str, list[S
         502: _ERROR_502_EXAMPLE,
     },
 )
-async def detect(request: Request, body: DetectRequest) -> DetectResponse:
-    """Detect-only: returns spans, no text rewriting."""
-    name, spans = await _run_detect(request, body)
+async def find(request: Request, body: FindRequest) -> FindResponse:
+    """Find-only: returns spans, no text rewriting."""
+    name, spans = await _run_find(request, body)
     ordered = sorted(spans, key=lambda s: (s["start"], s["end"]))
     out_spans = [
         SpanOut(
@@ -190,7 +190,7 @@ async def detect(request: Request, body: DetectRequest) -> DetectResponse:
         for s in ordered
     ]
     by_label = Counter(s.label for s in out_spans)
-    return DetectResponse(
+    return FindResponse(
         detector=name,
         text=body.text,
         detected_spans=out_spans,
@@ -212,23 +212,26 @@ def _build_label_token_renderer_raising_http(
 
 
 @router.post(
-    "/sanitize",
-    response_model=SanitizeResponse,
-    tags=["Sanitize"],
-    summary="Detect and rewrite PII spans",
+    "/replace",
+    response_model=ReplaceResponse,
+    tags=["Replace"],
+    summary="Replace sensitive data in text",
     description=(
-        "Detect spans, then rewrite each one under the chosen `mode`. Four modes, "
+        "Find spans, then rewrite each one under the chosen `mode`. Four modes, "
         "in increasing strength of identity preservation:\n\n"
         "| `mode` | Looks like | What it preserves |\n"
         "|---|---|---|\n"
         "| `redact` | `********` | Nothing — fixed 8-char asterisk run regardless of span length. |\n"
         "| `label` | `[EMAIL]` | Category only. Default. |\n"
         "| `label_number` | `[EMAIL_1]` | Identity **within one request** via per-label counter; "
-        "duplicate `(label, text)` reuses its number. |\n"
+        "duplicate `(label, text)` reuses its number. Dropped-overlap spans "
+        "(`replaced=false`) still consume a counter slot, so the kept sequence "
+        "may skip numbers — see the overlap notes below. |\n"
         "| `label_token` | `[EMAIL_MGaE1Bo]` | Identity **across requests and detectors** via a "
         "Skyflow vault. Deterministic — same plaintext maps to the same 7-char token forever. |\n\n"
         "**Overlapping spans:** the earlier-starting span wins; later overlaps are skipped in "
-        "`sanitized_text` (they still appear in `detected_spans`).\n\n"
+        "`replaced_text` but still appear in `detected_spans` with `replaced=false`. "
+        "Filter to `replaced=true` to reconstruct exactly what landed.\n\n"
         "**`label_token` requirements:** `SKYFLOW_TOKEN_VAULT_URL`, `SKYFLOW_TOKEN_VAULT_ID`, "
         "and a bearer (`SKYFLOW_TOKEN_BEARER_TOKEN`, falling back to `SKYFLOW_BEARER_TOKEN`). "
         "The vault must be configured per the token-vault setup guide — one table with one "
@@ -236,15 +239,15 @@ def _build_label_token_renderer_raising_http(
         "`^[A-Za-z0-9]{7}$`. Spans whose canonical label has no vault column fall back to "
         "`[LABEL]` for that span only."
     ),
-    response_description="Sanitized text, the spans that were rewritten, and per-label counts.",
+    response_description="Replaced text, the spans that were rewritten, and per-label counts.",
     responses={
         400: _ERROR_400_EXAMPLE,
         422: _ERROR_422_EXAMPLE,
         502: _ERROR_502_EXAMPLE,
     },
 )
-async def sanitize(request: Request, body: SanitizeRequest) -> SanitizeResponse:
-    """Detect + rewrite the input text under the chosen `mode`.
+async def replace(request: Request, body: ReplaceRequest) -> ReplaceResponse:
+    """Find + rewrite the input text under the chosen `mode`.
 
     Modes:
       - `redact`       -> fixed-length asterisks (`********`)
@@ -252,7 +255,7 @@ async def sanitize(request: Request, body: SanitizeRequest) -> SanitizeResponse:
       - `label_number` -> `[EMAIL_1]`, per-request counter
       - `label_token`  -> `[EMAIL_jRc7QGn]`, deterministic Skyflow vault token
     """
-    name, spans = await _run_detect(request, body)
+    name, spans = await _run_find(request, body)
     mode = body.mode
 
     if mode == "redact":
@@ -288,26 +291,40 @@ async def sanitize(request: Request, body: SanitizeRequest) -> SanitizeResponse:
     ordered = sorted(spans, key=lambda s: (s["start"], s["end"]))
     rendered_pairs: list[tuple[Span, str]] = [(s, render(s)) for s in ordered]
 
+    # Mirror splice_pieces' overlap rule (earlier-starting span wins; later
+    # overlaps are skipped) so each ReplacedSpan can carry a faithful
+    # `replaced` flag. Clients filtering to `replaced=true` get exactly the
+    # set of spans that landed in `replaced_text`.
+    cursor = 0
+    replaced_flags: list[bool] = []
+    for s, _ in rendered_pairs:
+        if s["start"] >= cursor:
+            replaced_flags.append(True)
+            cursor = s["end"]
+        else:
+            replaced_flags.append(False)
+
     out_spans = [
-        SanitizedSpan(
+        ReplacedSpan(
             label=s["label"],
             raw_label=s["raw_label"],
             start=s["start"],
             end=s["end"],
             text=s["text"],
             replacement=replacement,
+            replaced=flag,
         )
-        for s, replacement in rendered_pairs
+        for (s, replacement), flag in zip(rendered_pairs, replaced_flags)
     ]
-    sanitized = splice_pieces(body.text, rendered_pairs)
+    replaced_text = splice_pieces(body.text, rendered_pairs)
 
     by_label = Counter(s.label for s in out_spans)
-    return SanitizeResponse(
+    return ReplaceResponse(
         detector=name,
         mode=mode,
         text=body.text,
         detected_spans=out_spans,
-        sanitized_text=sanitized,
+        replaced_text=replaced_text,
         summary={"span_count": len(out_spans), "by_label": dict(by_label)},
         warning=None,
     )
@@ -349,7 +366,7 @@ async def list_detectors(request: Request) -> DetectorsResponse:
     summary="Liveness probe",
     description=(
         "Always returns `200` when the process is up. Does **not** probe detector backends — "
-        "use `/v1/detectors` to inspect which detectors have been loaded."
+        "use `/api/detectors` to inspect which detectors have been loaded."
     ),
     response_description="Liveness status plus which detectors are currently loaded.",
 )

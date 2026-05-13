@@ -20,4 +20,4 @@ Every detector's raw output maps into a single 15-label taxonomy:
 | `VEHICLE` | License plates, VIN, vehicle IDs |
 | `PHYSICAL` | Height, weight, eye color, biometric descriptors |
 
-The `categories` request filter accepts any of these. Different detectors cover different subsets — `GET /v1/detectors` reports each detector's category list. Filtering to a category that the detector does not produce returns zero spans for that category (not an error).
+The `categories` request filter accepts any of these. Different detectors cover different subsets — `GET /api/detectors` reports each detector's category list. Filtering to a category that the detector does not produce returns zero spans for that category (not an error).
