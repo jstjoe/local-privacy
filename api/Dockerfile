@@ -50,7 +50,7 @@ RUN if [ "$INCLUDE_PRESIDIO_MULTILANG" = "1" ]; then \
         python -m spacy download es_core_news_lg; \
     fi
 
-# Bake OPF checkpoint into the image so first /v1/redact doesn't pay the
+# Bake OPF checkpoint into the image so the first request doesn't pay the
 # 2.8 GB download cost. Skip with --build-arg INCLUDE_OPF=0.
 RUN if [ "$INCLUDE_OPF" = "1" ]; then \
         python -c "from opf._common.checkpoint_download import ensure_default_checkpoint; ensure_default_checkpoint()"; \
