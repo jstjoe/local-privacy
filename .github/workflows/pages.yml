@@ -44,6 +44,9 @@ jobs:
       - name: Regenerate OpenAPI spec into docs/api/
         run: uv run --package opf-api opf-api-export-openapi --out docs/api
 
+      - name: Cache-bust __CACHE_BUST__ in every HTML file under docs/
+        run: find docs -type f -name '*.html' -exec sed -i "s/__CACHE_BUST__/${GITHUB_SHA}/g" {} +
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
