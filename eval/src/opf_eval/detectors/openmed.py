@@ -58,6 +58,12 @@ class OpenMedDetector:
         self._default_lang = default_lang
         self._device = device
 
+    def close(self) -> None:
+        """Drop every cached per-language loader so their weights can be
+        released. Called by the runner between detector iterations to free
+        VRAM."""
+        self._loaders.clear()
+
     def _get_loader(self, lang: str) -> "ModelLoader":
         if lang not in self._loaders:
             cfg = self._config_cls(device=self._device) if self._device != "cpu" else None

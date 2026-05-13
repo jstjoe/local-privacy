@@ -63,6 +63,11 @@ class GLiNERDetector:
         if name is not None:
             self.name = name
 
+    def close(self) -> None:
+        """Drop the underlying GLiNER model so its weights can be released.
+        Called by the runner between detector iterations to free VRAM."""
+        self._model = None  # type: ignore[assignment]
+
     def detect(self, text: str, **_context: object) -> DetectorResult:
         t0 = time.perf_counter()
         try:
