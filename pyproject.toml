@@ -2,6 +2,8 @@
 name = "local-privacy"
 version = "0.0.0"
 description = "Workspace root for OPF benchmark + REST API"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 dependencies = [
     "opf",

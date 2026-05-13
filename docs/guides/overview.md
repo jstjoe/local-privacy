@@ -29,6 +29,6 @@ Then visit one of `/scalar`, `/docs`, `/redoc`. The OpenAPI spec itself lives at
 
 ## Versioning
 
-The API is pre-`1.0`. `info.version` (in this OpenAPI spec) is the only version surface today — currently `0.6.0`. Each breaking change to request or response shape lands as a minor bump (`0.x.0 -> 0.(x+1).0`); non-breaking additions land as patch bumps.
+The API is pre-`1.0`. `info.version` (in this OpenAPI spec) is the only version surface today — currently `0.6.1`. Each breaking change to request or response shape lands as a minor bump (`0.x.0 -> 0.(x+1).0`); non-breaking additions land as patch bumps.
 
 URL paths are unversioned (`/api/...`). When the API stabilizes, the intent is to move to **header-based date-string versioning** in the style of Stripe — clients will pin to a release date via `API-Version: 2026-05-13`. Until that header lands, treat `info.version` as the contract.

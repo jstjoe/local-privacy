@@ -302,3 +302,7 @@ Three in-app reference UIs render the same spec — `/scalar` (Scalar), `/docs` 
 | `OPF_DECODE_MODE`              | `viterbi` or `argmax`. OPF-only. Default `viterbi`.                  |
 | `SKYFLOW_VAULT_URL` / `_ID` / `_BEARER_TOKEN` | Required for the `skyflow` **detector**.              |
 | `SKYFLOW_TOKEN_VAULT_URL` / `_ID` / `_BEARER_TOKEN` | Required for `/api/replace` `label_token` mode. See [docs/token-vault-setup.md](docs/token-vault-setup.md). |
+
+## License
+
+Licensed under the **GNU Affero General Public License v3.0 or later** ([LICENSE](LICENSE)). Notably, the AGPL's network clause (§13) requires anyone who runs a modified version of this code as a network service to make the modified source available to its users. The unmodified upstream OPF model in [`privacy-filter/`](https://github.com/openai/privacy-filter) is licensed separately by its author and is not relicensed by this repo.
