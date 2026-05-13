@@ -171,8 +171,10 @@ def _free_detector(det: object) -> None:
             close()
         except Exception:  # noqa: BLE001 — cleanup must not raise
             pass
-    # Drop common heavy attributes if the detector stashes them.
-    for attr in ("_opf", "_model", "model", "_pipeline", "pipeline", "_engine", "engine"):
+    # Drop common heavy attributes if the detector stashes them. close()
+    # above is the primary path; this is a fallback for detectors that
+    # don't define one.
+    for attr in ("_opf", "_model", "model", "_pipe", "_pipeline", "pipeline", "_engine", "engine", "_loaders"):
         if hasattr(det, attr):
             try:
                 setattr(det, attr, None)
@@ -184,7 +186,6 @@ def _free_detector(det: object) -> None:
 
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-            torch.cuda.ipc_collect()
         mps = getattr(torch.backends, "mps", None)
         if mps is not None and getattr(mps, "is_available", lambda: False)():
             empty = getattr(getattr(torch, "mps", None), "empty_cache", None)
@@ -296,12 +297,8 @@ def run(
             elapsed = time.perf_counter() - t0
             print(f"[{name}] {len(examples)} examples in {elapsed:.1f}s -> {out_path}")
         finally:
-            # Release the detector's resources before building the next one.
-            # Without this, each model's weights sit in VRAM until Python's
-            # GC happens to fire and CUDA's caching allocator releases — by
-            # which point the next detector has already tried (and failed)
-            # to allocate. Running multiple GPU detectors in sequence on a
-            # T4 (14 GB) OOMs on the third or fourth without explicit cleanup.
+            # Release VRAM before building the next detector — without this
+            # the next iteration OOMs on shared-GPU runtimes (see _free_detector).
             _free_detector(det)
             del det
 

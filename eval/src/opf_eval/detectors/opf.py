@@ -34,6 +34,11 @@ class OPFDetector:
         # Warm load so first detect() doesn't include a multi-second cold start.
         self._opf.get_runtime()
 
+    def close(self) -> None:
+        """Drop the OPF runtime so its weights can be released. Called by
+        the runner between detector iterations to free VRAM."""
+        self._opf = None  # type: ignore[assignment]
+
     def detect(self, text: str, **_context: object) -> DetectorResult:
         t0 = time.perf_counter()
         try:

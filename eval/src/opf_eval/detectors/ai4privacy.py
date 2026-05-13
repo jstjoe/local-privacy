@@ -59,6 +59,11 @@ class Ai4PrivacyDetector:
             device=hf_device,
         )
 
+    def close(self) -> None:
+        """Drop the HF pipeline so its model weights can be released.
+        Called by the runner between detector iterations to free VRAM."""
+        self._pipe = None  # type: ignore[assignment]
+
     def detect(self, text: str, **_context: object) -> DetectorResult:
         t0 = time.perf_counter()
         try:
