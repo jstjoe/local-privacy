@@ -103,7 +103,7 @@ OPENAPI_TAGS = [
 ]
 
 app = FastAPI(
-    title="Privacy-detection API",
+    title="Sensitive Data Detector API",
     version="0.6.1",
     summary="Unified PII detection across OPF, GLiNER, Presidio, and Skyflow.",
     description=API_DESCRIPTION,

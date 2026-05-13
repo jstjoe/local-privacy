@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: Privacy-detection API
+  title: Sensitive Data Detector API
   summary: Unified PII detection across OPF, GLiNER, Presidio, and Skyflow.
   description: 'Unified PII detection across **OPF**, **GLiNER**, **Presidio**, and
     **Skyflow**.

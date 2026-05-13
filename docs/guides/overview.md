@@ -1,4 +1,4 @@
-# Privacy-detection API — overview
+# Sensitive Data Detector API — overview
 
 The `opf-api` service exposes every benchmark detector in this repo behind one HTTP contract. Choose a backend with the `detector` field on each request; canonical labels apply uniformly across all of them.
 
