@@ -167,7 +167,9 @@ paths:
         | `label` | `[EMAIL]` | Category only. Default. |
 
         | `label_number` | `[EMAIL_1]` | Identity **within one request** via per-label
-        counter; duplicate `(label, text)` reuses its number. |
+        counter; duplicate `(label, text)` reuses its number. Dropped-overlap spans
+        (`replaced=false`) still consume a counter slot, so the kept sequence may
+        skip numbers — see the overlap notes below. |
 
         | `label_token` | `[EMAIL_MGaE1Bo]` | Identity **across requests and detectors**
         via a Skyflow vault. Deterministic — same plaintext maps to the same 7-char

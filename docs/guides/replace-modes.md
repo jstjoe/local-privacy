@@ -6,12 +6,14 @@
 |---|---|---|
 | `redact` | `********` | Nothing — fixed 8-character asterisk run regardless of span length. |
 | `label` | `[EMAIL]` | Category only. Default mode. |
-| `label_number` | `[EMAIL_1]` | Identity **within one request**. Per-label counter; duplicate `(label, text)` reuses its number. |
+| `label_number` | `[EMAIL_1]` | Identity **within one request**. Per-label counter; duplicate `(label, text)` reuses its number. Dropped-overlap spans still consume a counter slot — see overlap notes below. |
 | `label_token` | `[EMAIL_MGaE1Bo]` | Identity **across requests and detectors** via a Skyflow vault. Deterministic — same plaintext maps to the same 7-char token forever. |
 
 ## Overlapping spans
 
 The earlier-starting span wins. Later overlaps are skipped in `replaced_text` but still appear in `detected_spans` with `replaced=false`. Filter to `replaced=true` to reconstruct exactly which spans landed. The `replacement` field is still populated on a `replaced=false` span (the renderer ran), it just wasn't spliced in.
+
+**`label_number` numbering quirk.** Because the renderer runs for every span before overlap suppression, a dropped span consumes its label's counter. If a `PERSON` overlap is dropped between `[PERSON_1]` and the next kept `PERSON`, that next span lands as `[PERSON_3]`, not `[PERSON_2]` — the gap is the dropped span (visible as `replaced=false` in `detected_spans`). Not a bug; just worth knowing if a downstream system expects contiguous numbering.
 
 ## `label_token` requirements
 
