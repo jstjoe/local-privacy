@@ -748,9 +748,13 @@
       "url": "https://github.com/jstjoe/local-privacy"
     },
     "description": "Unified PII detection across **OPF**, **GLiNER**, **Presidio**, and **Skyflow**.\nPick a backend with the `detector` field; canonical labels apply uniformly across all of them.\n\n## Endpoints\n\n- `POST /api/find` \u2014 find sensitive data; return spans only, no text rewriting.\n- `POST /api/replace` \u2014 find spans and replace each one under one of four modes.\n- `GET /api/detectors` \u2014 list registered detectors and their category coverage.\n- `GET /api/health` \u2014 liveness probe; does not exercise detector backends.\n\n## Versioning\n\nThe API is pre-`1.0`. `info.version` is the only version surface today \u2014\nevery breaking change to request or response shape lands as a minor bump\n(`0.x.0 -> 0.(x+1).0`); non-breaking additions land as patch bumps.\n\nURL paths are unversioned (`/api/...`). When the API stabilizes, the\nintent is to move to **header-based date-string versioning** in the style\nof Stripe \u2014 clients will pin to a release date via `API-Version:\n2026-05-13`. Until that header lands, treat `info.version` as the contract.\n\n## Canonical labels\n\nEvery detector's raw output maps into a 15-label taxonomy:\n`PERSON`, `EMAIL`, `PHONE`, `ADDRESS`, `URL`, `DATE`, `ACCOUNT`, `SECRET`, `USERNAME`,\n`DEMOGRAPHIC`, `ORGANIZATION`, `OCCUPATION`, `MONEY`, `VEHICLE`, `PHYSICAL`.\nDetectors vary in coverage \u2014 `GET /api/detectors` reports each detector's category list.\n",
+    "license": {
+      "name": "AGPL-3.0-or-later",
+      "url": "https://www.gnu.org/licenses/agpl-3.0.html"
+    },
     "summary": "Unified PII detection across OPF, GLiNER, Presidio, and Skyflow.",
     "title": "Privacy-detection API",
-    "version": "0.6.0"
+    "version": "0.6.1"
   },
   "openapi": "3.1.0",
   "paths": {

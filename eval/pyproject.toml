@@ -2,6 +2,8 @@
 name = "opf-eval"
 version = "0.1.0"
 description = "Benchmark harness comparing OPF and Skyflow Detect"
+license = "AGPL-3.0-or-later"
+license-files = ["../LICENSE"]
 requires-python = ">=3.10"
 dependencies = [
     "opf",

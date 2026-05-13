@@ -104,7 +104,7 @@ OPENAPI_TAGS = [
 
 app = FastAPI(
     title="Privacy-detection API",
-    version="0.6.0",
+    version="0.6.1",
     summary="Unified PII detection across OPF, GLiNER, Presidio, and Skyflow.",
     description=API_DESCRIPTION,
     lifespan=lifespan,
@@ -112,6 +112,10 @@ app = FastAPI(
     contact={
         "name": "local-privacy",
         "url": "https://github.com/jstjoe/local-privacy",
+    },
+    license_info={
+        "name": "AGPL-3.0-or-later",
+        "url": "https://www.gnu.org/licenses/agpl-3.0.html",
     },
     servers=[
         {"url": "http://localhost:8000", "description": "Local dev"},

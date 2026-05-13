@@ -1810,7 +1810,7 @@ requires-dist = [
 
 [[package]]
 name = "opf-api"
-version = "0.6.0"
+version = "0.6.1"
 source = { editable = "api" }
 dependencies = [
     { name = "fastapi" },
