@@ -7,7 +7,6 @@ from typing import Callable, Protocol
 from fastapi import APIRouter, HTTPException, Request
 
 from opf_eval.detectors.base import Span
-from opf_eval.taxonomy import CANONICAL_LABELS
 from opf_eval.transforms import (
     VaultTokenError,
     label_number_renderer,
@@ -19,8 +18,10 @@ from opf_eval.transforms import (
 
 from .registry import DetectorEntry, detector_categories
 from .schemas import (
+    CanonicalLabel,
     DetectorInfo,
     DetectorsResponse,
+    DetectorOptions,
     DetectRequest,
     DetectResponse,
     HealthResponse,
@@ -36,7 +37,7 @@ router = APIRouter()
 
 
 _ERROR_400_EXAMPLE = {
-    "description": "Unknown detector, unknown category, or missing config for the chosen mode.",
+    "description": "Unknown detector or missing config for the chosen mode.",
     "content": {
         "application/json": {
             "examples": {
@@ -46,16 +47,50 @@ _ERROR_400_EXAMPLE = {
                         "detail": "unknown detector 'foo'; available: ['gliner', 'opf', 'presidio']"
                     },
                 },
-                "unknown_category": {
-                    "summary": "Unknown canonical category",
-                    "value": {
-                        "detail": "unknown canonical categories: ['FOO']. Valid: ['ACCOUNT', 'ADDRESS', ...]"
-                    },
-                },
                 "label_token_unconfigured": {
                     "summary": "label_token mode without vault env",
                     "value": {
                         "detail": "mode='label_token' requires SKYFLOW_TOKEN_VAULT_URL and SKYFLOW_TOKEN_VAULT_ID env vars to be set"
+                    },
+                },
+            }
+        }
+    },
+}
+
+_ERROR_422_EXAMPLE = {
+    "description": (
+        "Request body failed Pydantic validation. Common causes: a value in "
+        "`categories` that isn't a canonical label, an unknown key in "
+        "`options.opf`, or a wrong type on any field."
+    ),
+    "content": {
+        "application/json": {
+            "examples": {
+                "bad_category": {
+                    "summary": "Non-canonical value in `categories`",
+                    "value": {
+                        "detail": [
+                            {
+                                "type": "enum",
+                                "loc": ["body", "categories", 0],
+                                "msg": "Input should be 'PERSON', 'EMAIL', 'PHONE', ...",
+                                "input": "FOO",
+                            }
+                        ]
+                    },
+                },
+                "unknown_opf_option": {
+                    "summary": "Unknown key in `options.opf`",
+                    "value": {
+                        "detail": [
+                            {
+                                "type": "extra_forbidden",
+                                "loc": ["body", "options", "opf", "decod_mode"],
+                                "msg": "Extra inputs are not permitted",
+                                "input": "argmax",
+                            }
+                        ]
                     },
                 },
             }
@@ -82,9 +117,6 @@ _ERROR_502_EXAMPLE = {
 }
 
 
-_VALID_CATEGORIES = set(CANONICAL_LABELS)
-
-
 def _resolve_detector(request: Request, name: str | None) -> tuple[str, DetectorEntry]:
     chosen = name or request.app.state.default_detector
     registry: dict[str, DetectorEntry] = request.app.state.registry
@@ -97,33 +129,15 @@ def _resolve_detector(request: Request, name: str | None) -> tuple[str, Detector
     return chosen, entry
 
 
-def _validate_categories(categories: list[str] | None) -> set[str] | None:
-    if categories is None:
-        return None
-    bad = [c for c in categories if c not in _VALID_CATEGORIES]
-    if bad:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"unknown canonical categories: {bad}. "
-                f"Valid: {sorted(_VALID_CATEGORIES)}"
-            ),
-        )
-    return set(categories)
-
-
 class _DetectInput(Protocol):
     text: str
     detector: str | None
-    categories: list[str] | None
-    decode_mode: object
+    categories: list[CanonicalLabel] | None
+    options: DetectorOptions | None
 
 
 async def _run_detect(request: Request, body: _DetectInput) -> tuple[str, list[Span]]:
     name, entry = _resolve_detector(request, body.detector)
-    if body.decode_mode is not None and name != "opf":
-        # Silently no-op rather than 400 — ignore for non-OPF.
-        pass
 
     detector = await entry.get()
     async with entry.call_lock:
@@ -133,8 +147,12 @@ async def _run_detect(request: Request, body: _DetectInput) -> tuple[str, list[S
         raise HTTPException(status_code=502, detail=f"{name}: {result['error']}")
 
     spans: list[Span] = list(result.get("spans") or [])
-    allow = _validate_categories(body.categories)
-    if allow is not None:
+    if body.categories is not None:
+        # Empty list is a deliberate "match nothing" filter, not "no filter".
+        # Omit the field (or send null) to keep every category. CanonicalLabel
+        # inherits str, so membership lookup against the raw detector label
+        # works without coercion.
+        allow = set(body.categories)
         spans = [s for s in spans if s["label"] in allow]
     return name, spans
 
@@ -148,10 +166,14 @@ async def _run_detect(request: Request, body: _DetectInput) -> tuple[str, list[S
         "Run the chosen detector over `text` and return canonical-labelled spans.\n\n"
         "No rewriting is performed — call `/v1/sanitize` for that.\n\n"
         "Filter detector output to a subset of canonical labels with `categories`.\n"
-        "OPF-only: pass `decode_mode` to override the default Viterbi decoding."
+        "OPF-only: pass `options.opf.decode_mode` to override the default Viterbi decoding."
     ),
     response_description="Detected spans plus per-label counts.",
-    responses={400: _ERROR_400_EXAMPLE, 502: _ERROR_502_EXAMPLE},
+    responses={
+        400: _ERROR_400_EXAMPLE,
+        422: _ERROR_422_EXAMPLE,
+        502: _ERROR_502_EXAMPLE,
+    },
 )
 async def detect(request: Request, body: DetectRequest) -> DetectResponse:
     """Detect-only: returns spans, no text rewriting."""
@@ -169,7 +191,6 @@ async def detect(request: Request, body: DetectRequest) -> DetectResponse:
     ]
     by_label = Counter(s.label for s in out_spans)
     return DetectResponse(
-        schema_version=request.app.state.schema_version,
         detector=name,
         text=body.text,
         detected_spans=out_spans,
@@ -216,7 +237,11 @@ def _build_label_token_renderer_raising_http(
         "`[LABEL]` for that span only."
     ),
     response_description="Sanitized text, the spans that were rewritten, and per-label counts.",
-    responses={400: _ERROR_400_EXAMPLE, 502: _ERROR_502_EXAMPLE},
+    responses={
+        400: _ERROR_400_EXAMPLE,
+        422: _ERROR_422_EXAMPLE,
+        502: _ERROR_502_EXAMPLE,
+    },
 )
 async def sanitize(request: Request, body: SanitizeRequest) -> SanitizeResponse:
     """Detect + rewrite the input text under the chosen `mode`.
@@ -278,7 +303,6 @@ async def sanitize(request: Request, body: SanitizeRequest) -> SanitizeResponse:
 
     by_label = Counter(s.label for s in out_spans)
     return SanitizeResponse(
-        schema_version=request.app.state.schema_version,
         detector=name,
         mode=mode,
         text=body.text,
@@ -336,5 +360,4 @@ async def health(request: Request) -> HealthResponse:
         status="ok",
         default_detector=request.app.state.default_detector,
         loaded_detectors=loaded,
-        schema_version=request.app.state.schema_version,
     )

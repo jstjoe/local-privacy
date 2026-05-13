@@ -1,6 +1,28 @@
 {
   "components": {
     "schemas": {
+      "CanonicalLabel": {
+        "description": "Canonical PII category. Every detector's raw output maps into this taxonomy.",
+        "enum": [
+          "PERSON",
+          "EMAIL",
+          "PHONE",
+          "ADDRESS",
+          "URL",
+          "DATE",
+          "ACCOUNT",
+          "SECRET",
+          "USERNAME",
+          "DEMOGRAPHIC",
+          "ORGANIZATION",
+          "OCCUPATION",
+          "MONEY",
+          "VEHICLE",
+          "PHYSICAL"
+        ],
+        "title": "CanonicalLabel",
+        "type": "string"
+      },
       "DetectRequest": {
         "description": "Base request for `/v1/detect` \u2014 no text-rewriting fields.",
         "examples": [
@@ -17,7 +39,7 @@
             "anyOf": [
               {
                 "items": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/CanonicalLabel"
                 },
                 "type": "array"
               },
@@ -25,7 +47,7 @@
                 "type": "null"
               }
             ],
-            "description": "Canonical categories to keep. Valid values: PERSON, EMAIL, PHONE, ADDRESS, URL, DATE, ACCOUNT, SECRET, USERNAME, DEMOGRAPHIC, ORGANIZATION, OCCUPATION, MONEY, VEHICLE, PHYSICAL. Omit or set to null to keep all categories the detector produces.",
+            "description": "Canonical categories to keep. Omit or set to `null` to keep every category the detector produces. An empty list `[]` is a deliberate \"match nothing\" filter and returns zero spans \u2014 use `null` if you mean \"no filter\". Values outside the canonical taxonomy are rejected with `422`.",
             "examples": [
               [
                 "EMAIL",
@@ -33,25 +55,6 @@
               ]
             ],
             "title": "Categories"
-          },
-          "decode_mode": {
-            "anyOf": [
-              {
-                "enum": [
-                  "viterbi",
-                  "argmax"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "OPF-only decode strategy. Ignored by every other detector. `viterbi` (default) maximises sequence probability; `argmax` picks the most likely label per token independently.",
-            "examples": [
-              "viterbi"
-            ],
-            "title": "Decode Mode"
           },
           "detector": {
             "anyOf": [
@@ -69,6 +72,24 @@
               "gliner"
             ],
             "title": "Detector"
+          },
+          "options": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DetectorOptions"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Per-detector options namespace. The entry matching the top-level `detector` is consulted; other entries are accepted but ignored.",
+            "examples": [
+              {
+                "opf": {
+                  "decode_mode": "argmax"
+                }
+              }
+            ]
           },
           "text": {
             "description": "Free-form text to scan for PII.",
@@ -99,7 +120,6 @@
               }
             ],
             "detector": "presidio",
-            "schema_version": 2,
             "summary": {
               "by_label": {
                 "EMAIL": 1
@@ -123,14 +143,6 @@
             "title": "Detector",
             "type": "string"
           },
-          "schema_version": {
-            "description": "Payload schema version. Independent of the OpenAPI `info.version`.",
-            "examples": [
-              2
-            ],
-            "title": "Schema Version",
-            "type": "integer"
-          },
           "summary": {
             "$ref": "#/components/schemas/SummaryOut"
           },
@@ -153,7 +165,6 @@
           }
         },
         "required": [
-          "schema_version",
           "detector",
           "text",
           "detected_spans",
@@ -175,7 +186,7 @@
               ]
             ],
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/CanonicalLabel"
             },
             "title": "Categories",
             "type": "array"
@@ -212,6 +223,24 @@
           "proxy"
         ],
         "title": "DetectorInfo",
+        "type": "object"
+      },
+      "DetectorOptions": {
+        "description": "Per-detector options namespace. Each key carries options for that one\ndetector. Only the entry matching the top-level `detector` is consulted \u2014\nother keys are accepted but ignored, so a client can carry one options\nblob across detector swaps without restructuring it.",
+        "properties": {
+          "opf": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OpfOptions"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Options for the `opf` detector. Ignored by other detectors."
+          }
+        },
+        "title": "DetectorOptions",
         "type": "object"
       },
       "DetectorsResponse": {
@@ -275,19 +304,6 @@
         "title": "DetectorsResponse",
         "type": "object"
       },
-      "HTTPValidationError": {
-        "properties": {
-          "detail": {
-            "items": {
-              "$ref": "#/components/schemas/ValidationError"
-            },
-            "title": "Detail",
-            "type": "array"
-          }
-        },
-        "title": "HTTPValidationError",
-        "type": "object"
-      },
       "HealthResponse": {
         "description": "Response from `/v1/health`.",
         "examples": [
@@ -296,7 +312,6 @@
             "loaded_detectors": [
               "opf"
             ],
-            "schema_version": 2,
             "status": "ok"
           }
         ],
@@ -322,14 +337,6 @@
             "title": "Loaded Detectors",
             "type": "array"
           },
-          "schema_version": {
-            "description": "Payload schema version. Independent of the OpenAPI `info.version`.",
-            "examples": [
-              2
-            ],
-            "title": "Schema Version",
-            "type": "integer"
-          },
           "status": {
             "const": "ok",
             "description": "Always `ok` when this endpoint responds.",
@@ -340,10 +347,30 @@
         "required": [
           "status",
           "default_detector",
-          "loaded_detectors",
-          "schema_version"
+          "loaded_detectors"
         ],
         "title": "HealthResponse",
+        "type": "object"
+      },
+      "OpfOptions": {
+        "additionalProperties": false,
+        "description": "Options that only apply when `detector` is `opf`.",
+        "properties": {
+          "decode_mode": {
+            "default": "viterbi",
+            "description": "OPF decode strategy. `viterbi` (default) maximises sequence probability; `argmax` picks the most likely label per token independently. **Currently advisory** \u2014 the OPF detector reads its decode mode from the server's `OPF_DECODE_MODE` env at startup; per-request override is reserved for a follow-up that extends `OPFDetector.detect()`.",
+            "enum": [
+              "viterbi",
+              "argmax"
+            ],
+            "examples": [
+              "viterbi"
+            ],
+            "title": "Decode Mode",
+            "type": "string"
+          }
+        },
+        "title": "OpfOptions",
         "type": "object"
       },
       "SanitizeRequest": {
@@ -360,7 +387,7 @@
             "anyOf": [
               {
                 "items": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/CanonicalLabel"
                 },
                 "type": "array"
               },
@@ -368,7 +395,7 @@
                 "type": "null"
               }
             ],
-            "description": "Canonical categories to keep. Valid values: PERSON, EMAIL, PHONE, ADDRESS, URL, DATE, ACCOUNT, SECRET, USERNAME, DEMOGRAPHIC, ORGANIZATION, OCCUPATION, MONEY, VEHICLE, PHYSICAL. Omit or set to null to keep all categories the detector produces.",
+            "description": "Canonical categories to keep. Omit or set to `null` to keep every category the detector produces. An empty list `[]` is a deliberate \"match nothing\" filter and returns zero spans \u2014 use `null` if you mean \"no filter\". Values outside the canonical taxonomy are rejected with `422`.",
             "examples": [
               [
                 "EMAIL",
@@ -376,25 +403,6 @@
               ]
             ],
             "title": "Categories"
-          },
-          "decode_mode": {
-            "anyOf": [
-              {
-                "enum": [
-                  "viterbi",
-                  "argmax"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "OPF-only decode strategy. Ignored by every other detector. `viterbi` (default) maximises sequence probability; `argmax` picks the most likely label per token independently.",
-            "examples": [
-              "viterbi"
-            ],
-            "title": "Decode Mode"
           },
           "detector": {
             "anyOf": [
@@ -428,6 +436,24 @@
             ],
             "title": "Mode",
             "type": "string"
+          },
+          "options": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DetectorOptions"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Per-detector options namespace. The entry matching the top-level `detector` is consulted; other entries are accepted but ignored.",
+            "examples": [
+              {
+                "opf": {
+                  "decode_mode": "argmax"
+                }
+              }
+            ]
           },
           "text": {
             "description": "Free-form text to scan for PII.",
@@ -469,7 +495,6 @@
             "detector": "presidio",
             "mode": "label_token",
             "sanitized_text": "Email [EMAIL_MGaE1Bo] or call [PHONE_vRXiWKZ].",
-            "schema_version": 2,
             "summary": {
               "by_label": {
                 "EMAIL": 1,
@@ -519,14 +544,6 @@
             "title": "Sanitized Text",
             "type": "string"
           },
-          "schema_version": {
-            "description": "Payload schema version. Bumps when field names or semantics change. Independent of `info.version` in the OpenAPI spec.",
-            "examples": [
-              2
-            ],
-            "title": "Schema Version",
-            "type": "integer"
-          },
           "summary": {
             "$ref": "#/components/schemas/SummaryOut"
           },
@@ -552,7 +569,6 @@
           }
         },
         "required": [
-          "schema_version",
           "detector",
           "mode",
           "text",
@@ -712,46 +728,6 @@
         ],
         "title": "SummaryOut",
         "type": "object"
-      },
-      "ValidationError": {
-        "properties": {
-          "ctx": {
-            "title": "Context",
-            "type": "object"
-          },
-          "input": {
-            "title": "Input"
-          },
-          "loc": {
-            "items": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "integer"
-                }
-              ]
-            },
-            "title": "Location",
-            "type": "array"
-          },
-          "msg": {
-            "title": "Message",
-            "type": "string"
-          },
-          "type": {
-            "title": "Error Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "loc",
-          "msg",
-          "type"
-        ],
-        "title": "ValidationError",
-        "type": "object"
       }
     }
   },
@@ -760,16 +736,16 @@
       "name": "local-privacy",
       "url": "https://github.com/jstjoe/local-privacy"
     },
-    "description": "Unified PII detection across **OPF**, **GLiNER**, **Presidio**, and **Skyflow**.\nPick a backend with the `detector` field; canonical labels apply uniformly across all of them.\n\n## Endpoints\n\n- `POST /v1/detect` \u2014 return spans only, no text rewriting.\n- `POST /v1/sanitize` \u2014 detect and rewrite spans under one of four modes.\n- `GET /v1/detectors` \u2014 list registered detectors and their category coverage.\n- `GET /v1/health` \u2014 liveness probe; does not exercise detector backends.\n\n## Versioning\n\nTwo version numbers appear in this API. They are independent:\n\n- `info.version` (this spec) \u2014 tracks the OpenAPI contract.\n- `schema_version` (response payload field) \u2014 tracks the request/response payload shape.\n  Currently `2`. Bumps when payload field names or semantics change. Clients should pin on this.\n\n## Canonical labels\n\nEvery detector's raw output maps into a 15-label taxonomy:\n`PERSON`, `EMAIL`, `PHONE`, `ADDRESS`, `URL`, `DATE`, `ACCOUNT`, `SECRET`, `USERNAME`,\n`DEMOGRAPHIC`, `ORGANIZATION`, `OCCUPATION`, `MONEY`, `VEHICLE`, `PHYSICAL`.\nDetectors vary in coverage \u2014 `GET /v1/detectors` reports each detector's category list.\n",
+    "description": "Unified PII detection across **OPF**, **GLiNER**, **Presidio**, and **Skyflow**.\nPick a backend with the `detector` field; canonical labels apply uniformly across all of them.\n\n## Endpoints\n\n- `POST /v1/detect` \u2014 return spans only, no text rewriting.\n- `POST /v1/sanitize` \u2014 detect and rewrite spans under one of four modes.\n- `GET /v1/detectors` \u2014 list registered detectors and their category coverage.\n- `GET /v1/health` \u2014 liveness probe; does not exercise detector backends.\n\n## Versioning\n\nThe API is pre-`1.0`. `info.version` is the only version surface \u2014 every\nbreaking change to request or response shape lands as a minor bump\n(`0.x.0 -> 0.(x+1).0`). Non-breaking additions land as patch bumps. The\n`/v1/` URL prefix is reserved for the eventual `1.0` cutover.\n\n## Canonical labels\n\nEvery detector's raw output maps into a 15-label taxonomy:\n`PERSON`, `EMAIL`, `PHONE`, `ADDRESS`, `URL`, `DATE`, `ACCOUNT`, `SECRET`, `USERNAME`,\n`DEMOGRAPHIC`, `ORGANIZATION`, `OCCUPATION`, `MONEY`, `VEHICLE`, `PHYSICAL`.\nDetectors vary in coverage \u2014 `GET /v1/detectors` reports each detector's category list.\n",
     "summary": "Unified PII detection across OPF, GLiNER, Presidio, and Skyflow.",
     "title": "Privacy-detection API",
-    "version": "0.2.0"
+    "version": "0.3.0"
   },
   "openapi": "3.1.0",
   "paths": {
     "/v1/detect": {
       "post": {
-        "description": "Run the chosen detector over `text` and return canonical-labelled spans.\n\nNo rewriting is performed \u2014 call `/v1/sanitize` for that.\n\nFilter detector output to a subset of canonical labels with `categories`.\nOPF-only: pass `decode_mode` to override the default Viterbi decoding.",
+        "description": "Run the chosen detector over `text` and return canonical-labelled spans.\n\nNo rewriting is performed \u2014 call `/v1/sanitize` for that.\n\nFilter detector output to a subset of canonical labels with `categories`.\nOPF-only: pass `options.opf.decode_mode` to override the default Viterbi decoding.",
         "operationId": "detect_v1_detect_post",
         "requestBody": {
           "content": {
@@ -802,12 +778,6 @@
                       "detail": "mode='label_token' requires SKYFLOW_TOKEN_VAULT_URL and SKYFLOW_TOKEN_VAULT_ID env vars to be set"
                     }
                   },
-                  "unknown_category": {
-                    "summary": "Unknown canonical category",
-                    "value": {
-                      "detail": "unknown canonical categories: ['FOO']. Valid: ['ACCOUNT', 'ADDRESS', ...]"
-                    }
-                  },
                   "unknown_detector": {
                     "summary": "Unknown detector",
                     "value": {
@@ -817,17 +787,51 @@
                 }
               }
             },
-            "description": "Unknown detector, unknown category, or missing config for the chosen mode."
+            "description": "Unknown detector or missing config for the chosen mode."
           },
           "422": {
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                "examples": {
+                  "bad_category": {
+                    "summary": "Non-canonical value in `categories`",
+                    "value": {
+                      "detail": [
+                        {
+                          "input": "FOO",
+                          "loc": [
+                            "body",
+                            "categories",
+                            0
+                          ],
+                          "msg": "Input should be 'PERSON', 'EMAIL', 'PHONE', ...",
+                          "type": "enum"
+                        }
+                      ]
+                    }
+                  },
+                  "unknown_opf_option": {
+                    "summary": "Unknown key in `options.opf`",
+                    "value": {
+                      "detail": [
+                        {
+                          "input": "argmax",
+                          "loc": [
+                            "body",
+                            "options",
+                            "opf",
+                            "decod_mode"
+                          ],
+                          "msg": "Extra inputs are not permitted",
+                          "type": "extra_forbidden"
+                        }
+                      ]
+                    }
+                  }
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Request body failed Pydantic validation. Common causes: a value in `categories` that isn't a canonical label, an unknown key in `options.opf`, or a wrong type on any field."
           },
           "502": {
             "content": {
@@ -936,12 +940,6 @@
                       "detail": "mode='label_token' requires SKYFLOW_TOKEN_VAULT_URL and SKYFLOW_TOKEN_VAULT_ID env vars to be set"
                     }
                   },
-                  "unknown_category": {
-                    "summary": "Unknown canonical category",
-                    "value": {
-                      "detail": "unknown canonical categories: ['FOO']. Valid: ['ACCOUNT', 'ADDRESS', ...]"
-                    }
-                  },
                   "unknown_detector": {
                     "summary": "Unknown detector",
                     "value": {
@@ -951,17 +949,51 @@
                 }
               }
             },
-            "description": "Unknown detector, unknown category, or missing config for the chosen mode."
+            "description": "Unknown detector or missing config for the chosen mode."
           },
           "422": {
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                "examples": {
+                  "bad_category": {
+                    "summary": "Non-canonical value in `categories`",
+                    "value": {
+                      "detail": [
+                        {
+                          "input": "FOO",
+                          "loc": [
+                            "body",
+                            "categories",
+                            0
+                          ],
+                          "msg": "Input should be 'PERSON', 'EMAIL', 'PHONE', ...",
+                          "type": "enum"
+                        }
+                      ]
+                    }
+                  },
+                  "unknown_opf_option": {
+                    "summary": "Unknown key in `options.opf`",
+                    "value": {
+                      "detail": [
+                        {
+                          "input": "argmax",
+                          "loc": [
+                            "body",
+                            "options",
+                            "opf",
+                            "decod_mode"
+                          ],
+                          "msg": "Extra inputs are not permitted",
+                          "type": "extra_forbidden"
+                        }
+                      ]
+                    }
+                  }
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Request body failed Pydantic validation. Common causes: a value in `categories` that isn't a canonical label, an unknown key in `options.opf`, or a wrong type on any field."
           },
           "502": {
             "content": {

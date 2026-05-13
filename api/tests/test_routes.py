@@ -109,7 +109,6 @@ def _build_app(
     fake_entry.instance = instance
     app.state.registry = {"fake": fake_entry}
     app.state.default_detector = "fake"
-    app.state.schema_version = 2
     app.state.token_vault_client = token_vault_client
     return app
 
@@ -151,14 +150,76 @@ async def test_detect_filter_categories():
 
 
 @pytest.mark.asyncio
+async def test_detect_empty_categories_returns_zero_spans():
+    # `[]` is a deliberate "match nothing" filter — distinct from `None`,
+    # which means "no filter". Regression guard for that contract.
+    async with _client() as c:
+        r = await c.post(
+            "/v1/detect",
+            json={
+                "text": "Joe at joe@example.com lives in Elgin, TX.",
+                "categories": [],
+            },
+        )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["detected_spans"] == []
+    assert body["summary"] == {"span_count": 0, "by_label": {}}
+
+
+@pytest.mark.asyncio
+async def test_detect_null_categories_returns_all_spans():
+    async with _client() as c:
+        r = await c.post(
+            "/v1/detect",
+            json={"text": "Joe at joe@example.com lives in Elgin, TX.", "categories": None},
+        )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert {s["label"] for s in body["detected_spans"]} == {"EMAIL", "ADDRESS"}
+
+
+@pytest.mark.asyncio
 async def test_detect_invalid_category():
     async with _client() as c:
         r = await c.post(
             "/v1/detect",
             json={"text": "x", "categories": ["NOT_REAL"]},
         )
-    assert r.status_code == 400
-    assert "NOT_REAL" in r.json()["detail"]
+    assert r.status_code == 422
+    detail = r.json()["detail"]
+    # Pydantic returns a list of per-field errors; the bad input must be there.
+    assert any("NOT_REAL" == err.get("input") for err in detail), detail
+
+
+@pytest.mark.asyncio
+async def test_detect_unknown_opf_option_rejected():
+    async with _client() as c:
+        r = await c.post(
+            "/v1/detect",
+            json={"text": "x", "options": {"opf": {"decod_mode": "argmax"}}},
+        )
+    assert r.status_code == 422
+    detail = r.json()["detail"]
+    assert any(
+        err.get("type") == "extra_forbidden" and "decod_mode" in err.get("loc", [])
+        for err in detail
+    ), detail
+
+
+@pytest.mark.asyncio
+async def test_detect_valid_opf_options_accepted():
+    async with _client() as c:
+        r = await c.post(
+            "/v1/detect",
+            json={
+                "text": "Joe at joe@example.com lives in Elgin, TX.",
+                "options": {"opf": {"decode_mode": "argmax"}},
+            },
+        )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert {s["label"] for s in body["detected_spans"]} == {"EMAIL", "ADDRESS"}
 
 
 @pytest.mark.asyncio

@@ -17,7 +17,8 @@ The API itself is unauthenticated today — front it with whatever your deployme
 
 ## Error codes
 
-- `400` — unknown detector, unknown canonical category, or `label_token` mode requested without the vault env.
+- `400` — unknown detector, or `label_token` mode requested without the vault env. Body is `{"detail": "<message>"}`.
+- `422` — request body failed Pydantic validation. Common causes: a value in `categories` that isn't a canonical label, an unknown key inside `options.opf`, or a wrong type on any field. Body is `{"detail": [{"type", "loc", "msg", "input"}, ...]}` — one entry per failing field.
 - `502` — detector backend errored, or token vault call failed.
 
 Always `200` from `/v1/health` while the process is up; it does not probe detector backends.
