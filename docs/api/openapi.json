@@ -888,7 +888,7 @@
             "description": "Detector backend failure or vault call failure."
           }
         },
-        "summary": "Find sensitive data in text",
+        "summary": "Find sensitive data",
         "tags": [
           "Find"
         ]
@@ -1028,7 +1028,7 @@
             "description": "Detector backend failure or vault call failure."
           }
         },
-        "summary": "Replace sensitive data in text",
+        "summary": "Replace sensitive data",
         "tags": [
           "Replace"
         ]

@@ -161,7 +161,7 @@ async def _run_find(request: Request, body: _FindInput) -> tuple[str, list[Span]
     "/find",
     response_model=FindResponse,
     tags=["Find"],
-    summary="Find sensitive data in text",
+    summary="Find sensitive data",
     description=(
         "Run the chosen detector over `text` and return canonical-labelled spans.\n\n"
         "No rewriting is performed — call `/api/replace` for that.\n\n"
@@ -215,7 +215,7 @@ def _build_label_token_renderer_raising_http(
     "/replace",
     response_model=ReplaceResponse,
     tags=["Replace"],
-    summary="Replace sensitive data in text",
+    summary="Replace sensitive data",
     description=(
         "Find spans, then rewrite each one under the chosen `mode`. Four modes, "
         "in increasing strength of identity preservation:\n\n"
