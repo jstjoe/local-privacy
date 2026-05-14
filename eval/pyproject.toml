@@ -17,6 +17,9 @@ dependencies = [
     "openmed[hf]>=0.1",
 ]
 
+[project.scripts]
+opf-eval-ensemble = "opf_eval.ensemble:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
