@@ -235,6 +235,27 @@ def test_apply_recipe_no_manifest_is_noop(tmp_path):
     assert not (out_dir / "manifest.json").exists()
 
 
+def test_ensemble_reports_full_canonical_support_for_fair_view():
+    """The fair-view headline reads each detector's `detector_supported_
+    canonicals` and intersects with the dataset. Ensembles need to report
+    the full canonical set so the fair view doesn't render an empty row
+    for them (visible bug: section 7's headline showed `n labels=0` and
+    no scores for the ensemble before this fix)."""
+    from opf_eval.taxonomy import (
+        CANONICAL_LABELS,
+        detector_supported_canonicals,
+        fair_labels,
+    )
+
+    full = set(CANONICAL_LABELS)
+    assert detector_supported_canonicals("ensemble_category_best") == full
+    # Any ensemble_* name follows the same rule, including custom names
+    # passed via apply_recipe(ensemble_name=...).
+    assert detector_supported_canonicals("ensemble_custom_strategy") == full
+    # Fair-view intersection with a real dataset must be non-empty.
+    assert fair_labels("ensemble_category_best", "pii200k")
+
+
 def test_register_in_manifest_idempotent(tmp_path):
     """Re-running the ensemble must not duplicate the entry."""
     out_dir = tmp_path
