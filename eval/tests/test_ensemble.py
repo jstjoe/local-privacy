@@ -14,6 +14,7 @@ import pytest
 
 from opf_eval.ensemble import (
     _detectors_in,
+    _register_in_manifest,
     apply_recipe,
     build_recipe_category_best,
     run_category_best,
@@ -186,6 +187,62 @@ def test_run_category_best_end_to_end(run_dir):
     # even if no detector scored above zero on it (e.g. PERSON, which is in
     # the pii_masking_200k vocab but neither detA nor detB emit).
     assert "PERSON" in per_label_f1
+
+
+def test_apply_recipe_registers_ensemble_in_manifest(run_dir):
+    """`report.build_report` reads the detector list from manifest.json,
+    not from a glob of raw_*.jsonl. The ensemble has to add itself to the
+    manifest or its raw file is silently ignored at report time —
+    visualisations (which glob) showed it but the report did not."""
+    out_dir, fx_path = run_dir
+    # Seed a runner-style manifest with just the original detectors.
+    manifest_path = out_dir / "manifest.json"
+    manifest_path.write_text(json.dumps({
+        "started_at": "2026-05-15T00:00:00Z",
+        "fixtures": str(fx_path),
+        "dataset": "pii_masking_200k",
+        "vocab_key": "pii200k",
+        "n_examples": 3,
+        "detectors": ["detA", "detB"],
+    }))
+
+    apply_recipe({"EMAIL": "detA", "PHONE": "detB"}, out_dir, fx_path,
+                 ensemble_name="ensemble_category_best")
+
+    manifest = json.loads(manifest_path.read_text())
+    assert "ensemble_category_best" in manifest["detectors"]
+    # Original detectors must still be present.
+    assert "detA" in manifest["detectors"]
+    assert "detB" in manifest["detectors"]
+
+
+def test_apply_recipe_no_manifest_is_noop(tmp_path):
+    """If the run dir has no manifest.json yet (e.g. running ensemble
+    standalone via the CLI on a directory not produced by `runner.run`),
+    the registration step must not crash."""
+    out_dir = tmp_path / "out"
+    fx_path = tmp_path / "fx.jsonl"
+    fx_path.write_text(json.dumps({"id": "r1", "text": "x", "language": "en",
+                                    "gold_spans": []}) + "\n")
+    (out_dir).mkdir()
+    (out_dir / "raw_detA.jsonl").write_text(json.dumps({
+        "id": "r1", "detector": "detA",
+        "spans": [{"label": "EMAIL", "raw_label": "EMAIL", "start": 0, "end": 1, "text": "x"}],
+        "latency_ms": 1.0, "error": None,
+    }) + "\n")
+    # No manifest.json exists — apply_recipe must still succeed.
+    apply_recipe({"EMAIL": "detA"}, out_dir, fx_path)
+    assert not (out_dir / "manifest.json").exists()
+
+
+def test_register_in_manifest_idempotent(tmp_path):
+    """Re-running the ensemble must not duplicate the entry."""
+    out_dir = tmp_path
+    (out_dir / "manifest.json").write_text(json.dumps({"detectors": ["a", "b"]}))
+    _register_in_manifest(out_dir, "ensemble_category_best")
+    _register_in_manifest(out_dir, "ensemble_category_best")
+    manifest = json.loads((out_dir / "manifest.json").read_text())
+    assert manifest["detectors"].count("ensemble_category_best") == 1
 
 
 def test_excluded_detectors_drops_from_recipe(run_dir):

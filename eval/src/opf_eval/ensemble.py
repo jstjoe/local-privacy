@@ -41,6 +41,27 @@ def _read_jsonl(path: Path) -> Iterable[dict]:
             yield json.loads(line)
 
 
+def _register_in_manifest(out_dir: Path, name: str) -> None:
+    """Add the ensemble name to manifest.json's `detectors` list so the
+    report cell (which reads detectors from the manifest, not via glob)
+    picks the new raw file up. No-op if no manifest exists or the entry
+    is already present.
+    """
+    manifest_path = out_dir / "manifest.json"
+    if not manifest_path.exists():
+        return
+    try:
+        manifest = json.loads(manifest_path.read_text())
+    except json.JSONDecodeError:
+        return
+    detectors = list(manifest.get("detectors") or [])
+    if name in detectors:
+        return
+    detectors.append(name)
+    manifest["detectors"] = sorted(set(detectors))
+    manifest_path.write_text(json.dumps(manifest, indent=2))
+
+
 def _detectors_in(out_dir: Path) -> list[str]:
     """All non-ensemble detectors with a raw file in out_dir, sorted."""
     out = []
@@ -129,6 +150,7 @@ def apply_recipe(
         by_detector[det] = {r["id"]: r for r in _read_jsonl(path)}
 
     out_path = out_dir / f"raw_{ensemble_name}.jsonl"
+    _register_in_manifest(out_dir, ensemble_name)
     with out_path.open("w") as f:
         for fx in fixture_records:
             fid = fx["id"]
