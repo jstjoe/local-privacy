@@ -109,7 +109,7 @@ CANONICAL_MAP: dict[str, dict[str, tuple[str, ...]]] = {
             "BUILDINGNUM",
             "SECONDARYADDRESS",
         ),
-        "presidio": ("LOCATION",),
+        "presidio": ("LOCATION", "UK_POSTCODE"),
         "gliner": ("address", "location", "city", "country", "postal code"),
         "gretel": ("address", "street_address", "city", "state", "country", "postcode", "coordinate"),
         "openmed": ("street_address", "city", "state", "county", "country", "postcode", "coordinate"),
@@ -120,7 +120,7 @@ CANONICAL_MAP: dict[str, dict[str, tuple[str, ...]]] = {
         "pii300k": ("IP",),
         "pii200k": ("URL", "IP", "IPV4", "IPV6"),
         "openpii": ("URL", "IP", "IPV4", "IPV6"),
-        "presidio": ("URL", "IP_ADDRESS"),
+        "presidio": ("URL", "IP_ADDRESS", "MAC_ADDRESS"),
         "gliner": ("url", "ip address"),
         "gretel": ("url", "ipv4", "ipv6"),
         "openmed": ("url", "ipv4", "ipv6", "mac_address"),
@@ -180,13 +180,18 @@ CANONICAL_MAP: dict[str, dict[str, tuple[str, ...]]] = {
         "presidio": (
             "CREDIT_CARD",
             "IBAN_CODE",
+            "ABA_ROUTING_NUMBER",
             "US_SSN",
             "US_PASSPORT",
             "US_DRIVER_LICENSE",
             "US_BANK_NUMBER",
             "US_ITIN",
+            "US_NPI",                       # National Provider Identifier (medical)
+            "US_MBI",                       # Medicare Beneficiary Identifier
             "UK_NHS",
             "UK_NINO",
+            "UK_PASSPORT",
+            "UK_VEHICLE_REGISTRATION",      # see comment under VEHICLE
             "ES_NIE",
             "ES_NIF",
             "IT_DRIVER_LICENSE",
@@ -200,7 +205,22 @@ CANONICAL_MAP: dict[str, dict[str, tuple[str, ...]]] = {
             "AU_TFN",
             "IN_AADHAAR",
             "IN_PAN",
+            "IN_GSTIN",                     # India Goods + Services Tax ID
+            "IN_PASSPORT",
             "IN_VEHICLE_REGISTRATION",
+            "IN_VOTER",
+            "KR_BRN",                       # Korea Business Registration Number
+            "KR_DRIVER_LICENSE",
+            "KR_FRN",                       # Korea Foreign Registration Number
+            "KR_PASSPORT",
+            "KR_RRN",                       # Korea Resident Registration Number
+            "NG_NIN",                       # Nigeria National Identification Number
+            "NG_VEHICLE_REGISTRATION",
+            "PL_PESEL",                     # Poland personal identification number
+            "SG_NRIC_FIN",                  # Singapore NRIC / FIN
+            "SG_UEN",                       # Singapore Unique Entity Number (business)
+            "TH_TNIN",                      # Thailand Tax ID
+            "FI_PERSONAL_IDENTITY_CODE",    # Finland personal identity code
             "MEDICAL_LICENSE",
             "CRYPTO",
         ),
@@ -340,8 +360,11 @@ CANONICAL_MAP: dict[str, dict[str, tuple[str, ...]]] = {
         "pii300k": (),
         "pii200k": ("VEHICLEVIN", "VEHICLEVRM"),
         "openpii": (),
-        # Presidio's IN_VEHICLE_REGISTRATION stays under ACCOUNT — it's an
-        # India-specific ID, not a general vehicle identifier.
+        # Presidio's *_VEHICLE_REGISTRATION entities (IN_, UK_, NG_) all stay
+        # under ACCOUNT — they're country-specific ID strings, not generic
+        # vehicle identifiers like a VIN. Our canonical VEHICLE is reserved
+        # for VIN-shaped + license-plate-shaped tokens that the other
+        # detectors emit. Presidio has no recognizer in that shape.
         "presidio": (),
         "gliner": ("vehicle id", "license plate", "vin"),
         "gretel": ("license_plate", "vehicle_identifier"),
