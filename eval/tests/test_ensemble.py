@@ -266,6 +266,29 @@ def test_register_in_manifest_idempotent(tmp_path):
     assert manifest["detectors"].count("ensemble_category_best") == 1
 
 
+def test_build_recipe_fit_ids_filters_scoring_pool(run_dir):
+    """`fit_ids` restricts the F1 calculation to the given fixture ids.
+    Verifies the holdout split path works — recipe should change when the
+    fit pool changes."""
+    out_dir, fx_path = run_dir
+    labels = ["EMAIL", "PHONE"]
+
+    # On the full set, detA wins EMAIL (recalls both gold emails on r1 + r3).
+    recipe_full, _ = build_recipe_category_best(out_dir, fx_path, labels)
+    assert recipe_full["EMAIL"] == "detA"
+
+    # Restrict the fit pool to only r2 (which has no EMAIL gold at all,
+    # just a PHONE). EMAIL F1 collapses to 0 for everyone on this subset,
+    # so EMAIL drops out of the recipe entirely.
+    recipe_r2_only, per_label_f1 = build_recipe_category_best(
+        out_dir, fx_path, labels, fit_ids={"r2"}
+    )
+    assert "EMAIL" not in recipe_r2_only
+    assert recipe_r2_only.get("PHONE") == "detB"
+    # The F1 dict still exposes the (zero) scores so callers can audit.
+    assert per_label_f1["EMAIL"]["detA"] == 0.0
+
+
 def test_excluded_detectors_drops_from_recipe(run_dir):
     out_dir, fx_path = run_dir
     labels = ["EMAIL", "PHONE"]

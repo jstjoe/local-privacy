@@ -79,16 +79,24 @@ def build_recipe_category_best(
     labels: list[str],
     *,
     excluded_detectors: set[str] | None = None,
+    fit_ids: set[str] | None = None,
 ) -> tuple[dict[str, str], dict[str, dict[str, float]]]:
     """Pick the detector with the highest Type-schema F1 per canonical label.
 
     Returns (recipe, per_label_f1) where:
-      recipe[label] = detector_name chosen for that label (None if no detector
-        registered a nonzero F1 — caller can drop the label or pick a default)
+      recipe[label] = detector_name chosen for that label (omitted if no
+        detector registered a positive F1 for that label)
       per_label_f1[label][detector] = F1 (Type schema) for inspection / logging
+
+    `fit_ids`, when given, restricts the F1 calculation pool to that subset
+    of fixture ids — useful when running a holdout split (fit the recipe on
+    one half, score it on the other) to get a generalisation estimate
+    instead of an upper bound.
     """
     excluded = set(excluded_detectors or ())
     fixture_index = {r["id"]: r for r in _read_jsonl(fixtures_path)}
+    if fit_ids is not None:
+        fixture_index = {i: r for i, r in fixture_index.items() if i in fit_ids}
     detectors = [d for d in _detectors_in(out_dir) if d not in excluded]
     label_set = set(labels)
 
@@ -202,12 +210,23 @@ def run_category_best(
     dataset: str = DEFAULT_DATASET,
     excluded_detectors: set[str] | None = None,
     ensemble_name: str = "ensemble_category_best",
+    fit_ids: set[str] | None = None,
 ) -> tuple[Path, dict[str, str], dict[str, dict[str, float]]]:
-    """Build recipe + apply. Returns (out_path, recipe, per_label_f1)."""
+    """Build recipe + apply. Returns (out_path, recipe, per_label_f1).
+
+    `fit_ids` is forwarded to `build_recipe_category_best` so callers can
+    fit the recipe on one half of their fixtures and score on the other —
+    pass the fit-half ids here, then run `report.build_report` against a
+    fixtures file containing only the score-half ids.
+    """
     cfg = get_dataset_config(dataset)
     labels = sorted(dataset_canonicals(cfg.vocab_key))
     recipe, per_label_f1 = build_recipe_category_best(
-        out_dir, fixtures_path, labels, excluded_detectors=excluded_detectors
+        out_dir,
+        fixtures_path,
+        labels,
+        excluded_detectors=excluded_detectors,
+        fit_ids=fit_ids,
     )
     out_path = apply_recipe(recipe, out_dir, fixtures_path, ensemble_name=ensemble_name)
     return out_path, recipe, per_label_f1
