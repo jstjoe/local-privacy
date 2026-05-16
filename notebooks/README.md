@@ -46,3 +46,19 @@ Use Colab's secret manager (key icon in left sidebar). Set:
 - `SKYFLOW_BEARER_TOKEN`
 
 Cell 3 of the notebook auto-loads them into env vars.
+
+## `composite_experiments.ipynb`
+
+Sister notebook focused purely on **composite (ensembled) detectors**, kept separate so the main workshop notebook stays a clean walkthrough.
+
+[Open the composite notebook in Colab](https://colab.research.google.com/github/jstjoe/local-privacy/blob/main/notebooks/composite_experiments.ipynb)
+
+### What it answers
+
+1. Individual detector baselines on the same fixture set.
+2. Local-only composite — picks the per-category-best detector excluding Skyflow. How close can the local stack get to the Skyflow baseline?
+3. All-in composite — same recipe but with Skyflow in the candidate pool. What's the ceiling?
+
+For each composite, results are shown both as an **upper-bound** (recipe fit + scored on the full set) and an **honest holdout** (recipe fit on half, scored on the other half) so you can see how much the recipe overfits.
+
+Headline comparison table at section 10, per-category bar chart at section 11. Discussion of how to translate findings into the `opf-api` composite endpoint at section 12.
