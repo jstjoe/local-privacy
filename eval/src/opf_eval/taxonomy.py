@@ -494,7 +494,15 @@ def dataset_canonicals(vocab_key: str) -> set[str]:
 
 def detector_supported_canonicals(detector: str) -> set[str]:
     """Canonical labels this detector can produce (handles variants like
-    skyflow_full / presidio_multilang -> their parent vocabulary)."""
+    skyflow_full / presidio_multilang -> their parent vocabulary).
+
+    Ensembles (any name starting with `ensemble_`) report the full canonical
+    set as their support: by construction they can emit any label that any
+    of their constituent detectors emits, and the apply step composes those
+    per-label streams together.
+    """
+    if detector.startswith("ensemble_"):
+        return set(CANONICAL_MAP.keys())
     source = _DETECTOR_VOCAB_KEY.get(detector, detector)
     return {
         canonical for canonical, by_source in CANONICAL_MAP.items()
