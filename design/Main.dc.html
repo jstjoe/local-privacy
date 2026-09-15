@@ -1,0 +1,223 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Carlito:ital,wght@0,400;0,700;1,400&display=swap">
+  <style>
+    :root {
+      --ink: #2B2B2B;
+      --navy: #15263F;
+      --blue: #1B57D6;
+      --slate: #5A6472;
+      --panel: #F5F7FB;
+      --refrow: #EAF0FB;
+      --line: #DFE5EE;
+      --track: #E4E9F2;
+      --font: "Calibri", "Carlito", system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    body { margin: 0; background: #EEF1F6; }
+    .doc {
+      font-family: var(--font);
+      color: var(--ink);
+      background: #FFFFFF;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .page { max-width: 720px; margin: 0 auto; padding: 60px 48px 64px; }
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { color: #123FA6; }
+    p { margin: 0; }
+    .eyebrow {
+      font-size: 12px; font-weight: 700; letter-spacing: 1.6px;
+      text-transform: uppercase; color: var(--blue); margin: 0 0 14px;
+    }
+    .title {
+      font-size: 31px; font-weight: 700; line-height: 1.14;
+      color: var(--navy); letter-spacing: -0.2px; margin: 0 0 14px;
+    }
+    .subtitle {
+      font-size: 16px; font-weight: 400; line-height: 1.55;
+      color: var(--slate); margin: 0;
+    }
+    .rule { height: 3px; background: var(--navy); border: 0; margin: 26px 0 0; }
+    .section { margin-top: 34px; }
+    .h2 {
+      font-size: 19px; font-weight: 700; color: var(--navy);
+      margin: 0 0 12px; letter-spacing: -0.1px;
+    }
+    .body { font-size: 15px; line-height: 1.66; color: var(--ink); }
+    .body + .body { margin-top: 12px; }
+    .em { color: var(--navy); font-weight: 700; }
+    table { width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 14.5px; }
+    thead th {
+      background: var(--navy); color: #FFFFFF; text-align: left;
+      font-weight: 600; font-size: 12.5px; letter-spacing: 0.4px;
+      padding: 11px 14px;
+    }
+    thead th.num { text-align: right; }
+    tbody td { padding: 11px 14px; color: var(--ink); border-bottom: 1px solid var(--line); }
+    tbody td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    tbody tr:nth-child(even) td { background: var(--panel); }
+    tbody tr.refrow td { background: var(--refrow); }
+    .modelcell { font-weight: 700; color: var(--navy); }
+    .tag {
+      display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: 0.4px;
+      text-transform: uppercase; color: var(--blue); background: #FFFFFF;
+      border: 1px solid #C8D6F2; border-radius: 4px; padding: 1px 6px; margin-left: 8px;
+      vertical-align: 2px;
+    }
+    .caption { font-size: 12.5px; line-height: 1.5; color: var(--slate); margin-top: 12px; }
+    .bars { display: flex; flex-direction: column; gap: 14px; margin-top: 6px; }
+    .bar-row { display: flex; align-items: center; gap: 16px; }
+    .bar-label { width: 186px; font-size: 14px; font-weight: 700; color: var(--navy); flex-shrink: 0; }
+    .bar-label .sub { display: block; font-size: 11px; font-weight: 400; color: var(--slate); letter-spacing: 0.2px; }
+    .bar-track { flex: 1; height: 16px; background: var(--track); border-radius: 8px; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 8px; }
+    .bar-val { width: 44px; text-align: right; font-size: 14.5px; font-weight: 700; color: var(--navy); font-variant-numeric: tabular-nums; }
+    .callout {
+      margin-top: 22px; background: var(--panel); border-left: 3px solid var(--blue);
+      border-radius: 0 8px 8px 0; padding: 18px 22px;
+    }
+    .callout .body { font-size: 14.5px; }
+    .takeaways { display: flex; flex-direction: column; gap: 16px; margin-top: 6px; }
+    .take { display: flex; gap: 14px; align-items: flex-start; }
+    .take .mark { width: 9px; height: 9px; margin-top: 7px; background: var(--blue); border-radius: 2px; flex-shrink: 0; }
+    .take .t { font-size: 15px; line-height: 1.6; }
+    .take .t b { color: var(--navy); }
+    .foot { margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--line); }
+    .foot .lbl { font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--slate); margin-bottom: 10px; }
+    .foot .body { font-size: 12px; line-height: 1.6; color: var(--slate); }
+    .foot .body + .body { margin-top: 8px; }
+  </style>
+</helmet>
+
+<div class="doc">
+<div class="page">
+
+  <!-- Header -->
+  <p class="eyebrow">Skyflow &middot; PII Detection Benchmark</p>
+  <h1 class="title">PII Detection Accuracy &amp; Recall</h1>
+  <p class="subtitle">How the OpenAI Privacy Filter and Microsoft Presidio &mdash; the leading open-source PII detectors &mdash; compare to Skyflow&rsquo;s hosted detection API, benchmarked on the ai4privacy PII-Masking-300k dataset.</p>
+  <hr class="rule">
+
+  <!-- Overview -->
+  <div class="section">
+    <h2 class="h2">Overview</h2>
+    <p class="body">This overview summarizes how the two most widely used open-source PII detectors perform at finding personally identifiable information (PII) across multilingual text, and how they compare to Skyflow&rsquo;s hosted detection API. All three were run over the same 1,000-example benchmark and scored the same way, so the numbers are directly comparable.</p>
+    <p class="body">For most teams the metric that matters most is <span class="em">recall</span> &mdash; the share of real PII the system actually catches. A missed identifier is a compliance and security risk, so the results below lead with recall alongside precision and overall F1.</p>
+  </div>
+
+  <!-- How measured -->
+  <div class="section">
+    <h2 class="h2">How accuracy is measured</h2>
+    <p class="body">Results use three standard measures, computed at the span level so comparisons stay consistent across detectors:</p>
+    <p class="body"><span class="em">Precision</span> &mdash; of everything a detector flagged as PII, the share that was actually PII. <span class="em">Recall</span> &mdash; of all the PII present, the share the detector correctly caught. <span class="em">F1</span> &mdash; the harmonic mean of the two, a single balanced score.</p>
+    <p class="body">The headline table scores every detector <span class="em">out of the box</span>: against all annotated PII, requiring an exact span match. A second view scores each detector only on the entity types it actually supports (&ldquo;apples-to-apples&rdquo;), which rewards narrow-but-accurate models.</p>
+  </div>
+
+  <!-- Overall accuracy -->
+  <div class="section">
+    <h2 class="h2">Overall accuracy</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Detector</th>
+          <th class="num">Precision</th>
+          <th class="num">Recall</th>
+          <th class="num">F1</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="refrow">
+          <td><span class="modelcell">Skyflow Detect</span><span class="tag">Hosted API</span></td>
+          <td class="num">0.77</td>
+          <td class="num">0.79</td>
+          <td class="num">0.78</td>
+        </tr>
+        <tr>
+          <td><span class="modelcell">OpenAI Privacy Filter</span></td>
+          <td class="num">0.79</td>
+          <td class="num">0.68</td>
+          <td class="num">0.73</td>
+        </tr>
+        <tr>
+          <td><span class="modelcell">Microsoft Presidio</span></td>
+          <td class="num">0.42</td>
+          <td class="num">0.37</td>
+          <td class="num">0.39</td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="caption">Out-of-the-box precision, recall, and F1 on the full annotated entity set, exact-match scoring. Skyflow Detect is a hosted API; the OpenAI Privacy Filter and Presidio are open-source and self-hostable.</p>
+  </div>
+
+  <!-- Recall gap -->
+  <div class="section">
+    <h2 class="h2">The recall gap</h2>
+    <p class="body">Because recall is the metric most tied to risk, it is worth viewing on its own. Out of the box, the OpenAI Privacy Filter catches roughly two-thirds of the PII present, and Presidio closer to a third &mdash; while the hosted API stays near four-fifths.</p>
+    <div class="bars" style="margin-top:18px;">
+      <div class="bar-row">
+        <div class="bar-label">Skyflow Detect<span class="sub">Hosted API</span></div>
+        <div class="bar-track"><div class="bar-fill" style="width:79%; background:#1B57D6;"></div></div>
+        <div class="bar-val">79%</div>
+      </div>
+      <div class="bar-row">
+        <div class="bar-label">OpenAI Privacy Filter</div>
+        <div class="bar-track"><div class="bar-fill" style="width:68%; background:#15263F;"></div></div>
+        <div class="bar-val">68%</div>
+      </div>
+      <div class="bar-row">
+        <div class="bar-label">Microsoft Presidio</div>
+        <div class="bar-track"><div class="bar-fill" style="width:37%; background:#15263F;"></div></div>
+        <div class="bar-val">37%</div>
+      </div>
+    </div>
+    <p class="caption">Share of all PII spans caught (recall), out of the box, exact-match scoring. Higher is better; low recall means more sensitive data missed.</p>
+  </div>
+
+  <!-- Fair-view callout -->
+  <div class="callout">
+    <p class="body">Scored only on the entity types each detector actually supports, the gap at the top nearly disappears: the OpenAI Privacy Filter reaches <span class="em">0.84 F1</span> &mdash; within a hair of Skyflow&rsquo;s <span class="em">0.85</span> &mdash; while Presidio holds at about <span class="em">0.48</span>. The Privacy Filter is accurate on the eight categories it covers; it simply covers fewer of them.</p>
+  </div>
+
+  <!-- Takeaways -->
+  <div class="section">
+    <h2 class="h2">Takeaways</h2>
+    <div class="takeaways">
+      <div class="take">
+        <div class="mark"></div>
+        <div class="t"><b>The OpenAI Privacy Filter is the strongest open-source detector.</b> It posts the highest open-source F1 (0.73 out of the box, 0.84 on its supported types) and the cleanest precision of any detector tested &mdash; the fewest false positives. The trade-off is speed: about 700&nbsp;ms per request on CPU, so a GPU is recommended for production.</div>
+      </div>
+      <div class="take">
+        <div class="mark"></div>
+        <div class="t"><b>Recall is where the open-source options fall behind.</b> The Privacy Filter catches ~68% of PII out of the box and Presidio ~37%, versus ~79% for the hosted API. Since a single missed identifier is the real exposure, this gap matters more than precision.</div>
+      </div>
+      <div class="take">
+        <div class="mark"></div>
+        <div class="t"><b>Presidio is fast but narrow.</b> At ~14&nbsp;ms per request it is by far the quickest, and it is near-perfect on structured types like email &mdash; but its English-only rules-plus-NER approach misses most other PII. Best as a cheap first pass or an email specialist, not a general detector.</div>
+      </div>
+      <div class="take">
+        <div class="mark"></div>
+        <div class="t"><b>Choose by constraint.</b> For a fully self-hosted stack, the OpenAI Privacy Filter is the clear pick; where breadth of coverage and recall matter most &mdash; and hosting is acceptable &mdash; the managed API still leads, most visibly on recall.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Methodology -->
+  <div class="foot">
+    <p class="lbl">Methodology</p>
+    <p class="body">Dataset: ai4privacy PII-Masking-300k, a 1,000-example multilingual sample (German, English, Spanish, French, Italian, Dutch). Scoring: SemEval-2013 span-level evaluation via nervaluate. &ldquo;Out of the box&rdquo; scores every detector against all annotated PII with exact boundary-and-label matching; the apples-to-apples view scores each detector only on the entity types it claims to support.</p>
+    <p class="body">Latency (single-request, p50): Presidio ~14&nbsp;ms, Skyflow Detect ~107&nbsp;ms, OpenAI Privacy Filter ~703&nbsp;ms on CPU. Figures reflect overall results across the sample; per-language breakdowns are available. Detectors were run with default configurations and were not fine-tuned. Skyflow Detect is a hosted API included alongside the open-source detectors.</p>
+  </div>
+
+</div>
+</div>
+</x-dc>
+</body>
+</html>
