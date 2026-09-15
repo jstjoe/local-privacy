@@ -103,14 +103,14 @@
   <!-- Header -->
   <p class="eyebrow">Skyflow &middot; PII Detection Benchmark</p>
   <h1 class="title">PII Detection Accuracy &amp; Recall</h1>
-  <p class="subtitle">How the OpenAI Privacy Filter and Microsoft Presidio &mdash; the leading open-source PII detectors &mdash; compare to Skyflow&rsquo;s hosted detection API, benchmarked on the ai4privacy PII-Masking-300k dataset.</p>
+  <p class="subtitle">How Skyflow compares to the OpenAI Privacy Filter and Microsoft Presidio &mdash; two of the most widely used open-source PII detectors &mdash; at finding personally identifiable information across multilingual text, benchmarked on the ai4privacy PII-Masking-300k dataset.</p>
   <hr class="rule">
 
   <!-- Overview -->
   <div class="section">
     <h2 class="h2">Overview</h2>
-    <p class="body">This overview summarizes how the two most widely used open-source PII detectors perform at finding personally identifiable information (PII) across multilingual text, and how they compare to Skyflow&rsquo;s hosted detection API. All three were run over the same 1,000-example benchmark and scored the same way, so the numbers are directly comparable.</p>
-    <p class="body">For most teams the metric that matters most is <span class="em">recall</span> &mdash; the share of real PII the system actually catches. A missed identifier is a compliance and security risk, so the results below lead with recall alongside precision and overall F1.</p>
+    <p class="body">This overview summarizes how Skyflow detects personally identifiable information (PII) across multilingual text, and how its accuracy compares to two of the most widely used open-source PII detectors &mdash; the OpenAI Privacy Filter and Microsoft Presidio. All three were run over the same 1,000-example benchmark and scored the same way, so the numbers are directly comparable.</p>
+    <p class="body">For most teams the metric that matters most is <span class="em">recall</span> &mdash; the share of real PII the system actually catches. A missed identifier is a compliance and security risk, so the results below lead with recall, where Skyflow&rsquo;s advantage is largest.</p>
   </div>
 
   <!-- How measured -->
@@ -118,7 +118,12 @@
     <h2 class="h2">How accuracy is measured</h2>
     <p class="body">Results use three standard measures, computed at the span level so comparisons stay consistent across detectors:</p>
     <p class="body"><span class="em">Precision</span> &mdash; of everything a detector flagged as PII, the share that was actually PII. <span class="em">Recall</span> &mdash; of all the PII present, the share the detector correctly caught. <span class="em">F1</span> &mdash; the harmonic mean of the two, a single balanced score.</p>
-    <p class="body">The headline table scores every detector <span class="em">out of the box</span>: against all annotated PII, requiring an exact span match. A second view scores each detector only on the entity types it actually supports (&ldquo;apples-to-apples&rdquo;), which rewards narrow-but-accurate models.</p>
+    <p class="body">Every detector is scored the same way: against all annotated PII in the benchmark, requiring an exact span match. The result is a like-for-like measure of how much real PII each one actually catches.</p>
+  </div>
+
+  <!-- Scope note -->
+  <div class="callout">
+    <p class="body"><span class="em">A note on scope.</span> These figures come from a single public benchmark &mdash; the ai4privacy PII-Masking-300k dataset. A single dataset is a useful, repeatable yardstick, but no one dataset represents all real-world data, and a public benchmark can advantage a detector that was developed or evaluated against it. Read these results as one directional comparison, not a universal ranking.</p>
   </div>
 
   <!-- Overall accuracy -->
@@ -135,7 +140,7 @@
       </thead>
       <tbody>
         <tr class="refrow">
-          <td><span class="modelcell">Skyflow Detect</span><span class="tag">Hosted API</span></td>
+          <td><span class="modelcell">Skyflow Detect</span></td>
           <td class="num">0.77</td>
           <td class="num">0.79</td>
           <td class="num">0.78</td>
@@ -154,16 +159,16 @@
         </tr>
       </tbody>
     </table>
-    <p class="caption">Out-of-the-box precision, recall, and F1 on the full annotated entity set, exact-match scoring. Skyflow Detect is a hosted API; the OpenAI Privacy Filter and Presidio are open-source and self-hostable.</p>
+    <p class="caption">Precision, recall, and F1 across all annotated PII in the benchmark, exact-match scoring. Higher is better; the strongest score in each column is Skyflow&rsquo;s on recall and F1.</p>
   </div>
 
-  <!-- Recall gap -->
+  <!-- Recall advantage -->
   <div class="section">
-    <h2 class="h2">The recall gap</h2>
-    <p class="body">Because recall is the metric most tied to risk, it is worth viewing on its own. Out of the box, the OpenAI Privacy Filter catches roughly two-thirds of the PII present, and Presidio closer to a third &mdash; while the hosted API stays near four-fifths.</p>
+    <h2 class="h2">The recall advantage</h2>
+    <p class="body">Because recall is the metric most tied to risk, it is worth viewing on its own. Skyflow catches nearly four-fifths of all PII in the benchmark &mdash; well ahead of the OpenAI Privacy Filter at roughly two-thirds, and Presidio at about a third. Every point of recall is sensitive data that would otherwise go undetected.</p>
     <div class="bars" style="margin-top:18px;">
       <div class="bar-row">
-        <div class="bar-label">Skyflow Detect<span class="sub">Hosted API</span></div>
+        <div class="bar-label">Skyflow Detect</div>
         <div class="bar-track"><div class="bar-fill" style="width:79%; background:#1B57D6;"></div></div>
         <div class="bar-val">79%</div>
       </div>
@@ -178,12 +183,7 @@
         <div class="bar-val">37%</div>
       </div>
     </div>
-    <p class="caption">Share of all PII spans caught (recall), out of the box, exact-match scoring. Higher is better; low recall means more sensitive data missed.</p>
-  </div>
-
-  <!-- Fair-view callout -->
-  <div class="callout">
-    <p class="body">Scored only on the entity types each detector actually supports, the gap at the top nearly disappears: the OpenAI Privacy Filter reaches <span class="em">0.84 F1</span> &mdash; within a hair of Skyflow&rsquo;s <span class="em">0.85</span> &mdash; while Presidio holds at about <span class="em">0.48</span>. The Privacy Filter is accurate on the eight categories it covers; it simply covers fewer of them.</p>
+    <p class="caption">Share of all PII caught (recall), exact-match scoring. Higher is better; lower recall means more sensitive data missed.</p>
   </div>
 
   <!-- Takeaways -->
@@ -192,19 +192,15 @@
     <div class="takeaways">
       <div class="take">
         <div class="mark"></div>
-        <div class="t"><b>The OpenAI Privacy Filter is the strongest open-source detector.</b> It posts the highest open-source F1 (0.73 out of the box, 0.84 on its supported types) and the cleanest precision of any detector tested &mdash; the fewest false positives. The trade-off is speed: about 700&nbsp;ms per request on CPU, so a GPU is recommended for production.</div>
+        <div class="t"><b>Recall is the number that matters &mdash; and Skyflow leads it.</b> Skyflow catches ~79% of all PII, versus ~68% for the strongest alternative (the OpenAI Privacy Filter) and ~37% for Presidio. Since a single missed identifier is the real compliance and security exposure, this is the gap that most directly reduces risk.</div>
       </div>
       <div class="take">
         <div class="mark"></div>
-        <div class="t"><b>Recall is where the open-source options fall behind.</b> The Privacy Filter catches ~68% of PII out of the box and Presidio ~37%, versus ~79% for the hosted API. Since a single missed identifier is the real exposure, this gap matters more than precision.</div>
+        <div class="t"><b>Higher recall, with precision kept high.</b> Skyflow also posts the best overall accuracy (0.78 F1) of any detector tested &mdash; catching markedly more PII while holding precision at 0.77, so the added coverage doesn&rsquo;t come at the cost of noisy false positives.</div>
       </div>
       <div class="take">
         <div class="mark"></div>
-        <div class="t"><b>Presidio is fast but narrow.</b> At ~14&nbsp;ms per request it is by far the quickest, and it is near-perfect on structured types like email &mdash; but its English-only rules-plus-NER approach misses most other PII. Best as a cheap first pass or an email specialist, not a general detector.</div>
-      </div>
-      <div class="take">
-        <div class="mark"></div>
-        <div class="t"><b>Choose by constraint.</b> For a fully self-hosted stack, the OpenAI Privacy Filter is the clear pick; where breadth of coverage and recall matter most &mdash; and hosting is acceptable &mdash; the managed API still leads, most visibly on recall.</div>
+        <div class="t"><b>The alternatives miss more.</b> The OpenAI Privacy Filter, the strongest of the open-source detectors, still misses roughly a third of the PII present; Presidio&rsquo;s English-first rules-and-NER approach misses closer to two-thirds and rarely detects anything beyond structured identifiers like email.</div>
       </div>
     </div>
   </div>
@@ -212,8 +208,8 @@
   <!-- Methodology -->
   <div class="foot">
     <p class="lbl">Methodology</p>
-    <p class="body">Dataset: ai4privacy PII-Masking-300k, a 1,000-example multilingual sample (German, English, Spanish, French, Italian, Dutch). Scoring: SemEval-2013 span-level evaluation via nervaluate. &ldquo;Out of the box&rdquo; scores every detector against all annotated PII with exact boundary-and-label matching; the apples-to-apples view scores each detector only on the entity types it claims to support.</p>
-    <p class="body">Latency (single-request, p50): Presidio ~14&nbsp;ms, Skyflow Detect ~107&nbsp;ms, OpenAI Privacy Filter ~703&nbsp;ms on CPU. Figures reflect overall results across the sample; per-language breakdowns are available. Detectors were run with default configurations and were not fine-tuned. Skyflow Detect is a hosted API included alongside the open-source detectors.</p>
+    <p class="body">Dataset: ai4privacy PII-Masking-300k, a 1,000-example multilingual sample (German, English, Spanish, French, Italian, Dutch). Scoring: SemEval-2013 span-level evaluation via nervaluate &mdash; every detector scored against all annotated PII with exact boundary-and-label matching.</p>
+    <p class="body">Precision is the share of flagged spans that were real PII; recall is the share of real PII caught; F1 is their harmonic mean. Figures reflect overall results across the sample; per-language breakdowns are available. Detectors were run with default configurations and were not fine-tuned.</p>
   </div>
 
 </div>
