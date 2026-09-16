@@ -29,5 +29,5 @@ privacy-filter/
 .claude/
 
 # design canvas — seeded/published bundles (regenerated from *.dc.html + canvas.json)
-/design/*.html
-!/design/*.dc.html
+design/**/*.html
+!design/**/*.dc.html
