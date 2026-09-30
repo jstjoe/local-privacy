@@ -302,3 +302,78 @@ def holdout_split(ids: Iterable[str], frac: float, seed: int = 42) -> tuple[set[
     random.Random(seed).shuffle(shuffled)
     k = int(len(shuffled) * frac)
     return set(shuffled[:k]), set(shuffled[k:])
+
+
+# -------------------------------------------------------- error analysis
+
+ERROR_KINDS = ("missed", "spurious", "mislabeled", "boundary")
+
+
+def _overlaps(a: dict, b: dict) -> bool:
+    return a["start"] < b["end"] and b["start"] < a["end"]
+
+
+def errors(
+    run: Run,
+    detector: str,
+    *,
+    kind: str = "missed",
+    level: str = "coarse",
+    view: str = "fair",
+    label: str | None = None,
+    limit: int = 10,
+    context: int = 40,
+) -> list[dict]:
+    """Concrete examples of one error type, for eyeballing what a detector gets wrong.
+
+    missed      gold span with no overlapping prediction
+    spurious    prediction with no overlapping gold span
+    mislabeled  overlapping spans whose labels differ
+    boundary    same label, overlapping but not identical boundaries
+    """
+    if kind not in ERROR_KINDS:
+        raise ValueError(f"unknown kind {kind!r}; expected one of {ERROR_KINDS}")
+    scope = scope_for(run, detector, level=level, view=view)
+    preds = run.predictions.get(detector, {})
+    out: list[dict] = []
+    for ex in run.fixtures:
+        rec = preds.get(ex["id"])
+        if rec is None or rec.get("error"):
+            continue
+        text = ex["text"]
+        gold = _project(ex.get("gold_spans") or [], scope, level)
+        pred = _project(rec.get("spans") or [], scope, level)
+        hits: list[tuple[dict, dict | None]] = []
+        if kind == "missed":
+            hits = [(g, None) for g in gold if not any(_overlaps(g, p) for p in pred)]
+        elif kind == "spurious":
+            hits = [(p, None) for p in pred if not any(_overlaps(p, g) for g in gold)]
+        else:
+            for g in gold:
+                for p in pred:
+                    if not _overlaps(g, p):
+                        continue
+                    if kind == "mislabeled" and p["label"] != g["label"]:
+                        hits.append((g, p))
+                    elif (
+                        kind == "boundary"
+                        and p["label"] == g["label"]
+                        and (p["start"], p["end"]) != (g["start"], g["end"])
+                    ):
+                        hits.append((g, p))
+        for span, other in hits:
+            if label and span["label"] != label:
+                continue
+            lo, hi = max(0, span["start"] - context), min(len(text), span["end"] + context)
+            row = {
+                "id": ex["id"],
+                "label": span["label"],
+                "span": text[span["start"]:span["end"]],
+                "context": ("…" if lo else "") + text[lo:hi] + ("…" if hi < len(text) else ""),
+            }
+            if other is not None:
+                row["predicted"] = f"{other['label']}: {text[other['start']:other['end']]}"
+            out.append(row)
+            if len(out) >= limit:
+                return out
+    return out

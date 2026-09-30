@@ -1,64 +1,74 @@
-# Notebooks
+# Notebook series
 
-## `pii_detector_comparison.ipynb`
+Seven Colab-ready notebooks covering PII **detection**, **sanitization**, and **use** of sanitized text. Each one is short enough to follow in one sitting. Each one also runs on its own: later notebooks create any fixtures or detector results they need.
 
-Self-contained Colab notebook for benchmarking PII detectors against PII-Masking-300k.
+| # | notebook | covers | |
+| --- | --- | --- | --- |
+| 00 | [Start here](00_start_here.ipynb) | the three questions (detect / sanitize / use), the two-level label taxonomy, detector and dataset catalogue, how scoring works, a first detection | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/jstjoe/local-privacy/blob/main/notebooks/00_start_here.ipynb) |
+| 01 | [Datasets](01_datasets.ipynb) | deterministic samples, the fixture record format, validation, **bring your own data** (JSONL, CSV with `label_map`, BIO tokens) | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/jstjoe/local-privacy/blob/main/notebooks/01_datasets.ipynb) |
+| 02 | [Run detectors](02_run_detectors.ipynb) | picking detectors, credentials, running, what a detector returns, latency | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/jstjoe/local-privacy/blob/main/notebooks/02_run_detectors.ipynb) |
+| 03 | [Score and compare](03_score_and_compare.ipynb) | the report, fair vs raw views, charts, **fine-level** scoring, error analysis (missed / spurious / mislabeled / boundary) | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/jstjoe/local-privacy/blob/main/notebooks/03_score_and_compare.ipynb) |
+| 04 | [Composite detectors](04_composite_detectors.ipynb) | best-per-category ensembles, local-only vs with a hosted API, upper bound vs honest holdout | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/jstjoe/local-privacy/blob/main/notebooks/04_composite_detectors.ipynb) |
+| 05 | [Sanitization](05_sanitization.ipynb) | `redact`, `label`, `label_number`, `label_token` side by side; sanitize your own text | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/jstjoe/local-privacy/blob/main/notebooks/05_sanitization.ipynb) |
+| 06 | [Search on sanitized data](06_search_on_sanitized_data.ipynb) | BM25 over sanitized documents: which modes keep retrieval working, and why | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/jstjoe/local-privacy/blob/main/notebooks/06_search_on_sanitized_data.ipynb) |
 
-### Open in Colab
+## How the notebooks fit together
 
-[Open in Colab](https://colab.research.google.com/github/jstjoe/local-privacy/blob/main/notebooks/pii_detector_comparison.ipynb)
+```text
+01 choose sample ──► fixtures file (+ .meta.json)
+02 run detectors ──► run dir: raw_<detector>.jsonl + manifest.json
+03 score  ─┐
+04 compose ├─ read the run dir (no model re-runs)
+05 sanitize┘
+06 search  ── builds its own corpus; uses one detector live
+```
 
-### Sharing with others
+The choices you make (dataset, sample size, seed, detectors) are saved as a **session** in the workspace, so each notebook picks up where the last left off. The run directory's name is derived from the sample, so changing the sample never mixes old and new results.
 
-The setup cell clones two repos:
+| where | workspace |
+| --- | --- |
+| Colab | `/content/pii-bench` (copy runs to Drive at the end of 03) |
+| local checkout | `eval/` (`eval/data/`, `eval/results/runs/`) |
+| anywhere | `$PII_BENCH_HOME` overrides both |
 
-- `https://github.com/openai/privacy-filter` — the OPF detector source
-- `https://github.com/jstjoe/local-privacy` — this harness (set as `HARNESS_REPO` in the setup cell; collaborators using a fork should update it)
+## Setup
 
-### What it produces
+**Colab:** open a notebook and run the first code cell. It clones this repo and [openai/privacy-filter](https://github.com/openai/privacy-filter), installs them, and sets up the kernel. It takes a few minutes the first time. A GPU runtime (*Runtime → Change runtime type → T4 GPU*) makes OPF and the larger GLiNER models 5–10× faster.
 
-- Markdown report rendered inline (headline, per-category, per-language)
-- Optional bar charts: per-category F1 across detectors, latency comparison
-- Raw JSONL outputs in `/content/results/<run_name>/`, copyable to Drive
-- **Sanitization section** — side-by-side rendering of the same fixtures under four modes (`redact`, `label`, `label_number`, `label_token`) per detector. Reuses the raw JSONL files from section 5 (no extra detector runs). The `label_token` column requires a configured Skyflow token vault — see [docs/token-vault-setup.md](../docs/token-vault-setup.md); other modes work without it.
-- **Use section** — tiny BM25 search demo over a 20-doc corpus with controlled PII overlap. Sanitizes both the corpus and the queries under every mode, indexes per mode, runs the queries, and prints precision/recall against hand-defined gold relevance sets. Demonstrates that only `label_token` preserves cross-document identity well enough for search / RAG / joins to keep working. Installs [`rank-bm25`](https://pypi.org/project/rank-bm25/) in the setup cell.
+To run your fork or a PR branch, edit `HARNESS_REPO` / `HARNESS_REF` in that cell.
 
-### Detector selection
+**Locally:**
 
-Edit `DETECTORS` in cell 5. Available names:
+```sh
+git clone https://github.com/openai/privacy-filter
+uv sync --all-packages --all-extras   # includes the notebooks extra (matplotlib, bm25s)
+uv run jupyter lab notebooks/
+```
 
-- `opf` — OpenAI Privacy Filter (open-weight, local)
-- `gliner` — GLiNER multilingual PII (open-weight, local)
-- `gliner_nvidia` — Nvidia gliner-PII on `urchade/gliner_large-v2.1` (570M, NVIDIA Open Model License)
-- `gliner_gretel_small` / `gliner_gretel_large` — Gretel bi-encoder GLiNER variants (English-only training)
-- `ai4privacy_modernbert` — ai4privacy ModernBERT-base, MIT, 8 languages, OpenPII vocab
-- `openmed` — OpenMed PII via `openmed.extract_pii(lang=…)`, DeBERTa-based per-language models
-- `presidio` — Microsoft Presidio English-only (free, local, regex+NER)
-- `presidio_multilang` — Presidio with all 6 language models
-- `skyflow` / `skyflow_full` — Skyflow Detect API (requires creds; `skyflow` auto-derives `entity_types` from the chosen dataset)
+The setup cell does nothing when the harness is already importable.
 
-### Skyflow auth in Colab
+## Secrets
 
-Use Colab's secret manager (key icon in left sidebar). Set:
+Everything runs without credentials. Two optional features need secrets. On Colab, add them in **Secrets** (key icon in the left sidebar). Locally, set them in your shell or a `.env` file.
 
-- `SKYFLOW_VAULT_URL`
-- `SKYFLOW_VAULT_ID`
-- `SKYFLOW_BEARER_TOKEN`
+| feature | secrets |
+| --- | --- |
+| `skyflow` detector (02–04) | `SKYFLOW_VAULT_URL`, `SKYFLOW_VAULT_ID`, `SKYFLOW_BEARER_TOKEN` |
+| `label_token` sanitization (05–06) | `SKYFLOW_TOKEN_VAULT_URL`, `SKYFLOW_TOKEN_VAULT_ID`, and `SKYFLOW_TOKEN_BEARER_TOKEN` (or `SKYFLOW_BEARER_TOKEN`). One-time vault setup: [docs/token-vault-setup.md](../docs/token-vault-setup.md) |
 
-Cell 3 of the notebook auto-loads them into env vars.
+## The library behind the notebooks
 
-## `composite_experiments.ipynb`
+The notebooks hold only narrative and short cells; the logic lives in `eval/src/opf_eval/`, where it's tested and shared with the CLI and API:
 
-Sister notebook focused purely on **composite (ensembled) detectors**, kept separate so the main workshop notebook stays a clean walkthrough.
+| module | used for |
+| --- | --- |
+| `nb` | setup, workspace, secrets, session, Markdown tables |
+| `datasets`, `fixtures` | registering data, materializing and validating samples |
+| `detectors.registry` | every detector by name; adding your own |
+| `runner` | running detectors over fixtures |
+| `scoring`, `report` | label scopes, SemEval scores, coverage, error examples, the Markdown report |
+| `ensemble` | composite detectors |
+| `plots` | charts |
+| `transforms`, `demo.sanitize`, `demo.search` | sanitization modes and the search demo |
 
-[Open the composite notebook in Colab](https://colab.research.google.com/github/jstjoe/local-privacy/blob/main/notebooks/composite_experiments.ipynb)
-
-### What it answers
-
-1. Individual detector baselines on the same fixture set.
-2. Local-only composite — picks the per-category-best detector excluding Skyflow. How close can the local stack get to the Skyflow baseline?
-3. All-in composite — same recipe but with Skyflow in the candidate pool. What's the ceiling?
-
-For each composite, results are shown both as an **upper-bound** (recipe fit + scored on the full set) and an **honest holdout** (recipe fit on half, scored on the other half) so you can see how much the recipe overfits.
-
-Headline comparison table at section 10, per-category bar chart at section 11. Discussion of how to translate findings into the `opf-api` composite endpoint at section 12.
+The previous single workshop notebook (`pii_detector_comparison.ipynb`) and `composite_experiments.ipynb` were split into this series; they're in git history.

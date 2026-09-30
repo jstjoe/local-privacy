@@ -1,8 +1,8 @@
 # Sensitive Data Detection & Protection Experiments
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/jstjoe/local-privacy/blob/main/notebooks/pii_detector_comparison.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/jstjoe/local-privacy/blob/main/notebooks/00_start_here.ipynb)
 
-Benchmark harness comparing available PII detectors against one of five datasets (PII-Masking-200k/300k/400k, OpenPII nano/mini).
+Benchmark harness comparing PII detectors against the built-in ai4privacy datasets (PII-Masking-200k/300k/400k, OpenPII nano/mini) or **your own labelled data**. The [notebook series](notebooks/README.md) walks through detection, scoring, composites, sanitization, and search over sanitized text.
 
 See [**RESULTS.md**](RESULTS.md) for headline numbers (overall + per-category + per-language F1 and latency at n=1000 on PII-Masking-300k).
 
@@ -14,7 +14,7 @@ Detectors covered:
 - **Microsoft Presidio** — regex + spaCy NER, local
 - **Skyflow Detect API** — hosted
 
-Pick `(detector, dataset, sample size)` on the CLI; detectors that take a per-call label set (Skyflow, GLiNER) auto-configure to the chosen dataset's vocabulary.
+Pick `(detector, dataset, sample size)` on the CLI; detectors that take a per-call label set (Skyflow, GLiNER) auto-configure to the chosen dataset's vocabulary. `python -m opf_eval.runner --list` shows every registered detector and whether its dependencies are installed.
 
 Plus a unified FastAPI service ([api/](api/)) exposing all detectors behind one contract.
 
@@ -81,7 +81,36 @@ Five ai4privacy variants pre-registered. Three distinct annotation vocabularies 
 | `pii_masking_300k` | 300k | numbered names (`GIVENNAME1`/`LASTNAME1`/...) | current default |
 | `pii_masking_400k` | 400k | OpenPII | newest legacy variant |
 
-The runner writes the dataset name into the manifest; the report uses it to drive both scoring views.
+The runner writes the dataset name and its annotated labels into the manifest; the report uses them to drive both scoring views.
+
+### Your own dataset
+
+Anything with text plus character-offset spans works. JSONL, JSON, CSV/TSV, and Parquet are all readable. Token-tagged BIO data works too.
+
+```python
+from opf_eval import datasets, fixtures
+
+# Labels already canonical (EMAIL, GOV_ID, GIVEN_NAME, ...):
+datasets.register_dataset("tickets", path="data/tickets.jsonl")
+
+# Your own label names:
+datasets.register_dataset(
+    "claims", path="data/claims.csv",
+    label_map={"patient_name": "PERSON", "mrn": "MEDICAL_ID", "dob": "DATE_OF_BIRTH"},
+)
+
+fixtures.materialize("eval/data/claims.jsonl", None, dataset="claims")  # None = every record
+```
+
+Or from the shell, for data already in canonical labels:
+
+```sh
+python -m opf_eval.fixtures --file tickets.jsonl --out eval/data/tickets.jsonl   # writes + validates
+python -m opf_eval.fixtures validate eval/data/tickets.jsonl
+python -m opf_eval.runner --fixtures eval/data/tickets.jsonl --detectors opf,gliner --out eval/results/runs/tickets/
+```
+
+`materialize` writes a `.meta.json` sidecar next to the fixtures, recording the dataset, seed, and annotated labels. The runner and report read it, so `--dataset` is optional once fixtures exist. See [notebooks/01_datasets.ipynb](notebooks/01_datasets.ipynb) for CSV, `label_map`, and BIO examples.
 
 ## Adding Skyflow
 
@@ -122,9 +151,34 @@ python -m opf_eval.runner \
 | `gliner_nvidia` | Nvidia gliner-PII on `urchade/gliner_large-v2.1` (570M base), threshold 0.3, NVIDIA Open Model License |
 | `openmed` | OpenMed PII via `openmed.extract_pii(lang=…)`, DeBERTa-based per-language models, snake_case 55-label vocab |
 
+Detectors live in a registry ([eval/src/opf_eval/detectors/registry.py](eval/src/opf_eval/detectors/registry.py)). The runner, the notebooks, and the API all build them by name from it, and heavy libraries are imported only when a detector is built. To add a model, register its label vocabulary and the model:
+
+```python
+from opf_eval.detectors import registry
+from opf_eval.taxonomy import register_vocab
+
+register_vocab("mymodel", {"NAME": "PERSON", "SSN": "GOV_ID", "EMAIL": "EMAIL"}, kind="detector")
+registry.register_hf_token_classifier("my_model", "org/my-pii-model", vocab="mymodel")
+# or: registry.register_gliner_model("my_gliner", "org/my-gliner", vocab="gliner")
+```
+
 ## Canonical entity types
 
-The harness projects every detector's native entity vocabulary and every dataset's gold-label vocabulary into a 15-label canonical taxonomy ([eval/src/opf_eval/taxonomy.py](eval/src/opf_eval/taxonomy.py)) so apples-to-apples comparison is possible. The 15 canonical labels are:
+The harness projects every detector's native entity vocabulary and every dataset's gold-label vocabulary into one canonical taxonomy ([eval/src/opf_eval/taxonomy/](eval/src/opf_eval/taxonomy/)) so apples-to-apples comparison is possible. It has two levels:
+
+- **Coarse:** the 15 categories below. Reports default to this level, and so do published results and the API's `CanonicalLabel` enum.
+- **Fine:** 24 sub-types under some coarse categories:
+  - `ACCOUNT`: `GOV_ID`, `MEDICAL_ID`, `BANK_ACCOUNT`, `CREDIT_CARD`, `CRYPTO_WALLET`, `EMPLOYEE_ID`, `CUSTOMER_ID`, `DEVICE_ID`
+  - `PERSON`: `GIVEN_NAME`, `FAMILY_NAME`
+  - `ADDRESS`: `STREET_ADDRESS`, `CITY`, `STATE`, `POSTCODE`, `COUNTRY`, `GEO_COORDINATE`
+  - `URL`: `IP_ADDRESS`, `MAC_ADDRESS`
+  - `DATE`: `DATE_OF_BIRTH`, `TIME`
+  - `SECRET`: `PASSWORD`, `API_KEY`
+  - `DEMOGRAPHIC`: `AGE`, `GENDER`
+
+Each raw label maps to the most specific canonical label it unambiguously denotes. Presidio's `US_SSN` maps to `GOV_ID`; OPF's catch-all `account_number` stays `ACCOUNT`. Spans carry both `label` (coarse) and `fine_label`. `python -m opf_eval.report --level fine` scores sub-types wherever both the detector and the dataset distinguish them; elsewhere it compares at the coarse level, so a detector isn't penalised for granularity it never claimed.
+
+The 15 coarse labels are:
 
 | canonical | meaning |
 | --- | --- |
@@ -146,7 +200,7 @@ The harness projects every detector's native entity vocabulary and every dataset
 
 ### Quick reference: who supports what
 
-A check means at least one raw label maps to that canonical category in [taxonomy.py](eval/src/opf_eval/taxonomy.py). Dashes mean the source has no annotations / no recognizer for that canonical type.
+A check means at least one raw label maps to that canonical category (directly or via one of its fine sub-types) in [taxonomy/vocabs.py](eval/src/opf_eval/taxonomy/vocabs.py). Dashes mean the source has no annotations / no recognizer for that canonical type.
 
 | canonical | pii_masking_200k | pii_masking_300k | openpii (400k, nano, mini) | OPF | Skyflow | Presidio | GLiNER |
 | --- | :-: | :-: | :-: | :-: | :-: | :-: | :-: |
@@ -188,7 +242,7 @@ This drives the **fair scoring view** in the report: each detector's headline F1
 | VEHICLE | `VEHICLEVIN`, `VEHICLEVRM` | — | — |
 | PHYSICAL | `HEIGHT`, `EYECOLOR` | — | — |
 
-pii_masking_200k also adds `SSN` (maps to ACCOUNT). Each dataset has additional raw labels not mapped to a canonical (e.g. pii_masking_200k's `USERAGENT`, `MASKEDNUMBER`, `MAC`, `ORDINALDIRECTION`). Those are silently dropped at fixture-write time. Add a column to `CANONICAL_MAP` if you want them scored.
+pii_masking_200k also adds `SSN` (maps to ACCOUNT). Each dataset has additional raw labels not mapped to a canonical (e.g. pii_masking_200k's `USERAGENT`, `MASKEDNUMBER`, `MAC`, `ORDINALDIRECTION`). Those are dropped at fixture-write time. To score them, add them to that dataset's vocabulary in [taxonomy/vocabs.py](eval/src/opf_eval/taxonomy/vocabs.py). New sources can register their own vocabulary at runtime with `taxonomy.register_vocab(...)`, without editing the package.
 
 ### Detector → canonical mapping (raw labels)
 
@@ -240,6 +294,9 @@ The previously-shipped `skyflow_minimal` detector was a hand-tuned 24-entity all
 - `python -m opf_eval.runner ... --device cuda` — run local PyTorch detectors (opf, gliner*, ai4privacy_modernbert, openmed) on GPU. `auto` picks cuda > mps > cpu. Skyflow + Presidio ignore this.
 - `python -m opf_eval.report --run dir --fixtures path` — emit `report.md` with both fair (per-detector scope) + raw (full dataset vocab) views
 - `python -m opf_eval.report ... --canonical-labels DATE` — override both views to a single explicit label set (one-category drilldowns)
+- `python -m opf_eval.report ... --level fine` — score fine sub-types (GOV_ID vs BANK_ACCOUNT, GIVEN_NAME vs FAMILY_NAME, …)
+- `python -m opf_eval.fixtures validate path` — check a fixtures file (ids, offsets, labels) and print its label distribution
+- `python -m opf_eval.runner ... --fresh` — clear a run dir first. A run dir is tied to its fixtures (sha256), so pointing it at different fixtures is refused rather than mixing stale results into the report.
 
 ### Two scoring views
 
@@ -252,7 +309,19 @@ The greedy per-category breakdown stays under the raw view (single per-label tab
 
 ## Notebooks
 
-[notebooks/pii_detector_comparison.ipynb](notebooks/pii_detector_comparison.ipynb) is a Colab-ready version of the same harness. Edit the `HARNESS_REPO` URL in the setup cell to your fork before sharing.
+A seven-part, Colab-ready series. Each part runs on its own and shares a saved session with the others. See [notebooks/README.md](notebooks/README.md).
+
+| notebook | topic |
+| --- | --- |
+| [00_start_here](notebooks/00_start_here.ipynb) | concepts, taxonomy, detector + dataset catalogue |
+| [01_datasets](notebooks/01_datasets.ipynb) | samples, fixture format, bring your own data |
+| [02_run_detectors](notebooks/02_run_detectors.ipynb) | run detectors, inspect raw output, latency |
+| [03_score_and_compare](notebooks/03_score_and_compare.ipynb) | report, charts, fine-level scoring, error analysis |
+| [04_composite_detectors](notebooks/04_composite_detectors.ipynb) | best-per-category ensembles with an honest holdout |
+| [05_sanitization](notebooks/05_sanitization.ipynb) | redact / label / label_number / label_token |
+| [06_search_on_sanitized_data](notebooks/06_search_on_sanitized_data.ipynb) | BM25 search over sanitized text |
+
+To share a fork, edit `HARNESS_REPO` in the setup cell.
 
 ## Plans for further experiments
 
@@ -262,8 +331,11 @@ The greedy per-category breakdown stays under the raw view (single per-label tab
 - 03: GLiNER baseline (shipped)
 - 06: Unified privacy-detection API (shipped)
 - 08: SemEval scoring via nervaluate (shipped)
-- 09: Multi-dataset fixtures + per-detector scoring (this PR)
-- 02, 04, 05: model & training experiments (not yet shipped)
+- 05: Additional PII-focused models (shipped)
+- 09: Multi-dataset fixtures + per-detector scoring (shipped)
+- 10, 11: Sanitization + search demos (shipped)
+- 12: [Roadmap](plans/12-roadmap.md): public benchmarks, newer open-weight models, cross-benchmark report
+- 02, 04: model & training experiments (not yet shipped)
 - 07: Cloud Run hardening (planned)
 
 ## API server

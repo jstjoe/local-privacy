@@ -15,6 +15,15 @@ dependencies = [
     "gliner>=0.2.13",
     "nervaluate>=0.2,<0.3",
     "openmed[hf]>=0.1",
+    "typing_extensions>=4.5; python_version < '3.11'",
+]
+
+[project.optional-dependencies]
+# Extra libraries the notebooks/ series uses (charts, search demo).
+# (IPython is deliberately not listed: Colab pins its own version.)
+notebooks = [
+    "matplotlib>=3.7",
+    "bm25s>=0.2",
 ]
 
 [project.scripts]

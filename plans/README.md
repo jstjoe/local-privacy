@@ -14,6 +14,9 @@ Side-quest specs for extending the OPF vs Skyflow benchmark. Each plan is brief
 | 07 | [Cloud Run hardening](07-cloud-run-hardening.md) | ~2 days | "auth + limits + observability + CI to make the API deployable to GCP" |
 | 08 | [SemEval scoring via nervaluate](08-nervaluate-scoring.md) | ~3-4h | "where exactly is each detector losing points — missed, mis-typed, spurious?" |
 | 09 | [Multi-dataset fixtures + per-detector scoring](09-multi-dataset-fixtures.md) | ~1-1.5 days | "general benchmark — pick (detector, dataset, size); detectors auto-configure per dataset; score against own claims + dataset as a whole" |
+| 10 | [Redaction + tokenization demo](10-redaction-tokenization-demo.md) | shipped | "what does sanitized text look like under each mode?" |
+| 11 | [Use: search over sanitized text](11-use-section.md) | shipped | "which sanitization modes keep search working?" |
+| 12 | [Roadmap: benchmarks, datasets, models, notebooks](12-roadmap.md) | multi-PR | "public benchmarks (PrivacyBench, Nemotron-PII, TAB…), newer open-weight detectors, cross-benchmark report" |
 
 ## Suggested order
 
@@ -24,7 +27,9 @@ Side-quest specs for extending the OPF vs Skyflow benchmark. Each plan is brief
 
 ## Conventions
 
-- All plans assume the existing `opf_eval` harness scaffolding stays unchanged
-- New detectors register themselves in `runner._build_detector()` by string name
-- All add a column to `taxonomy.CANONICAL_MAP` if their entity-type vocabulary differs from existing detectors
+- New detectors register in `opf_eval.detectors.registry` (see `builtin.py`); `register_gliner_model` / `register_hf_token_classifier` cover the common shapes
+- New label vocabularies (detector or dataset) go in `taxonomy/vocabs.py`, or are registered at runtime with `taxonomy.register_vocab`
+- New datasets register with `opf_eval.datasets.register_dataset` (local file or HF id; `spans`, `privacy_mask` or `bio` schema)
 - Reports auto-pick up new detectors from the manifest
+
+Plans 01–09 predate the detector registry and two-level taxonomy; their "add a column to `CANONICAL_MAP`" / "`runner._build_detector()`" steps map onto the conventions above.

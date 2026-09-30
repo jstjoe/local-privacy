@@ -242,6 +242,21 @@ def run_category_best(
     return out_path, recipe, per_label_f1
 
 
+def format_recipe(
+    recipe: dict[str, str], per_label_f1: dict[str, dict[str, float]], *, top: int = 3
+) -> str:
+    """Human-readable recipe: winner per label plus the top candidates."""
+    lines = []
+    for lbl in sorted(recipe):
+        choices = sorted(per_label_f1[lbl].items(), key=lambda kv: -kv[1])
+        head = ", ".join(f"{d}={f:.2f}" for d, f in choices[:top])
+        lines.append(f"  {lbl:<14} -> {recipe[lbl]:<24}  (candidates: {head})")
+    skipped = sorted(set(per_label_f1) - set(recipe))
+    if skipped:
+        lines.append(f"  skipped (no detector with F1 > 0): {', '.join(skipped)}")
+    return "\n".join(lines)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--out-dir", required=True, type=Path,
@@ -272,10 +287,7 @@ def main() -> None:
         raise ValueError(f"unknown strategy: {args.strategy}")
 
     print(f"recipe ({args.strategy}):")
-    for lbl in sorted(recipe):
-        choices = sorted(per_label_f1[lbl].items(), key=lambda kv: -kv[1])
-        head = ", ".join(f"{d}={f:.2f}" for d, f in choices[:3])
-        print(f"  {lbl:<14} -> {recipe[lbl]:<24}  (candidates: {head})")
+    print(format_recipe(recipe, per_label_f1))
     print(f"\nwrote {out_path}")
 
 

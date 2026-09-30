@@ -120,13 +120,13 @@ def ensure_fixtures(
     """
     out_path = Path(out_path)
     meta = read_meta(out_path)
-    cfg = get_dataset_config(dataset)
-    want_split = split or (None if cfg.path else cfg.default_split)
+    # Matching needs only the sidecar, so a custom dataset registered in an
+    # earlier notebook/session doesn't have to be registered again to reuse it.
     if (
         out_path.exists()
         and meta is not None
         and meta.get("dataset") == dataset
-        and meta.get("split") == want_split
+        and (split is None or meta.get("split") == split)
         and meta.get("n_requested") == n
         and meta.get("seed") == (seed if n is not None else None)
         and meta.get("sha256") == file_sha256(out_path)
