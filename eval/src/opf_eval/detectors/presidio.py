@@ -24,8 +24,7 @@ from contextlib import contextmanager
 from presidio_analyzer import AnalyzerEngine
 from presidio_analyzer.nlp_engine import NlpEngineProvider
 
-from ..taxonomy import presidio_to_canonical
-from .base import DetectorResult, Span
+from .base import DetectorResult, Span, error_result, make_span
 
 
 @contextmanager
@@ -140,18 +139,10 @@ class PresidioDetector:
                 score_threshold=self._score_threshold,
             )
         except Exception as e:  # noqa: BLE001
-            return {"spans": [], "latency_ms": (time.perf_counter() - t0) * 1000, "error": repr(e)}
+            return error_result(t0, e)
         latency_ms = (time.perf_counter() - t0) * 1000
-        spans: list[Span] = []
-        for r in results:
-            canonical = presidio_to_canonical(r.entity_type) or r.entity_type.upper()
-            spans.append(
-                {
-                    "label": canonical,
-                    "raw_label": r.entity_type,
-                    "start": int(r.start),
-                    "end": int(r.end),
-                    "text": text[r.start : r.end],
-                }
-            )
+        spans: list[Span] = [
+            make_span("presidio", r.entity_type, r.start, r.end, text[r.start : r.end])  # type: ignore[misc]
+            for r in results
+        ]
         return {"spans": spans, "latency_ms": latency_ms, "error": None}

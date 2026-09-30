@@ -33,8 +33,7 @@ import time
 
 import httpx
 
-from ..taxonomy import skyflow_to_canonical
-from .base import DetectorResult, Span
+from .base import DetectorResult, Span, error_result, make_span
 
 
 DETECT_PATH = "/v1/detect/deidentify/string"
@@ -78,7 +77,7 @@ class SkyflowDetector:
             r.raise_for_status()
             payload = r.json()
         except Exception as e:  # noqa: BLE001
-            return {"spans": [], "latency_ms": (time.perf_counter() - t0) * 1000, "error": repr(e)}
+            return error_result(t0, e)
         latency_ms = (time.perf_counter() - t0) * 1000
         return {
             "spans": list(_parse_entities(text, payload)),
@@ -103,14 +102,5 @@ def _parse_entities(text: str, payload: dict) -> list[Span]:
         start, end = int(start), int(end)
         if end <= start:
             continue
-        canonical = skyflow_to_canonical(raw_label) or raw_label.upper()
-        out.append(
-            {
-                "label": canonical,
-                "raw_label": raw_label,
-                "start": start,
-                "end": end,
-                "text": ent.get("value") or text[start:end],
-            }
-        )
+        out.append(make_span("skyflow", raw_label, start, end, ent.get("value") or text[start:end]))  # type: ignore[arg-type]
     return out

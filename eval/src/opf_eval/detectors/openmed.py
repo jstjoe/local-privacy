@@ -17,8 +17,7 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING
 
-from ..taxonomy import openmed_to_canonical
-from .base import DetectorResult, Span
+from .base import DetectorResult, Span, error_result, make_span
 
 if TYPE_CHECKING:
     from openmed import ModelLoader
@@ -86,27 +85,14 @@ class OpenMedDetector:
                 loader=self._get_loader(lang),
             )
         except Exception as e:  # noqa: BLE001
-            return {
-                "spans": [],
-                "latency_ms": (time.perf_counter() - t0) * 1000,
-                "error": repr(e),
-            }
+            return error_result(t0, e)
         latency_ms = (time.perf_counter() - t0) * 1000
         spans: list[Span] = []
         for ent in result.entities or []:
             raw = ent.label
             if not raw or raw.upper() == "O":
                 continue
-            canonical = openmed_to_canonical(raw)
-            if not canonical:
-                continue
-            spans.append(
-                {
-                    "label": canonical,
-                    "raw_label": raw,
-                    "start": int(ent.start),
-                    "end": int(ent.end),
-                    "text": ent.text,
-                }
-            )
+            span = make_span("openmed", raw, ent.start, ent.end, ent.text, keep_unmapped=False)
+            if span is not None:
+                spans.append(span)
         return {"spans": spans, "latency_ms": latency_ms, "error": None}

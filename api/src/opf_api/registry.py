@@ -1,5 +1,10 @@
 """Detector registry — lazy-loaded factories with per-detector locks.
 
+Which detectors exist, how to build them and what labels they produce all
+come from the eval harness registry (`opf_eval.detectors.registry`); this
+module adds the service concerns: lazy loading off the event loop and one
+lock per instance.
+
 In-process detectors (OPF, GLiNER, Presidio) hold a single instance per worker;
 the asyncio.Lock serializes inference on that instance. Skyflow is a stateless
 HTTP proxy and the lock is essentially a no-op (httpx.Client is thread-safe).
@@ -16,8 +21,9 @@ import os
 from dataclasses import dataclass, field
 from typing import Callable
 
+from opf_eval.detectors import registry as detector_registry
 from opf_eval.detectors.base import Detector
-from opf_eval.taxonomy import CANONICAL_MAP
+from opf_eval.taxonomy import CANONICAL_LABELS, detector_supported_canonicals
 
 
 logger = logging.getLogger("opf_api.registry")
@@ -49,158 +55,43 @@ class DetectorEntry:
         return self.instance
 
 
-def _opf_factory() -> Detector:
-    from opf_eval.detectors.opf import OPFDetector
-
-    return OPFDetector(
-        device=os.environ.get("OPF_DEVICE", "cpu"),  # type: ignore[arg-type]
-        decode_mode=os.environ.get("OPF_DECODE_MODE", "viterbi"),  # type: ignore[arg-type]
-    )
-
-
-def _skyflow_factory(entity_types: list[str] | None = None) -> Callable[[], Detector]:
-    def make() -> Detector:
-        from opf_eval.detectors.skyflow import SkyflowDetector
-
-        return SkyflowDetector(entity_types=entity_types)
-
-    return make
-
-
-def _presidio_factory(*, multilang: bool) -> Callable[[], Detector]:
-    def make() -> Detector:
-        from opf_eval.detectors.presidio import LANGUAGE_MODELS, PresidioDetector
-
-        languages = list(LANGUAGE_MODELS.keys()) if multilang else ["en"]
-        return PresidioDetector(languages=languages)
-
-    return make
-
-
 def _device() -> str:
     return os.environ.get("OPF_DEVICE", "cpu")
 
 
-# All GLiNER variants run at the same threshold so /api/find output is
-# comparable across them and operators have one knob to reason about.
-# Gretel's own recommendation is 0.7; nvidia's model card suggests 0.3
-# but that produces noticeably more false positives — 0.7 was chosen as
-# the precision-leaning common ground.
-GLINER_THRESHOLD = 0.7
+def _options(name: str) -> dict:
+    """Env-driven per-detector options for the service."""
+    if name in ("opf", "opf_calibrated"):
+        return {"decode_mode": os.environ.get("OPF_DECODE_MODE", "viterbi")}
+    return {}
 
 
-def _gliner_factory() -> Detector:
-    from opf_eval.detectors.gliner import GLiNERDetector
-
-    logger.info("gliner: threshold=%.2f", GLINER_THRESHOLD)
-    return GLiNERDetector(
-        threshold=GLINER_THRESHOLD,
-        device=_device(),  # type: ignore[arg-type]
-    )
-
-
-def _gliner_nvidia_factory() -> Detector:
-    from opf_eval.detectors.gliner import GLiNERDetector
-
-    logger.info("gliner_nvidia: threshold=%.2f", GLINER_THRESHOLD)
-    return GLiNERDetector(
-        model_name="nvidia/gliner-PII",
-        threshold=GLINER_THRESHOLD,
-        name="gliner_nvidia",
-        device=_device(),  # type: ignore[arg-type]
-    )
-
-
-def _gliner_gretel_factory(*, size: str) -> Callable[[], Detector]:
+def _factory(name: str) -> Callable[[], Detector]:
     def make() -> Detector:
-        from opf_eval.detectors.gliner import GLiNERDetector
-        from opf_eval.taxonomy import gretel_prompts, gretel_to_canonical
-
-        logger.info("gliner_gretel_%s: threshold=%.2f", size, GLINER_THRESHOLD)
-        return GLiNERDetector(
-            model_name=f"gretelai/gretel-gliner-bi-{size}-v1.0",
-            threshold=GLINER_THRESHOLD,
-            prompts=gretel_prompts(),
-            label_to_canonical=gretel_to_canonical,
-            name=f"gliner_gretel_{size}",
-            device=_device(),  # type: ignore[arg-type]
-        )
+        # No dataset in the service: every detector gets its full vocabulary
+        # (all GLiNER prompts, unconstrained Skyflow entity types).
+        return detector_registry.build(name, device=_device(), options=_options(name))
 
     return make
 
 
-def _ai4privacy_factory() -> Detector:
-    from opf_eval.detectors.ai4privacy import Ai4PrivacyDetector
-
-    return Ai4PrivacyDetector(device=_device())  # type: ignore[arg-type]
-
-
 def build_default_registry() -> dict[str, DetectorEntry]:
-    """Construct the registry. Optional backends (gliner, presidio,
-    ai4privacy_modernbert) are registered only if their imports succeed.
-    Skyflow is always available since it's just an HTTP client (creds
-    checked at first call)."""
-    reg: dict[str, DetectorEntry] = {
-        "opf": DetectorEntry("opf", _opf_factory),
-        "skyflow": DetectorEntry("skyflow", _skyflow_factory(None), proxy=True),
-    }
-    try:
-        import presidio_analyzer  # noqa: F401
-
-        reg["presidio"] = DetectorEntry("presidio", _presidio_factory(multilang=False))
-        reg["presidio_multilang"] = DetectorEntry(
-            "presidio_multilang", _presidio_factory(multilang=True)
-        )
-    except ImportError:
-        logger.info("presidio not installed; skipping registration")
-    try:
-        import gliner  # noqa: F401
-
-        reg["gliner"] = DetectorEntry("gliner", _gliner_factory)
-        reg["gliner_nvidia"] = DetectorEntry("gliner_nvidia", _gliner_nvidia_factory)
-        reg["gliner_gretel_small"] = DetectorEntry(
-            "gliner_gretel_small", _gliner_gretel_factory(size="small")
-        )
-        reg["gliner_gretel_large"] = DetectorEntry(
-            "gliner_gretel_large", _gliner_gretel_factory(size="large")
-        )
-    except ImportError:
-        logger.info("gliner not installed; skipping registration")
-    try:
-        import transformers  # noqa: F401
-
-        reg["ai4privacy_modernbert"] = DetectorEntry(
-            "ai4privacy_modernbert", _ai4privacy_factory
-        )
-    except ImportError:
-        logger.info("transformers not installed; ai4privacy_modernbert skipped")
+    """One entry per detector in the eval harness registry that is exposed to
+    the API (`in_api`) and whose dependencies are installed. Nothing is
+    loaded until first use (or EAGER_LOAD)."""
+    reg: dict[str, DetectorEntry] = {}
+    for spec in detector_registry.specs():
+        if not spec.in_api:
+            continue
+        if not spec.available():
+            logger.info("%s: missing %s; skipping registration", spec.name, spec.missing())
+            continue
+        reg[spec.name] = DetectorEntry(spec.name, _factory(spec.name), proxy=spec.remote)
     return reg
 
 
-_SOURCE_KEY = {
-    "opf": "opf",
-    "skyflow": "skyflow",
-    "presidio": "presidio",
-    "presidio_multilang": "presidio",
-    "gliner": "gliner",
-    "gliner_nvidia": "gliner",
-    "gliner_gretel_small": "gretel",
-    "gliner_gretel_large": "gretel",
-    "ai4privacy_modernbert": "openpii",
-}
-
-
 def detector_categories(name: str) -> list[str]:
-    """Canonical categories a detector can produce.
-
-    Variants (presidio_multilang) share their parent's coverage. Returns
-    empty list for unknown names.
-    """
-    source = _SOURCE_KEY.get(name)
-    if source is None:
-        return []
-    return [
-        canonical
-        for canonical, by_source in CANONICAL_MAP.items()
-        if by_source.get(source)
-    ]
+    """Canonical (coarse) categories a detector can produce, in taxonomy
+    order. Empty list for unknown names."""
+    supported = detector_supported_canonicals(name)
+    return [c for c in CANONICAL_LABELS if c in supported]

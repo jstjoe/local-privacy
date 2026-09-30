@@ -10,15 +10,11 @@ prompt-driven instead of having a fixed label vocabulary.
 from __future__ import annotations
 
 import time
-from typing import Callable
 
 from gliner import GLiNER
 
-from ..taxonomy import gliner_prompts, gliner_to_canonical
-from .base import DetectorResult, Span
-
-
-LabelMapper = Callable[[str], "str | None"]
+from ..taxonomy import gliner_prompts
+from .base import DetectorResult, Span, error_result, make_span
 
 
 class GLiNERDetector:
@@ -30,7 +26,7 @@ class GLiNERDetector:
         model_name: str = "urchade/gliner_multi_pii-v1",
         threshold: float = 0.5,
         prompts: list[str] | None = None,
-        label_to_canonical: LabelMapper | None = None,
+        vocab: str = "gliner",
         name: str | None = None,
         device: str = "cpu",
     ) -> None:
@@ -40,10 +36,9 @@ class GLiNERDetector:
         prompts: explicit prompt list to feed the model. Default = full set
             (`gliner_prompts()`). Pass a restricted subset to focus the model
             on a dataset's annotated labels.
-        label_to_canonical: callback mapping raw model label -> canonical
-            label. Defaults to `gliner_to_canonical` (the generic GLiNER
-            prompt vocabulary). Override for variants like Gretel that emit
-            their own snake_case labels.
+        vocab: taxonomy vocabulary that maps the model's labels (the
+            prompts echoed back) to canonical labels. Defaults to `gliner`;
+            use `gretel` for Gretel's snake_case models.
         name: override the registered detector name (for raw_<name>.jsonl
             output paths and report tables). Defaults to "gliner".
         device: torch device — `"cpu"`, `"cuda"`, or `"mps"`. The 570M
@@ -59,7 +54,7 @@ class GLiNERDetector:
                 pass
         self._labels = prompts if prompts is not None else gliner_prompts()
         self._threshold = threshold
-        self._to_canonical = label_to_canonical or gliner_to_canonical
+        self._vocab = vocab
         if name is not None:
             self.name = name
 
@@ -75,21 +70,12 @@ class GLiNERDetector:
                 text, self._labels, threshold=self._threshold
             )
         except Exception as e:  # noqa: BLE001
-            return {"spans": [], "latency_ms": (time.perf_counter() - t0) * 1000, "error": repr(e)}
+            return error_result(t0, e)
         latency_ms = (time.perf_counter() - t0) * 1000
         spans: list[Span] = []
         for ent in entities:
-            raw = ent.get("label", "")
-            canonical = self._to_canonical(raw) or raw.upper()
-            start = int(ent["start"])
-            end = int(ent["end"])
-            spans.append(
-                {
-                    "label": canonical,
-                    "raw_label": raw,
-                    "start": start,
-                    "end": end,
-                    "text": ent.get("text") or text[start:end],
-                }
-            )
+            start, end = int(ent["start"]), int(ent["end"])
+            spans.append(make_span(  # type: ignore[arg-type]
+                self._vocab, ent.get("label", ""), start, end, ent.get("text") or text[start:end]
+            ))
         return {"spans": spans, "latency_ms": latency_ms, "error": None}
