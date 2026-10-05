@@ -13,6 +13,15 @@ with defaults (see `ensure_run`).
 Nothing here is Colab-only: on a laptop the workspace is `eval/` inside the
 repo checkout (or `$PII_BENCH_HOME`), and secrets come from the environment
 or a `.env` file.
+
+On Colab each notebook gets its own runtime, so by default nothing carries
+over between them. Two things make the later notebooks cheap anyway:
+
+- `setup(drive=True)` keeps the workspace in Google Drive, so a run from 02 is
+  reused by 03–06 instead of recomputed.
+- `ensure_run` fills in results from the baseline shipped with the package
+  (see `opf_eval.baseline`) when it matches the sample, so the default
+  session can be scored on a CPU-only runtime.
 """
 
 from __future__ import annotations
@@ -103,11 +112,37 @@ def device(prefer: str | None = None) -> str:
     return autodetect_device()
 
 
-def setup(*, root: str | Path | None = None, quiet: bool = False) -> Workspace:
-    """Prepare the kernel and print a short environment summary."""
+DRIVE_MOUNT = "/content/drive"
+DRIVE_WORKSPACE = f"{DRIVE_MOUNT}/MyDrive/pii-bench"
+
+
+def mount_drive() -> Path:
+    """Mount Google Drive on Colab and point the workspace at
+    `MyDrive/pii-bench`. Asks for permission the first time."""
+    from google.colab import drive  # type: ignore[import-not-found]
+
+    drive.mount(DRIVE_MOUNT)
+    os.environ["PII_BENCH_HOME"] = DRIVE_WORKSPACE
+    return Path(DRIVE_WORKSPACE)
+
+
+def setup(
+    *, root: str | Path | None = None, drive: bool = False, quiet: bool = False
+) -> Workspace:
+    """Prepare the kernel and print a short environment summary.
+
+    drive: on Colab, keep the workspace in Google Drive so fixtures, runs and
+        the session survive the runtime and are shared by every notebook.
+        Ignored outside Colab.
+    """
     # Triton has no stable Apple Silicon support and isn't needed here; keep
     # OPF on its vanilla PyTorch MoE path. Must be set before `opf` imports.
     os.environ.setdefault("OPF_MOE_TRITON", "0")
+    if drive and root is None:
+        if in_colab():
+            mount_drive()
+        elif not quiet:
+            print("drive=True only applies on Colab; using the local workspace")
     ws = workspace(root)
     if not quiet:
         dev = device()
@@ -121,7 +156,10 @@ def setup(*, root: str | Path | None = None, quiet: bool = False) -> Workspace:
                 pass
         print(f"environment: {'Colab' if in_colab() else 'local'} · python {sys.version.split()[0]}")
         print(f"device:      {dev}{gpu}")
-        print(f"workspace:   {ws.root}")
+        where = " (Google Drive)" if str(ws.root).startswith(DRIVE_MOUNT) else ""
+        print(f"workspace:   {ws.root}{where}")
+        if dev == "cpu":
+            print("no GPU: detectors run slowly here, but the default sample is scored from saved results")
     return ws
 
 
@@ -264,15 +302,34 @@ def ensure_fixtures(s: Session) -> Path:
     return path
 
 
-def ensure_run(s: Session, detectors: Iterable[str] | None = None, **run_kwargs: Any) -> Path:
+def ensure_run(
+    s: Session,
+    detectors: Iterable[str] | None = None,
+    *,
+    baseline: bool = True,
+    **run_kwargs: Any,
+) -> Path:
     """Make sure fixtures exist and every detector has results in the run dir;
-    runs only what's missing. Lets any notebook run standalone."""
+    runs only what's missing. Lets any notebook run standalone.
+
+    baseline: fill missing results from the baseline shipped with the package
+        when it covers this sample with the same detector options (no GPU
+        needed). Pass False to always run the detectors.
+    """
+    from . import baseline as _baseline
     from .runner import run
 
     fx = ensure_fixtures(s)
     wanted = list(detectors) if detectors is not None else list(s.detectors)
     todo = [d for d in wanted if not (s.run_dir / f"raw_{d}.jsonl").exists()]
-    if todo:
+    seeded: list[str] = []
+    if todo and baseline:
+        seeded = _baseline.seed_run_dir(fx, s.run_dir, todo, detector_options=s.detector_options)
+        todo = [d for d in todo if d not in seeded]
+        if seeded:
+            print(f"loaded saved baseline results for: {', '.join(seeded)}")
+    if todo or seeded:
+        # With nothing left to run this only writes the manifest.
         run(
             fx, todo, s.run_dir,
             device=s.device or device(),
@@ -282,6 +339,19 @@ def ensure_run(s: Session, detectors: Iterable[str] | None = None, **run_kwargs:
     else:
         print(f"results present for: {', '.join(wanted)}")
     return s.run_dir
+
+
+def export_baseline(s: Session, detectors: Iterable[str] | None = None) -> Path:
+    """Save this session's run as the package baseline for its dataset and
+    seed (in a source checkout: `eval/src/opf_eval/baselines/`). Commit that
+    directory to share it."""
+    from . import baseline as _baseline
+
+    out = _baseline.export(
+        s.fixtures_path, s.run_dir, detectors=list(detectors) if detectors is not None else None
+    )
+    print(f"baseline written: {out}")
+    return out
 
 
 # ---------------------------------------------------------------- display
