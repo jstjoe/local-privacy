@@ -285,7 +285,7 @@ Source: `DeidentifyStringRequest.entity_types` enum in the Skyflow Detect API sp
 
 ### Hit-rate tuning (historical context)
 
-The previously-shipped `skyflow_minimal` detector was a hand-tuned 24-entity allowlist derived from gold-hit-rate analysis on PII-Masking-300k (drop bare `NAME` / `LOCATION` / `LOCATION_ADDRESS`, keep components — see `eval/scripts/analyze_skyflow_hitrate.py`). It's now retired in favour of the dataset-aware default `skyflow`, which auto-derives `entity_types` from `canonical_to_skyflow_request_types(dataset_canonicals)` for whichever dataset you pick. The same hit-rate methodology still applies if you want to optimize Skyflow for a new dataset.
+The previously-shipped `skyflow_minimal` detector was a hand-tuned 24-entity allowlist derived from gold-hit-rate analysis on PII-Masking-300k (drop bare `NAME` / `LOCATION` / `LOCATION_ADDRESS`, keep components — see [`eval/scripts/analyze_skyflow_hitrate.py`](eval/scripts/analyze_skyflow_hitrate.py)). It's now retired in favour of the dataset-aware default `skyflow`, which auto-derives `entity_types` from `canonical_to_skyflow_request_types(dataset_canonicals)` for whichever dataset you pick. The same hit-rate methodology still applies if you want to optimize Skyflow for a new dataset.
 
 ## Fixtures and reports
 

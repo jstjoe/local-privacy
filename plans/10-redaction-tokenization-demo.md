@@ -10,7 +10,7 @@ scores detection F1. We need a visual demo that walks an audience through
 detector predictions the benchmark already produces.
 
 The demo gets appended as a new section at the end of
-[notebooks/pii_detector_comparison.ipynb](notebooks/pii_detector_comparison.ipynb).
+[notebooks/pii_detector_comparison.ipynb](https://github.com/jstjoe/local-privacy/blob/6f877b85f8166d8e0103b933848f1b462e5b83c5/notebooks/pii_detector_comparison.ipynb).
 Single-notebook flow is the explicit requirement: easier to walk a room of
 people through one notebook than two.
 
@@ -18,7 +18,7 @@ people through one notebook than two.
 
 Three pieces:
 
-1. **Lift render logic out of `api/src/opf_api/routes.py`** into a new
+1. **Lift render logic out of [`api/src/opf_api/routes.py`](../api/src/opf_api/routes.py)** into a new
    shared module so the notebook can import it without going through HTTP.
 2. **Wire the existing `TokenVaultClient` into the eval side** via direct
    import. No HTTP, no duplication.
@@ -28,7 +28,7 @@ Three pieces:
 
 ### Piece 1 — shared transforms module
 
-New file [eval/src/opf_eval/transforms.py](eval/src/opf_eval/transforms.py):
+New file [eval/src/opf_eval/transforms.py](../eval/src/opf_eval/transforms.py):
 
 ```python
 from typing import Callable, Iterable, Protocol
@@ -69,7 +69,7 @@ def render_modes(
     as 'not configured'."""
 ```
 
-Update [api/src/opf_api/routes.py](api/src/opf_api/routes.py) to import:
+Update [api/src/opf_api/routes.py](../api/src/opf_api/routes.py) to import:
 - `splice_spans` (was `_splice_spans`)
 - `placeholder_renderer` (replaces `_placeholder_for` + the inline lambda in `_redact_text`)
 - `label_numbered_renderer` (was `_build_label_numbered_renderer`)
@@ -78,7 +78,7 @@ Update [api/src/opf_api/routes.py](api/src/opf_api/routes.py) to import:
 Pure refactor — behavior identical, the existing 18 route tests must
 continue to pass without modification.
 
-`TokenVaultClient` stays in [api/src/opf_api/vault_tokens.py](api/src/opf_api/vault_tokens.py).
+`TokenVaultClient` stays in [api/src/opf_api/vault_tokens.py](../api/src/opf_api/vault_tokens.py).
 The eval side imports it via `from opf_api.vault_tokens import TokenVaultClient`.
 Cross-package coupling is accepted: `opf-eval` already depends on `opf-api`
 indirectly via the workspace, and the alternative (duplicating the client)
@@ -87,7 +87,7 @@ is worse for maintenance.
 ### Piece 2 — new notebook section
 
 Append section **10** after the existing section 9 ("Saving the run") in
-[notebooks/pii_detector_comparison.ipynb](notebooks/pii_detector_comparison.ipynb).
+[notebooks/pii_detector_comparison.ipynb](https://github.com/jstjoe/local-privacy/blob/6f877b85f8166d8e0103b933848f1b462e5b83c5/notebooks/pii_detector_comparison.ipynb).
 
 Cells (each ≤ ~25 lines of code; markdown intro before each code cell):
 
@@ -125,26 +125,26 @@ Modes the row's detector cannot supply render as `—`:
 
 | File | Change |
 |---|---|
-| [eval/tests/test_transforms.py](eval/tests/test_transforms.py) | **New.** Mirror the relevant assertions from [api/tests/test_routes.py](api/tests/test_routes.py): `splice_spans` skips overlaps, `label_numbered_renderer` reuses numbers on duplicate `(label,text)`, `vault_token_renderer` calls `tokenize_batch` exactly once with the de-duplicated unique pairs, missing-label spans fall back to `[LABEL]`. Uses a fake tokenizer. |
-| [api/tests/test_routes.py](api/tests/test_routes.py) | Unchanged. The existing 18 tests run against the same logic, just imported from the new location — proves the refactor is behavior-preserving. |
-| [notebooks/README.md](notebooks/README.md) | Add a line in the "What this notebook does" list and a one-paragraph blurb about the new demo section. |
+| [eval/tests/test_transforms.py](../eval/tests/test_transforms.py) | **New.** Mirror the relevant assertions from [api/tests/test_routes.py](../api/tests/test_routes.py): `splice_spans` skips overlaps, `label_numbered_renderer` reuses numbers on duplicate `(label,text)`, `vault_token_renderer` calls `tokenize_batch` exactly once with the de-duplicated unique pairs, missing-label spans fall back to `[LABEL]`. Uses a fake tokenizer. |
+| [api/tests/test_routes.py](../api/tests/test_routes.py) | Unchanged. The existing 18 tests run against the same logic, just imported from the new location — proves the refactor is behavior-preserving. |
+| [notebooks/README.md](../notebooks/README.md) | Add a line in the "What this notebook does" list and a one-paragraph blurb about the new demo section. |
 
 ## Critical files
 
 | File | Why |
 |---|---|
-| [api/src/opf_api/routes.py](api/src/opf_api/routes.py) | Imports change; ~50 lines of helpers get deleted (now imported from transforms). |
-| [api/src/opf_api/vault_tokens.py](api/src/opf_api/vault_tokens.py) | Unchanged. Eval imports `TokenVaultClient` from here. |
-| [eval/src/opf_eval/transforms.py](eval/src/opf_eval/transforms.py) | **New.** Single source of truth for splice + render. |
-| [notebooks/pii_detector_comparison.ipynb](notebooks/pii_detector_comparison.ipynb) | Append section 10 with cells 10.0–10.7. |
+| [api/src/opf_api/routes.py](../api/src/opf_api/routes.py) | Imports change; ~50 lines of helpers get deleted (now imported from transforms). |
+| [api/src/opf_api/vault_tokens.py](../api/src/opf_api/vault_tokens.py) | Unchanged. Eval imports `TokenVaultClient` from here. |
+| [eval/src/opf_eval/transforms.py](../eval/src/opf_eval/transforms.py) | **New.** Single source of truth for splice + render. |
+| [notebooks/pii_detector_comparison.ipynb](https://github.com/jstjoe/local-privacy/blob/6f877b85f8166d8e0103b933848f1b462e5b83c5/notebooks/pii_detector_comparison.ipynb) | Append section 10 with cells 10.0–10.7. |
 
 ## Reused code
 
-- `_splice_spans` body from [api/src/opf_api/routes.py:73-89](api/src/opf_api/routes.py#L73-L89) — lifted as-is.
-- `_placeholder_for` from [api/src/opf_api/routes.py:56-60](api/src/opf_api/routes.py#L56-L60) — lifted as-is.
-- `_build_label_numbered_renderer` from [api/src/opf_api/routes.py:174-189](api/src/opf_api/routes.py#L174-L189) — lifted as-is.
-- `_build_vault_token_renderer` from [api/src/opf_api/routes.py:192-220](api/src/opf_api/routes.py#L192-L220) — lifted, but the `HTTPException` it raises today becomes a plain `RuntimeError` (notebook context, no FastAPI). The route handler wraps the new function and re-raises as 502.
-- `TokenVaultClient.from_env` from [api/src/opf_api/vault_tokens.py:67-87](api/src/opf_api/vault_tokens.py#L67-L87) — imported directly by cell 10.3.
+- `_splice_spans` body from [api/src/opf_api/routes.py:73-89](../api/src/opf_api/routes.py#L73-L89) — lifted as-is.
+- `_placeholder_for` from [api/src/opf_api/routes.py:56-60](../api/src/opf_api/routes.py#L56-L60) — lifted as-is.
+- `_build_label_numbered_renderer` from [api/src/opf_api/routes.py:174-189](../api/src/opf_api/routes.py#L174-L189) — lifted as-is.
+- `_build_vault_token_renderer` from [api/src/opf_api/routes.py:192-220](../api/src/opf_api/routes.py#L192-L220) — lifted, but the `HTTPException` it raises today becomes a plain `RuntimeError` (notebook context, no FastAPI). The route handler wraps the new function and re-raises as 502.
+- `TokenVaultClient.from_env` from [api/src/opf_api/vault_tokens.py:67-87](../api/src/opf_api/vault_tokens.py#L67-L87) — imported directly by cell 10.3.
 - Fixture + raw-jsonl shapes are already exercised in cells 4–6 of the existing notebook; cell 10.4 just re-reads the files written by cell 6.
 
 ## Verification

@@ -14,11 +14,11 @@ You have prior experience with GLiNER (per the original plan doc). That makes th
 
 ## Files
 
-- **Add** `eval/src/opf_eval/detectors/gliner.py` — `GLiNERDetector` class
-- **Modify** `eval/src/opf_eval/detectors/__init__.py` — export
-- **Modify** `eval/src/opf_eval/runner.py` — register `gliner` name
+- **Add** [`eval/src/opf_eval/detectors/gliner.py`](../eval/src/opf_eval/detectors/gliner.py) — `GLiNERDetector` class
+- **Modify** [`eval/src/opf_eval/detectors/__init__.py`](../eval/src/opf_eval/detectors/__init__.py) — export
+- **Modify** [`eval/src/opf_eval/runner.py`](../eval/src/opf_eval/runner.py) — register `gliner` name
 - **Modify** `eval/src/opf_eval/taxonomy.py` — add `gliner` column. GLiNER labels are user-defined prompts, so the canonical map decides what we ask for.
-- **Modify** `eval/pyproject.toml` — add `gliner`
+- **Modify** [`eval/pyproject.toml`](../eval/pyproject.toml) — add `gliner`
 
 ## Implementation notes
 

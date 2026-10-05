@@ -27,8 +27,8 @@ Side-quest specs for extending the OPF vs Skyflow benchmark. Each plan is brief
 
 ## Conventions
 
-- New detectors register in `opf_eval.detectors.registry` (see `builtin.py`); `register_gliner_model` / `register_hf_token_classifier` cover the common shapes
-- New label vocabularies (detector or dataset) go in `taxonomy/vocabs.py`, or are registered at runtime with `taxonomy.register_vocab`
+- New detectors register in `opf_eval.detectors.registry` (see [`builtin.py`](../eval/src/opf_eval/detectors/builtin.py)); `register_gliner_model` / `register_hf_token_classifier` cover the common shapes
+- New label vocabularies (detector or dataset) go in [`taxonomy/vocabs.py`](../eval/src/opf_eval/taxonomy/vocabs.py), or are registered at runtime with `taxonomy.register_vocab`
 - New datasets register with `opf_eval.datasets.register_dataset` (local file or HF id; `spans`, `privacy_mask` or `bio` schema)
 - Reports auto-pick up new detectors from the manifest
 
