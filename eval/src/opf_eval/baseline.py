@@ -158,14 +158,27 @@ def build(
     work_dir: Path | None = None,
     root: Path | None = None,
 ) -> Path:
-    """Sample, run every detector, and export the result as the baseline."""
+    """Sample, run every detector, and export the result as the baseline.
+
+    Works on CUDA, Apple Silicon (MPS) or CPU; the device is auto-detected.
+    """
+    import os
+
+    from . import nb
     from .fixtures import ensure_fixtures
     from .runner import autodetect_device, run
 
-    work = Path(work_dir or Path.cwd() / "baseline-build")
+    # Same as nb.setup(): keep OPF off Triton, which has no stable MPS support.
+    os.environ.setdefault("OPF_MOE_TRITON", "0")
+    if any(d.startswith("presidio") for d in detectors):
+        nb.ensure_spacy_model("en_core_web_lg")
+    # Default to the workspace's runs dir (gitignored in a checkout).
+    work = Path(work_dir or nb.workspace().runs / "baseline-build")
     fixtures, _ = ensure_fixtures(work / f"{dataset}_{n}_s{seed}.jsonl", n, dataset=dataset, seed=seed)
     run_dir = work / "run"
-    run(fixtures, list(detectors), run_dir, device=device or autodetect_device(), fresh=True)
+    dev = device or autodetect_device()
+    print(f"building baseline: {dataset} n={n} seed={seed} on {dev}: {', '.join(detectors)}")
+    run(fixtures, list(detectors), run_dir, device=dev, fresh=True)
     return export(fixtures, run_dir, detectors=detectors, root=root)
 
 

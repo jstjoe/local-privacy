@@ -9,7 +9,7 @@ identical text hash and the same detector options; otherwise the notebook runs
 the detector as usual. No fixture text is stored, only per-record hashes and
 the detectors' spans.
 
-To (re)build the default one, on a machine with a GPU:
+To (re)build the default one, on a machine with a GPU or an Apple Silicon Mac:
 
 ```sh
 python -m opf_eval.baseline build --n 200
