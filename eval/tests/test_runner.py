@@ -89,7 +89,10 @@ def test_runner_run_writes_raw_file_and_invokes_cleanup(tmp_path: Path):
     out = tmp_path / "out"
 
     pytest.importorskip("presidio_analyzer")
-    pytest.importorskip("spacy")
+    spacy = pytest.importorskip("spacy")
+    # Without the model Presidio downloads about 400 MB, and tests never download models.
+    if not spacy.util.is_package("en_core_web_lg"):
+        pytest.skip("spaCy model en_core_web_lg is not installed (python -m spacy download en_core_web_lg)")
 
     run(fixtures=fx, detector_names=["presidio"], out_dir=out, device="cpu")
 

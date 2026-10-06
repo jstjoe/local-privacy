@@ -15,13 +15,28 @@ FAMILY_NAME, ...) wherever both the detector and the dataset distinguish them.
 The manifest carries the dataset and its annotated labels; the report derives
 label sets from there. `--canonical-labels` overrides both views to a single
 explicit set (use for one-category drilldowns).
+
+The fixtures' meta sidecar says where the gold came from (plan 13):
+
+1. With `"gold": "none"` (your own text or files from `fixtures.from_texts`
+   or `from_documents`) there is nothing to score against. The report says
+   so and points to silver labels and reviews instead of printing precision
+   and recall. Coverage and span counts are still shown.
+2. With `"gold": "silver"` (from `silver.generate`) the report is titled
+   "Silver-label report" and names under the title the LLMs that made the
+   labels because the scores then measure agreement with those LLMs and not
+   ground truth. Pass the silver file as `fixtures` (`--fixtures`) because
+   the run's manifest records the unlabeled file the detectors ran on.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
+from collections.abc import Iterable
 from pathlib import Path
 
+from .io import GOLD_NONE, GOLD_SILVER, read_meta
 from .nervaluate_metrics import SemEvalResult
 from .scoring import Run, build_pairs, coverage, scope_for, score_detector
 from .taxonomy import ALL_LABELS, LEVELS, check_level
@@ -189,12 +204,132 @@ def _coverage_section(run: Run) -> list[str]:
     return lines
 
 
+def _gold_kind(meta: dict | None) -> str | None:
+    """The meta's gold source: "none", "silver", or None for real gold."""
+    return (meta or {}).get("gold")
+
+
+def silver_callout(meta: dict) -> str:
+    """The note under a silver-label report's title naming the labelers."""
+    src = meta.get("gold_source") or {}
+    labelers = src.get("labelers") or src.get("models") or ["unrecorded LLMs"]
+    who = ", ".join(str(x) for x in labelers)
+    if len(labelers) > 1:
+        how = f", merged by {src.get('merge') or 'an unrecorded rule'}"
+    else:
+        how = ""
+    return (
+        f"> Gold spans here are LLM silver labels from {who}{how}."
+        " Scores measure agreement with those labels, not ground truth."
+    )
+
+
+def _span_counts_section(run: Run) -> list[str]:
+    lines = [
+        "## Detected spans",
+        "",
+        "| detector | spans | records with spans |",
+        "|---|---|---|",
+    ]
+    for det in run.detectors:
+        rows = [r for r in run.predictions[det].values() if not r.get("error")]
+        n_spans = sum(len(r.get("spans") or []) for r in rows)
+        with_spans = sum(1 for r in rows if r.get("spans"))
+        lines.append(f"| {det} | {n_spans} | {with_spans} |")
+    lines.append("")
+    return lines
+
+
+def unlabeled_note(run: Run) -> str:
+    """The short report for fixtures without gold: no scores, just pointers."""
+    m = run.manifest
+    lines = [
+        f"# PII detector run — {m.get('started_at', '')}",
+        "",
+        f"- fixtures: `{m.get('fixtures')}` ({m.get('n_examples', len(run.fixtures))} examples)",
+        f"- detectors: {', '.join(run.detectors) or '—'}",
+        "",
+        (
+            "> **No gold labels, so no precision or recall.** These fixtures were written from"
+            " your own text or files and have no gold spans to score against. Estimate the"
+            " scores another way (notebook 07):"
+        ),
+        ">",
+        (
+            "> 1. **Silver labels**: `silver.generate(fixtures, labelers, out)` has LLMs annotate"
+            " the records; then rebuild this report with `fixtures=out` (CLI: `--fixtures`)."
+        ),
+        (
+            "> 2. **LLM review**: `opf_eval.review.llm.review_run(run_dir, reviewer)` judges each"
+            " detected span and looks for missed PII."
+        ),
+        (
+            "> 3. **Classifier review**: `opf_eval.review.classifier.review_run(run_dir, backend)`"
+            " asks a local decision model about each span and segment."
+        ),
+        "",
+    ]
+    lines.extend(_span_counts_section(run))
+    lines.extend(_coverage_section(run))
+    return "\n".join(lines)
+
+
+def silver_failed_note(run: Run, fx_path: Path, meta: dict) -> str:
+    """The short report for silver fixtures where no record got labels.
+
+    Every labeler failed on every record (a bad key, an outage, a model
+    that refuses), so there is nothing to score. Printing F1 0.000 would
+    read like a real result.
+    """
+    m = run.manifest
+    n_errors = meta.get("n_errors") or {}
+    files = meta.get("labeler_files") or {}
+    lines = [
+        f"# Silver-label report — {m.get('started_at', '')}",
+        "",
+        silver_callout(meta),
+        "",
+        f"- fixtures: `{fx_path}` ({len(meta.get('error_ids') or [])} records)",
+        f"- detectors: {', '.join(run.detectors) or '—'}",
+        "",
+        (
+            "> **No silver labels, so no scores.** Every labeler failed on every record, so"
+            " no record has silver gold spans to score against. Each labeler's file holds the"
+            " error for each record. Fix the cause and run `silver.generate` again."
+        ),
+        "",
+    ]
+    if n_errors:
+        lines.extend(["| labeler | errors | file |", "|---|---|---|"])
+        for name, n in n_errors.items():
+            lines.append(f"| {name} | {n} | `{files.get(name, '—')}` |")
+        lines.append("")
+    lines.extend(_span_counts_section(run))
+    return "\n".join(lines)
+
+
+def _detector_selection(detectors: Iterable[str] | None) -> list[str] | None:
+    """The requested detector names in order without duplicates, or None for all.
+
+    A bare string counts as one name. An empty selection raises `ValueError`
+    because a report with no detectors has nothing to show.
+    """
+    if detectors is None:
+        return None
+    names = [detectors] if isinstance(detectors, str) else list(detectors)
+    names = list(dict.fromkeys(n.strip() for n in names if n.strip()))
+    if not names:
+        raise ValueError("detectors is empty; pass None to report every detector")
+    return names
+
+
 def build_report(
     run_dir: Path,
     fixtures: Path | None = None,
     *,
     canonical_labels: tuple[str, ...] | None = None,
     level: str = "coarse",
+    detectors: Iterable[str] | None = None,
 ) -> str:
     """Render the Markdown report for a run directory.
 
@@ -202,9 +337,47 @@ def build_report(
     canonical_labels: when given, force both fair and raw views to this
         explicit label set (degenerates the two views into one).
     level: `coarse` (default) or `fine`.
+    detectors: when given, limit every section to these detectors. The
+        report keeps the run's detector order. A name the run has no
+        predictions for raises `ValueError`.
+
+    Fixtures without gold (meta `"gold": "none"`) get a short note instead
+    of scores (no exception). Silver fixtures (`"gold": "silver"`) get a
+    "Silver-label report" title, a callout naming the labelers, and are
+    scored on the labels the labelers were asked for. Records that every
+    labeler failed on (meta `error_ids`) are left out of silver scores; when
+    that leaves no record, a short note replaces the scores.
     """
     check_level(level)
-    run = Run.load(run_dir, fixtures)
+    run_dir = Path(run_dir)
+    fx_path = Path(fixtures) if fixtures else Path(
+        json.loads((run_dir / "manifest.json").read_text())["fixtures"]
+    )
+    fx_meta = read_meta(fx_path)
+    gold = _gold_kind(fx_meta)
+    wanted = _detector_selection(detectors)
+    run = Run.load(run_dir, fx_path, detectors=wanted)
+    if wanted is not None:
+        unknown = [d for d in wanted if d not in run.detectors]
+        if unknown:
+            available = Run.load(run_dir, fx_path).detectors
+            raise ValueError(
+                f"no predictions in {run_dir} for detector(s) {', '.join(unknown)};"
+                f" the run has {', '.join(available) or 'none'}"
+            )
+    if gold == GOLD_NONE:
+        return unlabeled_note(run)
+    if gold == GOLD_SILVER and fx_meta.get("labels"):
+        # The silver labels annotate exactly what the labelers were asked
+        # for, which may be narrower than the targets the detectors ran on.
+        run.manifest = {**run.manifest, "labels": list(fx_meta["labels"])}
+    # Records every labeler failed on have empty silver gold. Scoring them
+    # would charge detectors a false positive for every span they found.
+    unlabelled_ids = set(fx_meta.get("error_ids") or []) if gold == GOLD_SILVER else set()
+    if unlabelled_ids:
+        run.fixtures = [r for r in run.fixtures if r["id"] not in unlabelled_ids]
+        if not run.fixtures:
+            return silver_failed_note(run, fx_path, fx_meta)
     detectors = run.detectors
     manifest = run.manifest
     ds_labels = run.dataset_labels(level)
@@ -212,15 +385,24 @@ def build_report(
 
     dataset = manifest.get("dataset") or "(unregistered)"
     vocab = manifest.get("vocab_key")
-    lines: list[str] = [
-        f"# PII detector benchmark — {manifest['started_at']}",
-        "",
+    title = "Silver-label report" if gold == GOLD_SILVER else "PII detector benchmark"
+    lines: list[str] = [f"# {title} — {manifest['started_at']}", ""]
+    if gold == GOLD_SILVER:
+        lines.extend([silver_callout(fx_meta), ""])
+    lines.extend([
         f"- dataset: `{dataset}`" + (f" (vocab `{vocab}`)" if vocab else ""),
-        f"- fixtures: `{manifest['fixtures']}` ({manifest['n_examples']} examples)",
+        (
+            f"- fixtures: `{fx_path if gold == GOLD_SILVER else manifest['fixtures']}`"
+            f" ({manifest['n_examples']} examples)"
+        ),
         f"- detectors: {', '.join(detectors)}",
         f"- label level: `{level}`",
+        *(
+            [f"- left out: {len(unlabelled_ids)} records that no labeler could label"]
+            if unlabelled_ids else []
+        ),
         "",
-    ]
+    ])
 
     fair_lines, _, _ = _semeval_view(
         run, detectors, level=level, view="fair", labels=labels,
@@ -292,13 +474,25 @@ def main() -> None:
             f" Available: {', '.join(ALL_LABELS)}."
         ),
     )
+    ap.add_argument(
+        "--detectors",
+        default="",
+        help=(
+            "Optional comma-separated detector names. When set, the report"
+            " covers only these detectors. Default empty = every detector in the run."
+        ),
+    )
     args = ap.parse_args()
+    detectors = [x.strip() for x in args.detectors.split(",") if x.strip()] or None
     canonicals = (
         tuple(x.strip() for x in args.canonical_labels.split(",") if x.strip())
         if args.canonical_labels
         else None
     )
-    md = build_report(args.run, args.fixtures, canonical_labels=canonicals, level=args.level)
+    md = build_report(
+        args.run, args.fixtures,
+        canonical_labels=canonicals, level=args.level, detectors=detectors,
+    )
     out = args.out or (args.run / "report.md")
     out.write_text(md)
     print(f"wrote {out}")
