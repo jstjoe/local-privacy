@@ -20,6 +20,7 @@ general PII-detection benchmark and a content series. That needs:
 | 3 | Public benchmark loaders (below) | next |
 | 4 | New detectors (below) | next |
 | 5 | Cross-benchmark report: detectors × benchmarks in one table | after 3 + 4 |
+| 6 | Evaluate on your own data without gold labels ([plan 13](13-unlabeled-data-notebook.md), notebook 07) | **PRs 1–4 implemented**; Bedrock (PR 5) and Jev parked |
 
 ### What step 1 changed (for anyone extending the harness)
 
