@@ -229,9 +229,4 @@ Tests use stub LLM and classifier clients. No test calls a hosted API.
 4. Clef-flash targets a Colab L4 first. A T4 is tried with 8-bit weights. The TPU v5e-1 runtime is not targeted.
 5. Colab and OpenAI and Anthropic may see the data during internal development. Bedrock and Vertex support exists so this can be tightened before a wider rollout.
 6. Vertex AI uses the team's GCP project from `GOOGLE_CLOUD_PROJECT` with US regions as described in Part 3.
-7. Bedrock is parked until an AWS account and keys exist. It is PR 5.
-
-## Open questions
-
-1. Which AWS region should Bedrock use once the account exists?
-2. Should the OpenAI models on Bedrock use a Bedrock API key or AWS request signing?
+7. Bedrock is parked until an AWS account exists. Its region and authentication are decided then. It is PR 5.
