@@ -10,8 +10,7 @@ os.environ.setdefault("OPF_MOE_TRITON", "0")
 
 from opf._api import OPF  # noqa: E402
 
-from ..taxonomy import opf_to_canonical
-from .base import DetectorResult, Span
+from .base import DetectorResult, Span, error_result, make_span
 
 
 class OPFDetector:
@@ -44,18 +43,10 @@ class OPFDetector:
         try:
             result = self._opf.redact(text)
         except Exception as e:  # noqa: BLE001
-            return {"spans": [], "latency_ms": (time.perf_counter() - t0) * 1000, "error": repr(e)}
+            return error_result(t0, e)
         latency_ms = (time.perf_counter() - t0) * 1000
-        spans: list[Span] = []
-        for s in result.detected_spans:  # type: ignore[union-attr]
-            canonical = opf_to_canonical(s.label) or s.label.upper()
-            spans.append(
-                {
-                    "label": canonical,
-                    "raw_label": s.label,
-                    "start": int(s.start),
-                    "end": int(s.end),
-                    "text": s.text,
-                }
-            )
+        spans: list[Span] = [
+            make_span("opf", s.label, s.start, s.end, s.text)  # type: ignore[misc]
+            for s in result.detected_spans  # type: ignore[union-attr]
+        ]
         return {"spans": spans, "latency_ms": latency_ms, "error": None}

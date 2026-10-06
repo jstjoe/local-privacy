@@ -16,10 +16,10 @@ Using LM Studio means: fully local, free, OpenAI-compatible API on `localhost:12
 ## Files
 
 - **Add** `eval/src/opf_eval/detectors/lmstudio.py` — `LMStudioDetector` class
-- **Modify** `eval/src/opf_eval/detectors/__init__.py` — export
-- **Modify** `eval/src/opf_eval/runner.py` — register `lmstudio` name + `--lmstudio-model` arg
+- **Modify** [`eval/src/opf_eval/detectors/__init__.py`](../eval/src/opf_eval/detectors/__init__.py) — export
+- **Modify** [`eval/src/opf_eval/runner.py`](../eval/src/opf_eval/runner.py) — register `lmstudio` name + `--lmstudio-model` arg
 - **Modify** `eval/src/opf_eval/taxonomy.py` — add canonical-label name list for prompting
-- **Modify** `eval/pyproject.toml` — add `openai>=1.40`
+- **Modify** [`eval/pyproject.toml`](../eval/pyproject.toml) — add `openai>=1.40`
 
 ## Architecture
 

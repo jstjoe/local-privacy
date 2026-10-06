@@ -62,7 +62,7 @@ Skyflow is the only detector where the API is just a proxy — credentials read 
 
 ### Detector registry
 
-`api/src/opf_api/registry.py`:
+[`api/src/opf_api/registry.py`](../api/src/opf_api/registry.py):
 
 ```python
 @dataclass

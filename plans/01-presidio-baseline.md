@@ -12,11 +12,11 @@ Presidio is the de-facto open-source PII baseline (Apache 2.0, regex + spaCy NER
 
 ## Files
 
-- **Add** `eval/src/opf_eval/detectors/presidio.py` — `PresidioDetector` class
-- **Modify** `eval/src/opf_eval/detectors/__init__.py` — export
-- **Modify** `eval/src/opf_eval/runner.py` — register `presidio` name in `_build_detector`
+- **Add** [`eval/src/opf_eval/detectors/presidio.py`](../eval/src/opf_eval/detectors/presidio.py) — `PresidioDetector` class
+- **Modify** [`eval/src/opf_eval/detectors/__init__.py`](../eval/src/opf_eval/detectors/__init__.py) — export
+- **Modify** [`eval/src/opf_eval/runner.py`](../eval/src/opf_eval/runner.py) — register `presidio` name in `_build_detector`
 - **Modify** `eval/src/opf_eval/taxonomy.py` — add `presidio` column to `CANONICAL_MAP` + `presidio_to_canonical()` helper
-- **Modify** `eval/pyproject.toml` — add `presidio-analyzer`, `presidio-anonymizer`
+- **Modify** [`eval/pyproject.toml`](../eval/pyproject.toml) — add `presidio-analyzer`, `presidio-anonymizer`
 
 ## Implementation notes
 

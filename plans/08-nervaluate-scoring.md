@@ -2,7 +2,7 @@
 
 ## Why
 
-Today's metrics (`eval/src/opf_eval/metrics.py`) collapse all wrong predictions into FP and all missed gold into FN — a single greedy 1:1 match per (text, canonical) pair. That tells us a detector's F1, but not *why* it's losing points: is it missing entities, mis-classifying types, or returning spurious extras? When [Presidio scores 0.365 F1](../RESULTS.md), we have no diagnostic answer.
+Today's metrics ([`eval/src/opf_eval/metrics.py`](../eval/src/opf_eval/metrics.py)) collapse all wrong predictions into FP and all missed gold into FN — a single greedy 1:1 match per (text, canonical) pair. That tells us a detector's F1, but not *why* it's losing points: is it missing entities, mis-classifying types, or returning spurious extras? When [Presidio scores 0.365 F1](../RESULTS.md), we have no diagnostic answer.
 
 [`nervaluate`](https://github.com/MantisAI/nervaluate) implements the [SemEval 2013 Task 9.1](https://davidsbatista.net/assets/documents/others/semeval_2013-task-9_1-evaluation-metrics.pdf) NER evaluation scheme. It decomposes errors into 5 categories (COR, INC, PAR, MIS, SPU) across 4 schemas (Strict / Exact / Partial / Type), giving a principled error-attribution view. The "Type" schema also gives a cleaner answer to OPF's greedy-span problem (`"2040-06-02 00:00:00"` as one DATE) than our current "merged-adjacent" hack.
 
@@ -15,7 +15,7 @@ In:
 - New metrics module that runs nervaluate per detector/fixture set
 - New report section: 4-schema headline + per-error-type breakdown per detector
 - Reuses existing canonical-label mapping and restricted-to-OPF-8 filter
-- **Remove** the merged-adjacent granularity-neutral view from `report.py` and `RESULTS.md` (Type schema replaces it)
+- **Remove** the merged-adjacent granularity-neutral view from `report.py` and [`RESULTS.md`](../RESULTS.md) (Type schema replaces it)
 
 Out:
 
@@ -106,7 +106,7 @@ The COR/INC/PAR/MIS/SPU table is the part that's net-new diagnostic value — it
 
 ### Type schema replaces merged-adjacent
 
-The Type schema (any overlap + matching type = COR) is the principled equivalent of our merged-adjacent hack — both reward "got the type right, boundary differs from gold". This PR removes `_merge_adjacent` from `report.py` and the corresponding "granularity-neutral" table from `RESULTS.md`. The SemEval Type column subsumes them.
+The Type schema (any overlap + matching type = COR) is the principled equivalent of our merged-adjacent hack — both reward "got the type right, boundary differs from gold". This PR removes `_merge_adjacent` from `report.py` and the corresponding "granularity-neutral" table from [`RESULTS.md`](../RESULTS.md). The SemEval Type column subsumes them.
 
 Confirmed empirically on the 1k sample (after implementation): OPF merged-adjacent F1 0.825 ↔ Type F1 0.837 (close, both granularity-tolerant). Presidio shows a larger gap (Type is more generous about wrong-boundary matches like `example.com` inside `joe@example.com`) — that's a feature, not a bug.
 

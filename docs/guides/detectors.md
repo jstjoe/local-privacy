@@ -13,8 +13,11 @@ Detectors are registered backends, lazy-loaded on first use unless eager-loaded 
 | `gliner_gretel_small` | `gretelai/gretel-gliner-bi-small-v1.0` | Uses Gretel's label space. |
 | `gliner_gretel_large` | `gretelai/gretel-gliner-bi-large-v1.0` | Uses Gretel's label space. |
 | `ai4privacy_modernbert` | ModernBERT-based multilingual anonymiser (~150M params) | Requires `transformers`. 8 languages (en, fr, de, es, it, nl, hi, te). |
+| `openmed` | OpenMed PII, per-language DeBERTa models | Registered only if `openmed` is installed. |
 
 Hit `GET /api/detectors` to see what's currently registered in your deployment.
+
+The list comes from the benchmark harness's detector registry (`opf_eval.detectors.registry`). A detector is registered when its Python dependencies are installed, so any model added there for benchmarking becomes available here too. `opf_calibrated` and `skyflow_full` are benchmark-only variants and aren't exposed.
 
 ## Eager-loading
 

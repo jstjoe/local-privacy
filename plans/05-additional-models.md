@@ -26,7 +26,7 @@ Models to add:
 ## Files
 
 - **Modify** [eval/src/opf_eval/runner.py](../eval/src/opf_eval/runner.py) — register five new detector names; thread `dataset_canonicals_set` for prompt restriction where applicable
-- **Modify** [eval/src/opf_eval/taxonomy.py](../eval/src/opf_eval/taxonomy.py) — add `gretel_gliner` and `openmed` columns; the ai4privacy model uses OpenPII vocab so its column is already populated
+- **Modify** [eval/src/opf_eval/taxonomy.py](../eval/src/opf_eval/taxonomy/) (now the `taxonomy/` package) — add `gretel_gliner` and `openmed` columns; the ai4privacy model uses OpenPII vocab so its column is already populated
 - **Add** [eval/src/opf_eval/detectors/ai4privacy.py](../eval/src/opf_eval/detectors/ai4privacy.py) — new detector class wrapping `transformers.pipeline("token-classification", ...)`
 - **Add** [eval/src/opf_eval/detectors/openmed.py](../eval/src/opf_eval/detectors/openmed.py) — new detector class wrapping `openmed[hf]`
 - **Modify** [eval/pyproject.toml](../eval/pyproject.toml) — add `transformers>=4.40` (likely already pulled in transitively) and `openmed[hf]>=…`

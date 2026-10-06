@@ -129,15 +129,15 @@ For `label_token`, the same closure semantics apply but the underlying vault pro
 
 | File | Change |
 |---|---|
-| [notebooks/pii_detector_comparison.ipynb](notebooks/pii_detector_comparison.ipynb) | **New `# Use` H1** + 5 numbered subsections (intro md, config md+code, sanitize md+code, index md+code, compare md+code, verdict md). |
-| [notebooks/README.md](notebooks/README.md) | One-paragraph mention of the new section + link to the BM25 dep note. |
+| [notebooks/pii_detector_comparison.ipynb](https://github.com/jstjoe/local-privacy/blob/6f877b85f8166d8e0103b933848f1b462e5b83c5/notebooks/pii_detector_comparison.ipynb) | **New `# Use` H1** + 5 numbered subsections (intro md, config md+code, sanitize md+code, index md+code, compare md+code, verdict md). |
+| [notebooks/README.md](../notebooks/README.md) | One-paragraph mention of the new section + link to the BM25 dep note. |
 | Setup cell (cell 3 in the current ipynb) | Add `_run(f"{PIP} install -q rank-bm25", msg="install rank-bm25 (Use section)")` after the existing installs. |
 | Setup cell import-confirmation loop | Add `"rank_bm25"` to the post-install sanity check so a failing install surfaces immediately. |
 
 ### Reused code
 
-- [eval/src/opf_eval/transforms.py:render_modes](eval/src/opf_eval/transforms.py) — section 2 calls it per doc and per query with `modes=[..., "label_token"]`. The cached `token_vault_client` from section 2 of `# Sanitization` is reused (single vault instance for the whole notebook).
-- [eval/src/opf_eval/runner.py:_build_detector](eval/src/opf_eval/runner.py) — section 1 picks a detector for query sanitization. Defaults to `presidio` for the same reasons as the determinism check (fast, CPU-only).
+- [eval/src/opf_eval/transforms.py:render_modes](../eval/src/opf_eval/transforms.py) — section 2 calls it per doc and per query with `modes=[..., "label_token"]`. The cached `token_vault_client` from section 2 of `# Sanitization` is reused (single vault instance for the whole notebook).
+- [eval/src/opf_eval/runner.py:_build_detector](../eval/src/opf_eval/runner.py) — section 1 picks a detector for query sanitization. Defaults to `presidio` for the same reasons as the determinism check (fast, CPU-only).
 - The Sanitization section's `TOKEN_VAULT` global — referenced directly. Section 1 of `# Use` prints "(vault not configured — `label_token` mode will be skipped)" when `TOKEN_VAULT is None` and continues with the other 3 modes + plain baseline.
 
 ## Verification

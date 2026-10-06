@@ -19,13 +19,13 @@ This is the single most informative experiment we haven't run.
 - **Add** `eval/src/opf_eval/finetune/prepare_data.py` — converts PII-Masking-300k to OPF training JSONL
 - **Add** `eval/src/opf_eval/finetune/run_train.sh` — wraps `opf train` with our hyperparams
 - **Add** `eval/src/opf_eval/finetune/README.md` — repro instructions
-- **Modify** `eval/src/opf_eval/detectors/opf.py` — already accepts `model=` path, just confirm the runner can pass it
-- **Modify** `eval/src/opf_eval/runner.py` — register `opf_finetuned`, take `--opf-checkpoint` arg
+- **Modify** [`eval/src/opf_eval/detectors/opf.py`](../eval/src/opf_eval/detectors/opf.py) — already accepts `model=` path, just confirm the runner can pass it
+- **Modify** [`eval/src/opf_eval/runner.py`](../eval/src/opf_eval/runner.py) — register `opf_finetuned`, take `--opf-checkpoint` arg
 - **Add** `eval/data/finetuning/{train,val,test}.jsonl` — gitignored
 
 ## Data preparation
 
-OPF training format (per [privacy-filter/FINETUNING.md](../privacy-filter/FINETUNING.md) and demo at [examples/data/finetuning_secret_demo/train.jsonl](../privacy-filter/examples/data/finetuning_secret_demo/train.jsonl)):
+OPF training format (per [privacy-filter/FINETUNING.md](https://github.com/openai/privacy-filter/blob/main/FINETUNING.md) and demo at [examples/data/finetuning_secret_demo/train.jsonl](https://github.com/openai/privacy-filter/blob/main/examples/data/finetuning_secret_demo/train.jsonl)):
 
 ```json
 {"text": "...", "label": [{"category": "private_email", "start": 12, "end": 27}, ...]}

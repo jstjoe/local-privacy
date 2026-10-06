@@ -24,21 +24,28 @@ from __future__ import annotations
 
 import argparse
 import json
-from collections.abc import Iterable
 from pathlib import Path
 
-from .datasets import DEFAULT_DATASET, get as get_dataset_config, names as dataset_names
+from .datasets import annotated_labels, get as get_dataset_config, names as dataset_names
+from .datasets import observed_labels
+from .io import iter_jsonl as _read_jsonl
 from .nervaluate_metrics import score as semeval_score
-from .taxonomy import dataset_canonicals
+from .taxonomy import parent, vocab_labels
 
 
-def _read_jsonl(path: Path) -> Iterable[dict]:
-    with path.open() as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            yield json.loads(line)
+def _run_labels(out_dir: Path, fixtures_path: Path, dataset: str | None) -> list[str]:
+    """Coarse labels to build a recipe over: the named dataset's, else the
+    run manifest's, else those observed in the fixtures' gold spans."""
+    if dataset:
+        return sorted(annotated_labels(get_dataset_config(dataset), level="coarse"))
+    manifest_path = out_dir / "manifest.json"
+    if manifest_path.exists():
+        manifest = json.loads(manifest_path.read_text())
+        if manifest.get("labels") is not None:
+            return sorted({parent(lbl) for lbl in manifest["labels"]})
+        if manifest.get("vocab_key"):
+            return sorted(vocab_labels(manifest["vocab_key"], "coarse"))
+    return sorted({parent(lbl) for lbl in observed_labels(_read_jsonl(fixtures_path))})
 
 
 def _register_in_manifest(out_dir: Path, name: str) -> None:
@@ -207,7 +214,7 @@ def run_category_best(
     out_dir: Path,
     fixtures_path: Path,
     *,
-    dataset: str = DEFAULT_DATASET,
+    dataset: str | None = None,
     excluded_detectors: set[str] | None = None,
     ensemble_name: str = "ensemble_category_best",
     fit_ids: set[str] | None = None,
@@ -216,11 +223,14 @@ def run_category_best(
 
     `fit_ids` is forwarded to `build_recipe_category_best` so callers can
     fit the recipe on one half of their fixtures and score on the other —
-    pass the fit-half ids here, then run `report.build_report` against a
-    fixtures file containing only the score-half ids.
+    pass the fit-half ids here, then score only the other half (e.g.
+    `scoring.score_detector(run, name, ids=score_ids)`).
+
+    `dataset` is optional: by default the labels come from the run manifest.
+    Recipes are built at the coarse level; output spans keep their
+    `fine_label`, so the ensemble can still be scored at `level="fine"`.
     """
-    cfg = get_dataset_config(dataset)
-    labels = sorted(dataset_canonicals(cfg.vocab_key))
+    labels = _run_labels(out_dir, fixtures_path, dataset)
     recipe, per_label_f1 = build_recipe_category_best(
         out_dir,
         fixtures_path,
@@ -232,14 +242,29 @@ def run_category_best(
     return out_path, recipe, per_label_f1
 
 
+def format_recipe(
+    recipe: dict[str, str], per_label_f1: dict[str, dict[str, float]], *, top: int = 3
+) -> str:
+    """Human-readable recipe: winner per label plus the top candidates."""
+    lines = []
+    for lbl in sorted(recipe):
+        choices = sorted(per_label_f1[lbl].items(), key=lambda kv: -kv[1])
+        head = ", ".join(f"{d}={f:.2f}" for d, f in choices[:top])
+        lines.append(f"  {lbl:<14} -> {recipe[lbl]:<24}  (candidates: {head})")
+    skipped = sorted(set(per_label_f1) - set(recipe))
+    if skipped:
+        lines.append(f"  skipped (no detector with F1 > 0): {', '.join(skipped)}")
+    return "\n".join(lines)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--out-dir", required=True, type=Path,
                     help="run directory containing raw_<detector>.jsonl files")
     ap.add_argument("--fixtures", required=True, type=Path,
                     help="JSONL with gold spans (the same file fed to runner.run)")
-    ap.add_argument("--dataset", default=DEFAULT_DATASET, choices=dataset_names(),
-                    help=f"dataset name for label vocab (default: {DEFAULT_DATASET})")
+    ap.add_argument("--dataset", default=None, choices=dataset_names(),
+                    help="dataset name for the label set (default: read from the run manifest)")
     ap.add_argument("--strategy", default="category_best",
                     choices=["category_best"],
                     help="ensemble strategy")
@@ -262,10 +287,7 @@ def main() -> None:
         raise ValueError(f"unknown strategy: {args.strategy}")
 
     print(f"recipe ({args.strategy}):")
-    for lbl in sorted(recipe):
-        choices = sorted(per_label_f1[lbl].items(), key=lambda kv: -kv[1])
-        head = ", ".join(f"{d}={f:.2f}" for d, f in choices[:3])
-        print(f"  {lbl:<14} -> {recipe[lbl]:<24}  (candidates: {head})")
+    print(format_recipe(recipe, per_label_f1))
     print(f"\nwrote {out_path}")
 
 

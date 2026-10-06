@@ -8,39 +8,23 @@ Two scoring views per detector:
   Labels a detector doesn't support count as misses; reflects real-world
   out-of-the-box coverage.
 
-Manifest carries `dataset` (registry name); the report defaults the per-
-detector label sets from there. `--canonical-labels` overrides both views
-to a single explicit set (use for one-category drilldowns).
+`level="coarse"` (default) scores the 15 top-level categories;
+`level="fine"` keeps sub-types (GOV_ID vs BANK_ACCOUNT, GIVEN_NAME vs
+FAMILY_NAME, ...) wherever both the detector and the dataset distinguish them.
+
+The manifest carries the dataset and its annotated labels; the report derives
+label sets from there. `--canonical-labels` overrides both views to a single
+explicit set (use for one-category drilldowns).
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 
-from .datasets import DEFAULT_DATASET, get as get_dataset_config
 from .nervaluate_metrics import SemEvalResult
-from .nervaluate_metrics import score as semeval_score
-from .taxonomy import (
-    CANONICAL_LABELS,
-    dataset_canonicals,
-    fair_labels,
-)
-
-
-def _load_jsonl(path: Path) -> list[dict]:
-    out = []
-    with path.open() as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                out.append(json.loads(line))
-    return out
-
-
-def _index(records: list[dict], key: str = "id") -> dict[str, dict]:
-    return {r[key]: r for r in records}
+from .scoring import Run, build_pairs, coverage, scope_for, score_detector
+from .taxonomy import ALL_LABELS, LEVELS, check_level
 
 
 def _fmt_per_label(metrics: dict[str, float | int]) -> str:
@@ -53,43 +37,10 @@ def _fmt_per_label(metrics: dict[str, float | int]) -> str:
     )
 
 
-def _filter_spans(spans: list[dict], allow: set[str] | None) -> list[dict]:
-    if allow is None:
-        return spans
-    return [s for s in spans if s["label"] in allow]
-
-
-def _build_pairs(
-    detector: str,
-    fixture_records: list[dict],
-    detector_records: dict[str, dict[str, dict]],
-    *,
-    allow: set[str] | None,
-    language_filter: str | None = None,
-) -> tuple[list[tuple[list[dict], list[dict]]], list[float], int]:
-    pairs: list[tuple[list[dict], list[dict]]] = []
-    latencies: list[float] = []
-    errors = 0
-    for ex in fixture_records:
-        if language_filter and ex.get("language") != language_filter:
-            continue
-        rec = detector_records[detector].get(ex["id"])
-        if rec is None:
-            continue
-        if rec.get("error"):
-            errors += 1
-            continue
-        pred = _filter_spans(rec["spans"], allow)
-        gold = _filter_spans(ex["gold_spans"], allow)
-        pairs.append((pred, gold))
-        latencies.append(rec["latency_ms"])
-    return pairs, latencies, errors
-
-
 def _per_label_section(
     title: str,
     detectors: list[str],
-    semeval_by_det: dict[str, SemEvalResult],
+    semeval_by_det: dict[str, "SemEvalResult | None"],
     labels: list[str],
     *,
     schema: str = "ent_type",
@@ -114,28 +65,23 @@ def _per_label_section(
 
 
 def _semeval_view(
+    run: Run,
     detectors: list[str],
-    fixture_records: list[dict],
-    detector_records: dict[str, dict[str, dict]],
     *,
-    label_set_per_det: dict[str, set[str]],
+    level: str,
+    view: str,
+    labels: tuple[str, ...] | None,
     title: str,
     description: str,
-) -> tuple[list[str], dict[str, "SemEvalResult | None"]]:
-    """Render a SemEval section. `label_set_per_det` maps each detector to
-    the labels it's scored against — different per detector for the fair
-    view, identical for the raw view. Returns (lines, per-detector results)
-    so callers can reuse the per-tag breakdowns for follow-on tables."""
+) -> tuple[list[str], dict[str, "SemEvalResult | None"], dict[str, set[str]]]:
+    """Render a SemEval section. Returns (lines, per-detector results, per-
+    detector label scopes) so callers can reuse them for follow-on tables."""
     results: dict[str, "SemEvalResult | None"] = {}
+    scopes: dict[str, set[str]] = {}
     for det in detectors:
-        labels = label_set_per_det[det]
-        if not labels:
-            results[det] = None
-            continue
-        pairs, _, _ = _build_pairs(
-            det, fixture_records, detector_records, allow=labels,
-        )
-        results[det] = semeval_score(detector=det, pairs=pairs, tags=sorted(labels))
+        scope = scope_for(run, det, level=level, view=view, labels=labels)
+        scopes[det] = set(scope.labels)
+        results[det] = score_detector(run, det, level=level, view=view, labels=labels)
 
     lines: list[str] = [
         f"## {title}",
@@ -149,7 +95,7 @@ def _semeval_view(
     ]
     for det in detectors:
         r = results[det]
-        n = len(label_set_per_det[det])
+        n = len(scopes[det])
         if r is None:
             lines.append(f"| {det} | 0 | — | — | — | — |")
             continue
@@ -188,20 +134,20 @@ def _semeval_view(
     # Show which labels each detector was scored against (small per-row table).
     lines.extend(["### Label scopes", ""])
     for det in detectors:
-        labels = label_set_per_det[det]
+        labels_ = scopes[det]
         lines.append(
-            f"- **{det}** ({len(labels)}): {', '.join(sorted(labels)) if labels else '—'}"
+            f"- **{det}** ({len(labels_)}): {', '.join(sorted(labels_)) if labels_ else '—'}"
         )
     lines.append("")
-    return lines, results
+    return lines, results, scopes
 
 
 def _per_language_semeval_section(
+    run: Run,
     detectors: list[str],
-    fixture_records: list[dict],
-    detector_records: dict[str, dict[str, dict]],
     *,
-    label_set_per_det: dict[str, set[str]],
+    level: str,
+    labels: tuple[str, ...] | None,
     languages: list[str],
 ) -> list[str]:
     """Per-language SemEval Type-schema F1 (fair view: per-detector scope)."""
@@ -215,73 +161,69 @@ def _per_language_semeval_section(
         "|---|---|" + "|".join("---" for _ in detectors) + "|",
     ]
     for lang in languages:
-        n = sum(1 for ex in fixture_records if ex.get("language") == lang)
+        n = sum(1 for ex in run.fixtures if ex.get("language") == lang)
         row = [lang, str(n)]
         for det in detectors:
-            labels = label_set_per_det[det]
-            if not labels:
-                row.append("—")
-                continue
-            pairs, _, _ = _build_pairs(
-                det, fixture_records, detector_records,
-                allow=labels, language_filter=lang,
-            )
-            r = semeval_score(detector=det, pairs=pairs, tags=sorted(labels))
-            row.append(f"{r.by_schema['ent_type']['f1']:.3f}")
+            r = score_detector(run, det, level=level, view="fair", labels=labels, language=lang)
+            row.append("—" if r is None else f"{r.by_schema['ent_type']['f1']:.3f}")
         lines.append("| " + " | ".join(row) + " |")
+    lines.append("")
+    return lines
+
+
+def _coverage_section(run: Run) -> list[str]:
+    rows = coverage(run)
+    lines = [
+        "## Coverage",
+        "",
+        "Fixtures each detector was scored on. Errored records (the detector"
+        " raised or the API call failed) and fixtures with no prediction row"
+        " are excluded from every score above.",
+        "",
+        "| detector | scored | errors | missing |",
+        "|---|---|---|---|",
+    ]
+    for r in rows:
+        lines.append(f"| {r['detector']} | {r['scored']}/{r['n']} | {r['errors']} | {r['missing']} |")
     lines.append("")
     return lines
 
 
 def build_report(
     run_dir: Path,
-    fixtures: Path,
+    fixtures: Path | None = None,
     *,
     canonical_labels: tuple[str, ...] | None = None,
+    level: str = "coarse",
 ) -> str:
-    """canonical_labels: when given, force both fair and raw views to this
-    explicit label set (degenerates the two views into one). When None, the
-    label sets come from the manifest's `dataset` field — fair = per-detector
-    intersection, raw = full dataset vocabulary.
+    """Render the Markdown report for a run directory.
+
+    fixtures: defaults to the path recorded in the manifest.
+    canonical_labels: when given, force both fair and raw views to this
+        explicit label set (degenerates the two views into one).
+    level: `coarse` (default) or `fine`.
     """
-    manifest = json.loads((run_dir / "manifest.json").read_text())
-    detectors: list[str] = manifest["detectors"]
-    fixture_records = _load_jsonl(fixtures)
+    check_level(level)
+    run = Run.load(run_dir, fixtures)
+    detectors = run.detectors
+    manifest = run.manifest
+    ds_labels = run.dataset_labels(level)
+    labels = tuple(canonical_labels) if canonical_labels else None
 
-    detector_records: dict[str, dict[str, dict]] = {}
-    for det in detectors:
-        path = run_dir / f"raw_{det}.jsonl"
-        detector_records[det] = _index(_load_jsonl(path))
-
-    dataset_name = manifest.get("dataset") or DEFAULT_DATASET
-    vocab_key = manifest.get("vocab_key")
-    if not vocab_key:
-        # Older manifests: derive from the registry.
-        vocab_key = get_dataset_config(dataset_name).vocab_key
-
-    if canonical_labels:
-        # Override mode: both views use the same explicit set.
-        forced = set(canonical_labels)
-        fair_set = {det: forced for det in detectors}
-        raw_set = forced
-    else:
-        ds_canon = dataset_canonicals(vocab_key)
-        fair_set = {det: fair_labels(det, vocab_key) for det in detectors}
-        raw_set = ds_canon
-
+    dataset = manifest.get("dataset") or "(unregistered)"
+    vocab = manifest.get("vocab_key")
     lines: list[str] = [
         f"# PII detector benchmark — {manifest['started_at']}",
         "",
-        f"- dataset: `{dataset_name}` (vocab `{vocab_key}`)",
+        f"- dataset: `{dataset}`" + (f" (vocab `{vocab}`)" if vocab else ""),
         f"- fixtures: `{manifest['fixtures']}` ({manifest['n_examples']} examples)",
         f"- detectors: {', '.join(detectors)}",
+        f"- label level: `{level}`",
         "",
     ]
 
-    # SemEval — Fair view (per-detector scope)
-    fair_lines, _ = _semeval_view(
-        detectors, fixture_records, detector_records,
-        label_set_per_det=fair_set,
+    fair_lines, _, _ = _semeval_view(
+        run, detectors, level=level, view="fair", labels=labels,
         title="SemEval — Fair view (per-detector scope)",
         description=(
             "Each detector scored against the intersection of (dataset annotates,"
@@ -293,49 +235,52 @@ def build_report(
     )
     lines.extend(fair_lines)
 
-    # SemEval — Raw view (full dataset vocabulary). Reuse its per-tag results
-    # for the per-category breakdown below — the same scoring run.
-    raw_lines, raw_results = _semeval_view(
-        detectors, fixture_records, detector_records,
-        label_set_per_det={det: raw_set for det in detectors},
+    # Raw view (full dataset vocabulary). Its per-tag results feed the
+    # per-category breakdown below — the same scoring run.
+    raw_lines, raw_results, raw_scopes = _semeval_view(
+        run, detectors, level=level, view="raw", labels=labels,
         title="SemEval — Raw dataset view (full vocabulary)",
         description=(
             f"Every detector scored against the dataset's full annotated set"
-            f" ({len(raw_set)} canonical labels). Labels a detector doesn't"
-            f" support take zero recall here, so this view reflects out-of-the-"
-            f"box coverage rather than fairness."
+            f" ({len(ds_labels) if labels is None else len(labels)} canonical labels)."
+            f" Labels a detector doesn't support take zero recall here, so this"
+            f" view reflects out-of-the-box coverage rather than fairness."
         ),
     )
     lines.extend(raw_lines)
 
-    # Per-category breakdown — SemEval Type schema (any overlap + matching
-    # label), pulled from the raw view's per-tag results above.
+    # At fine level each detector's raw scope can differ (categories it can't
+    # split stay coarse), so the breakdown rows are the union.
+    breakdown_labels = sorted(set().union(*raw_scopes.values())) if raw_scopes else []
     lines.extend(_per_label_section(
         "Per-category breakdown — raw view (SemEval Type schema)",
         detectors,
         raw_results,
-        sorted(raw_set),
+        breakdown_labels,
     ))
 
-    # Per-language fair view
-    languages = sorted({
-        ex.get("language") for ex in fixture_records if ex.get("language")
-    })
+    languages = sorted({ex.get("language") for ex in run.fixtures if ex.get("language")})
     if languages:
         lines.extend(_per_language_semeval_section(
-            detectors, fixture_records, detector_records,
-            label_set_per_det=fair_set,
-            languages=languages,
+            run, detectors, level=level, labels=labels, languages=languages,
         ))
 
+    lines.extend(_coverage_section(run))
     return "\n".join(lines)
+
+
+# Kept for callers that imported the old private helper.
+_build_pairs = build_pairs
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--run", required=True, type=Path)
-    ap.add_argument("--fixtures", required=True, type=Path)
+    ap.add_argument("--fixtures", type=Path, default=None,
+                    help="fixtures file (default: the one recorded in the manifest)")
     ap.add_argument("--out", type=Path)
+    ap.add_argument("--level", choices=LEVELS, default="coarse",
+                    help="label granularity: coarse (15 categories) or fine (sub-types)")
     ap.add_argument(
         "--canonical-labels",
         default="",
@@ -344,7 +289,7 @@ def main() -> None:
             " the fair and raw views are forced to this explicit set (one-"
             " category drilldowns, e.g. 'DATE'). Default empty = per-detector"
             " fair view + dataset-wide raw view derived from manifest."
-            f" Available: {', '.join(CANONICAL_LABELS)}."
+            f" Available: {', '.join(ALL_LABELS)}."
         ),
     )
     args = ap.parse_args()
@@ -353,7 +298,7 @@ def main() -> None:
         if args.canonical_labels
         else None
     )
-    md = build_report(args.run, args.fixtures, canonical_labels=canonicals)
+    md = build_report(args.run, args.fixtures, canonical_labels=canonicals, level=args.level)
     out = args.out or (args.run / "report.md")
     out.write_text(md)
     print(f"wrote {out}")
