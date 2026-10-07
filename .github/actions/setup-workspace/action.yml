@@ -1,7 +1,6 @@
 name: Set up the uv workspace
 description: >-
-  Fetch privacy-filter at a pinned commit and install uv with Python 3.12.
-  Optionally sync the full workspace and install the spaCy model that
+  Install uv with Python 3.12. Optionally sync the full workspace and install the spaCy model that
   Presidio loads.
 
 inputs:
@@ -17,28 +16,10 @@ inputs:
       key ignores what was installed so a lint run that saved first would
       otherwise leave the full jobs with a cache that lacks torch.
     default: full
-  opf-ref:
-    description: >-
-      The openai/privacy-filter commit to check out. uv.lock records the opf
-      package at this commit so bump both together in one reviewed change.
-    default: f7f00ca7fb869683eb732c010299d901457f19c3
 
 runs:
   using: composite
   steps:
-    # privacy-filter is a uv workspace member that is gitignored here. uv
-    # reads every member before it runs anything so even lint needs it. The
-    # checkout is pinned because an upstream change to its dependencies would
-    # otherwise fail `uv lock --check` on every PR until someone relocks.
-    - name: Fetch OPF source at the pinned commit (workspace member)
-      shell: bash
-      env:
-        OPF_REF: ${{ inputs.opf-ref }}
-      run: |
-        git init -q privacy-filter
-        git -C privacy-filter fetch -q --depth 1 https://github.com/openai/privacy-filter "$OPF_REF"
-        git -C privacy-filter checkout -q FETCH_HEAD
-
     - name: Install uv and Python 3.12
       # setup-uv publishes no floating v10 tag so the release is pinned by SHA.
       uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
