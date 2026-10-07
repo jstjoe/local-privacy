@@ -12,10 +12,10 @@ dependencies = [
 ]
 
 [tool.uv.workspace]
-members = ["eval", "api", "privacy-filter"]
+members = ["eval", "api"]
 
 [tool.uv.sources]
-opf = { workspace = true }
+opf = { git = "https://github.com/openai/privacy-filter", rev = "f7f00ca7fb869683eb732c010299d901457f19c3" }
 opf-eval = { workspace = true }
 opf-api = { workspace = true }
 

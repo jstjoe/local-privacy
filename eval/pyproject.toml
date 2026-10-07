@@ -62,7 +62,7 @@ build-backend = "hatchling.build"
 packages = ["src/opf_eval"]
 
 [tool.uv.sources]
-opf = { workspace = true }
+opf = { git = "https://github.com/openai/privacy-filter", rev = "f7f00ca7fb869683eb732c010299d901457f19c3" }
 
 [tool.pytest.ini_options]
 markers = [

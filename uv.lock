@@ -17,7 +17,6 @@ resolution-markers = [
 [manifest]
 members = [
     "local-privacy",
-    "opf",
     "opf-api",
     "opf-eval",
 ]
@@ -2293,7 +2292,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "opf", editable = "privacy-filter" },
+    { name = "opf", git = "https://github.com/openai/privacy-filter?rev=f7f00ca7fb869683eb732c010299d901457f19c3" },
     { name = "opf-api", editable = "api" },
     { name = "opf-eval", editable = "eval" },
 ]
@@ -3410,21 +3409,11 @@ wheels = [
 [[package]]
 name = "opf"
 version = "0.1.0"
-source = { editable = "privacy-filter" }
+source = { git = "https://github.com/openai/privacy-filter?rev=f7f00ca7fb869683eb732c010299d901457f19c3#f7f00ca7fb869683eb732c010299d901457f19c3" }
 dependencies = [
     { name = "huggingface-hub" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "packaging" },
-    { name = "safetensors" },
-    { name = "tiktoken" },
-    { name = "torch" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "huggingface-hub" },
-    { name = "numpy" },
     { name = "packaging" },
     { name = "safetensors" },
     { name = "tiktoken" },
@@ -3466,7 +3455,7 @@ requires-dist = [
     { name = "gliner", marker = "extra == 'all'", specifier = ">=0.2.13" },
     { name = "gliner", marker = "extra == 'gliner'", specifier = ">=0.2.13" },
     { name = "httpx", specifier = ">=0.27" },
-    { name = "opf", editable = "privacy-filter" },
+    { name = "opf", git = "https://github.com/openai/privacy-filter?rev=f7f00ca7fb869683eb732c010299d901457f19c3" },
     { name = "opf-eval", editable = "eval" },
     { name = "presidio-analyzer", marker = "extra == 'all'", specifier = ">=2.2" },
     { name = "presidio-analyzer", marker = "extra == 'presidio'", specifier = ">=2.2" },
@@ -3531,7 +3520,7 @@ requires-dist = [
     { name = "openai", marker = "extra == 'llm'" },
     { name = "openmed", extras = ["hf"], specifier = ">=0.1" },
     { name = "openpyxl", marker = "extra == 'files'", specifier = ">=3.1" },
-    { name = "opf", editable = "privacy-filter" },
+    { name = "opf", git = "https://github.com/openai/privacy-filter?rev=f7f00ca7fb869683eb732c010299d901457f19c3" },
     { name = "pillow", marker = "extra == 'clef'" },
     { name = "presidio-analyzer", specifier = ">=2.2" },
     { name = "protobuf", specifier = ">=4.25" },
