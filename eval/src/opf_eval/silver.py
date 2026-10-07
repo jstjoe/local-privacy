@@ -88,6 +88,10 @@ MAX_TOKENS = 16000
 # A piece whose answer still hits MAX_TOKENS is cut in half and asked again,
 # down to pieces of this many characters.
 MIN_SPLIT_CHARS = 500
+# Each piece is sent with up to this many characters of the text on either
+# side of it so a value cut at the piece's edge is still seen whole. The
+# margin is at most a quarter of the piece so that halving still shrinks it.
+MARGIN_CHARS = 200
 SCHEMA_NAME = "silver_labels"
 # Two spans from different labelers mean the same entity when they share a
 # coarse label and overlap at least this much (intersection over union).
@@ -95,6 +99,7 @@ AGREE_IOU = 0.5
 
 __all__ = [
     "AGREE_IOU",
+    "MARGIN_CHARS",
     "MAX_CHARS",
     "MAX_TOKENS",
     "MERGE_MODES",
@@ -394,6 +399,28 @@ def locate(
         raise ValueError(
             f"unknown occurrences mode {occurrences!r}; expected one of {OCCURRENCE_MODES}"
         )
+    candidates, dropped = _candidates(text, items, occurrences=occurrences, labels=labels)
+    spans, overlap_drops = _resolve_overlaps(text, candidates)
+    dropped.extend(overlap_drops)
+    dropped.sort(key=lambda od: od[0])
+    return spans, [row for _, row in dropped]
+
+
+def _candidates(
+    text: str,
+    items: Sequence[Mapping],
+    *,
+    occurrences: str,
+    labels: Iterable[str] | None,
+    core: tuple[int, int] | None = None,
+) -> tuple[list[_Candidate], list[tuple[int, dict]]]:
+    """Every span the items ask for before overlaps are resolved (see `locate`).
+
+    Returns `(candidates, [(item order, dropped row)])`. With `core`, an
+    unpinned item in `occurrences="listed"` mode takes a free occurrence
+    inside `core` before one outside it, because `label_record` keeps only
+    the spans that start in the core of the piece it sent.
+    """
     allowed = set(labels) if labels is not None else None
     dropped: list[tuple[int, dict]] = []  # (item order, row) so drops keep answer order
     groups: dict[tuple[str, str], list[tuple[int, Mapping]]] = {}
@@ -446,9 +473,12 @@ def locate(
             taken = set()
             # Pinned items choose first so an unpinned one cannot take their occurrence.
             ranked = sorted(zip(members, pins, strict=True), key=lambda mp: mp[1] is None)
+            ordered = occs
+            if core is not None:
+                ordered = sorted(occs, key=lambda o: not core[0] <= o[0] < core[1])
             for (order, item), pin in ranked:
                 free_pin = [o for o in (pin or []) if o not in taken]
-                free_any = [o for o in occs if o not in taken]
+                free_any = [o for o in ordered if o not in taken]
                 pick = (free_pin or free_any or [None])[0]
                 if pick is None:
                     dropped.append((order, _drop(item, "extra_occurrence")))
@@ -458,11 +488,7 @@ def locate(
         candidates.extend(
             _Candidate(a, b, label, order, ctx, pinned) for a, b, order, ctx, pinned in chosen
         )
-
-    spans, overlap_drops = _resolve_overlaps(text, candidates)
-    dropped.extend(overlap_drops)
-    dropped.sort(key=lambda od: od[0])
-    return spans, [row for _, row in dropped]
+    return candidates, dropped
 
 
 def _resolve_overlaps(
@@ -498,15 +524,28 @@ def _resolve_overlaps(
 # ---------------------------------------------------------- one record
 
 
+def _margin(size: int) -> int:
+    """Characters of context on each side of a piece of `size` characters."""
+    return max(0, min(MARGIN_CHARS, size // 4))
+
+
 def _pieces(text: str, max_chars: int) -> list[tuple[int, int]]:
-    """Split `text` into ranges of at most `max_chars`, cutting between lines
-    when possible (documents.chunk with one segment per line). Offsets stay
-    those of the original text: no newline normalisation happens here."""
+    """The core ranges `label_record` sends `text` in, one call per range
+    that is not blank.
+
+    A text of at most `max_chars` is one piece. A longer text is split by
+    documents.chunk with one segment per line into cores of at most
+    `max_chars - 2 * _margin(max_chars)` characters, so each core plus its
+    margins still fits in `max_chars`. The cores cover the text with no gaps
+    or overlaps and their offsets are those of the original text because no
+    newline normalisation happens here.
+    """
     if len(text) <= max_chars:
         return [(0, len(text))]
+    core_chars = max(1, max_chars - 2 * _margin(max_chars))
     lines = [Segment(m.start(), m.end(), {}) for m in re.finditer(r"[^\n]+", text)]
     return chunk(
-        Document(id="", source="", kind="text", text=text, segments=lines), max_chars=max_chars
+        Document(id="", source="", kind="text", text=text, segments=lines), max_chars=core_chars
     )
 
 
@@ -524,6 +563,20 @@ def _halve(text: str) -> int:
         if cuts:
             return min(cuts, key=lambda c: (abs(c - mid), c))
     return mid
+
+
+def _cut_at_edge(text: str, wa: int, wb: int, value: Any) -> bool:
+    """True when `value` occurs in `text` across an edge of the window
+    [wa, wb). The labeler then saw only part of it and the neighbouring
+    window, which holds it whole, labels it."""
+    if not isinstance(value, str) or not value.strip():
+        return False
+    reach = 2 * len(value) + 1
+    lo, hi = max(0, wa - reach), min(len(text), wb + reach)
+    return any(
+        s < wa < e or s < wb < e
+        for s, e in ((lo + a, lo + b) for a, b in _find(text[lo:hi], value, whole_words=False))
+    )
 
 
 def _truncated(err: LLMError) -> bool:
@@ -546,56 +599,74 @@ def label_record(
 ) -> tuple[list[dict], list[dict]]:
     """Ask one labeler for the PII in `text` and locate it.
 
-    Returns `(spans, dropped)` like `locate`, with offsets into `text`. Texts
-    longer than `max_chars` are sent in pieces cut between lines, one call
-    per piece. A blank text makes no call.
+    Returns `(spans, dropped)` like `locate`, with offsets into `text`. A
+    blank text makes no call.
+
+    A text longer than `max_chars` is sent in pieces. Each piece is a core
+    range cut between lines when it can be (see `_pieces`) plus a margin of
+    up to `MARGIN_CHARS` characters of the text on either side, and the
+    labeler sees the core and its margins. Only spans that start inside the
+    core are kept. Every span is therefore kept once and a value cut at the
+    edge of one core is seen whole in the neighbouring piece. Overlapping
+    spans from neighbouring pieces are resolved like the overlaps inside one
+    piece. A `not_found` item whose value is cut by the edge of the text the
+    labeler saw is left out of `dropped` because the neighbouring piece
+    labels that value.
 
     A piece dense with PII can need a longer answer than `MAX_TOKENS`
-    allows. When the labeler stops at max_tokens, the piece is cut in half
-    (between lines when it can be) and each half is asked again, down to
-    pieces of `min_split_chars`. Any other `LLMError` (refusal, invalid
-    answer after the client's retry, transport failure), and a max_tokens
-    stop on a piece too small to cut, propagates.
+    allows. When the labeler stops at max_tokens, the core is cut in half
+    (between lines when it can be) and each half is asked again with its own
+    margins, down to cores of `min_split_chars`. Any other `LLMError`
+    (refusal, invalid answer after the client's retry, transport failure)
+    and a max_tokens stop on a core too small to cut propagate.
     """
     labels = _check_labels(labels)
     if not text.strip():
         return [], []
     schema = label_schema(labels)
-    spans: list[dict] = []
-    dropped: list[dict] = []
+    n = len(text)
+    candidates: list[_Candidate] = []
+    dropped: list[tuple[int, dict]] = []
+    seen_items = 0  # items answered so far, so item orders stay unique across pieces
 
-    def ask(a: int, b: int) -> None:
-        piece = text[a:b]
-        if not piece.strip():
+    def ask(a: int, b: int, margin: int) -> None:
+        nonlocal seen_items
+        if not text[a:b].strip():
             return
-        system, user = build_prompt(piece, labels)
+        wa, wb = max(0, a - margin), min(n, b + margin)
+        window = text[wa:wb]
+        system, user = build_prompt(window, labels)
         try:
             answer = client.complete_json(
                 system=system, user=user, schema=schema, name=SCHEMA_NAME, max_tokens=MAX_TOKENS
             )
         except LLMError as e:
-            if not _truncated(e) or len(piece) <= max(min_split_chars, 1):
+            if not _truncated(e) or b - a <= max(min_split_chars, 1):
                 raise
-            cut = a + _halve(piece)
-            ask(a, cut)
-            ask(cut, b)
+            cut = a + _halve(text[a:b])
+            ask(a, cut, _margin(cut - a))
+            ask(cut, b, _margin(b - cut))
             return
-        got, lost = locate(
-            piece, answer.get("entities") or [], occurrences=occurrences, labels=labels
+        items = answer.get("entities") or []
+        got, lost = _candidates(
+            window, items, occurrences=occurrences, labels=labels, core=(a - wa, b - wa)
         )
-        for s in got:
-            s["start"] += a
-            s["end"] += a
-        for d in lost:
-            if "start" in d:
-                d["start"] += a
-                d["end"] += a
-        spans.extend(got)
-        dropped.extend(lost)
+        for c in got:
+            if a <= c.start + wa < b:
+                c.start, c.end, c.order = c.start + wa, c.end + wa, c.order + seen_items
+                candidates.append(c)
+        for order, row in lost:
+            if row["reason"] == "not_found" and _cut_at_edge(text, wa, wb, row["value"]):
+                continue
+            dropped.append((order + seen_items, row))
+        seen_items += len(items)
 
     for a, b in _pieces(text, max_chars):
-        ask(a, b)
-    return spans, dropped
+        ask(a, b, _margin(max_chars))
+    spans, overlap_drops = _resolve_overlaps(text, candidates)
+    dropped.extend(overlap_drops)
+    dropped.sort(key=lambda od: od[0])
+    return spans, [row for _, row in dropped]
 
 
 # ----------------------------------------------------------------- merge
@@ -779,8 +850,9 @@ def plan_calls(
 ) -> dict:
     """How many LLM calls `generate` would make, before making any.
 
-    Returns `{"n_records", "n_chars", "n_calls", "n_labelers"}`. Cached
-    answers still count. The count does not include the extra calls made
+    Returns `{"n_records", "n_chars", "n_calls", "n_labelers"}`. It counts
+    the same pieces `label_record` sends, one call per piece whose core is
+    not blank. Cached answers still count. The count does not include the extra calls made
     when an answer hits max_tokens and its piece is asked again in halves
     (see `label_record`), so a run on text dense with PII can make more.
     """

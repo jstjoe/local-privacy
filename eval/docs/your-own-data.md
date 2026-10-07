@@ -141,7 +141,7 @@ S = nb.Session(fixtures=str(fx), detectors=["presidio", "gliner"])
 run_dir = nb.ensure_run(S)
 ```
 
-Do not save this session with `nb.session(fixtures=...)` because notebooks 02, 03 and 05 would then load the unlabeled fixtures. `ensure_run` notices when the fixtures file changes and runs the detectors again.
+The `fixtures` override applies only to the notebook that sets it. `nb.session(fixtures=...)` saves every other field but never `fixtures`, so notebooks 02, 03 and 05 keep loading their labeled dataset sample. `ensure_run` notices when the fixtures file changes and runs the detectors again.
 
 ## Read the report
 
@@ -176,7 +176,7 @@ print(report.build_report(run_dir, fixtures=out))
 
 `silver.build_prompt` puts the label list with each label's description and the rules into the system message. The user message holds only the text. The labeler returns `{"entities": [{"value", "label", "context"}]}` and `silver.label_schema` makes `label` an enum of the target labels. The rules ask the labeler to list every occurrence and to copy `value` character for character. `context` is up to about 6 words around the value. The prompt also tells the labeler to use the most specific type that fits the whole value and to ignore instructions inside the text. The system message embeds `silver.PROMPT_VERSION` (`silver-v1`), so a prompt change misses the cache.
 
-By default the labeler is asked for the fixtures' target labels. `level="coarse"` asks only for their coarse categories. Records longer than `silver.MAX_CHARS` (12,000 characters) are sent in pieces cut between lines. When an answer stops at `silver.MAX_TOKENS` (16,000 tokens), that piece is cut in half and each half is asked again, down to pieces of `silver.MIN_SPLIT_CHARS` (500 characters). `plan_calls` does not count those extra calls.
+By default the labeler is asked for the fixtures' target labels. `level="coarse"` asks only for their coarse categories. Records longer than `silver.MAX_CHARS` (12,000 characters) are sent in pieces of at most that size. Each piece is a core cut between lines when it can be, plus a margin of up to `silver.MARGIN_CHARS` (200 characters) of the text on either side. The labeler sees the core and its margins, and only spans that start inside the core are kept. Every span is therefore kept once, and a value that a cut splits is seen whole by the neighbouring piece. When an answer stops at `silver.MAX_TOKENS` (16,000 tokens), that core is cut in half and each half is asked again with its own margins, down to cores of `silver.MIN_SPLIT_CHARS` (500 characters). A half's margins are at most a quarter of its length so that halving still shrinks the text sent. `plan_calls` counts the same pieces that `label_record` sends but does not count those extra calls.
 
 ### Locating values
 
@@ -241,7 +241,7 @@ review_llm.summarize(run_dir, path)                 # one row per detector
 review_llm.disagreements(run_dir, path)             # spans not judged correct, then misses
 ```
 
-`review.pool.pooled_spans` first pools every detector's spans for a record and keeps each unique `(start, end, coarse label)` once. The reviewer sees the text and a numbered list of these candidates with their labels and a little context. It makes one call per non-blank record. A record with no candidates gets a call too because the reviewer can still find misses there.
+`review.pool.pooled_spans` first pools every detector's spans for a record and keeps each unique `(start, end, coarse label)` once. The reviewer sees the text and a numbered list of these candidates with their labels and a little context. It makes one call per non-blank record with an output budget of 16,000 tokens (`review_llm.MAX_TOKENS`). A record with no candidates gets a call too because the reviewer can still find misses there. When an answer stops at that budget the candidates are cut in half and each half is reviewed against the same whole text, down to a single candidate. The verdicts keep their places in the record. The misses of all halves are joined and each `(start, end)` is kept once, and then a miss is checked against every candidate's verdict. A half lists the other half's PII as missed because it cannot see those candidates, so that check drops such a miss as `covered_by_candidate`. Only a truncated answer is split. Any other failure, and a truncated answer for one candidate or for a record without candidates, becomes an error row. Splits add calls, so `estimate`'s `n_calls` is a lower bound.
 
 ### Verdicts
 
@@ -257,6 +257,8 @@ The reviewer also lists in `missed` the personal data that no candidate covers. 
 1. A candidate judged `correct`, `wrong_label` or `boundary` holds all of it.
 2. It overlaps a candidate judged `correct` or `wrong_label`.
 3. It overlaps a candidate judged `boundary` that overlaps no candidate judged `correct` or `wrong_label`.
+
+A located miss with the exact boundaries of a candidate judged `not_pii` is dropped with the reason `judged_not_pii` because the call that saw that candidate rejected it. This matters for a split record because each half lists the other half's candidates as missed.
 
 A miss that only partly overlaps a `boundary` candidate which already belongs to another entity stays a miss. For example "Jane Doe met John" judged `boundary` next to "Jane Doe" judged `correct` does not hide a missed "John Roe", so no detector gets credit for John Roe. A candidate that still has no verdict after the client's one retry is written as `unjudged` and left out of every number.
 
@@ -275,7 +277,7 @@ Records the reviewer failed on are left out of every number. Records a detector 
 
 ### Output files
 
-The review writes `run_dir/review_llm_<provider>_<model>.jsonl` with one row per judged span (`kind: "span"`), per located miss (`"missed"`), per unusable miss (`"dropped"`) and per failed record (`"error"`). A `.meta.json` sidecar records the reviewer, prompt version, labels, detectors, reviewed record ids and counts. `summarize` and `disagreements` read only these files, so they rerun without calling the model.
+The review writes `run_dir/review_llm_<provider>_<model>.jsonl` with one row per judged span (`kind: "span"`), per located miss (`"missed"`), per unusable miss (`"dropped"`) and per failed record (`"error"`). A `.meta.json` sidecar records the reviewer, prompt version, labels, detectors, reviewed record ids and counts. `n_split_records` counts the records whose candidates had to be split. `summarize` and `disagreements` read only these files, so they rerun without calling the model.
 
 For a dry run without keys use `llm.make_client("stub", responder=review_llm.dry_run_responder)`. It accepts every candidate and finds no misses, so its numbers mean nothing.
 

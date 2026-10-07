@@ -109,17 +109,21 @@ def test_show_with_fixtures(ws_root, tmp_path, capsys):
     assert "dataset:" not in out
 
 
-def test_session_saves_and_loads_fixtures(ws_root, tmp_path):
+def test_session_fixtures_override_is_not_saved(ws_root, tmp_path):
     fx = _write_unlabeled(tmp_path / "u.jsonl", {"a": "x"})
     s = nb.session(fixtures=str(fx), detectors=["presidio"])
+    # The returned session uses the override in this kernel.
+    assert s.fixtures == str(fx) and s.fixtures_path == fx
+    # Every other field is saved but the override is not, so 01–06 keep their sample.
+    saved = json.loads((ws_root / "session.json").read_text())
+    assert "fixtures" not in saved and saved["detectors"] == ["presidio"]
     loaded = nb.load_session(quiet=True)
-    assert loaded == s and loaded.fixtures == str(fx)
-    # Changing an unrelated field keeps the override.
-    assert nb.session(detectors=["gliner"]).fixtures == str(fx)
-    # Picking a dataset sample clears it, so 01–06 get the sample they ask for.
-    s3 = nb.session(dataset="openpii_nano")
-    assert s3.fixtures is None
-    assert s3.fixtures_path.name == "openpii_nano_100_s42.jsonl"
+    assert loaded.fixtures is None and loaded.detectors == ["presidio"]
+    assert loaded.fixtures_path.name == f"{nb.DEFAULT_DATASET}_100_s42.jsonl"
+    # Session.save() leaves the override out as well.
+    nb.Session(fixtures=str(fx), n=7).save()
+    assert "fixtures" not in json.loads((ws_root / "session.json").read_text())
+    assert nb.load_session(quiet=True).fixtures is None
 
 
 def test_session_sample_change_with_explicit_fixtures_keeps_them(ws_root, tmp_path):
@@ -128,16 +132,32 @@ def test_session_sample_change_with_explicit_fixtures_keeps_them(ws_root, tmp_pa
     assert s.fixtures == str(fx) and s.n == 10
 
 
-def test_load_session_flags_saved_fixtures_override(ws_root, tmp_path, capsys):
-    fx = _write_unlabeled(tmp_path / "u.jsonl", {"a": "x"})
-    nb.session(fixtures=str(fx))
-    capsys.readouterr()
-    nb.load_session()
-    assert "nb.session(dataset=...)" in capsys.readouterr().out
-    nb.session(dataset="openpii_nano")
-    capsys.readouterr()
-    nb.load_session()
-    assert "explicit fixtures file" not in capsys.readouterr().out
+def test_load_session_ignores_saved_fixtures_with_a_note(ws_root, tmp_path, capsys):
+    # A session.json written before the override became in-memory only.
+    ws_root.mkdir(parents=True, exist_ok=True)
+    (ws_root / "session.json").write_text(json.dumps(
+        {"dataset": "openpii_nano", "n": 5, "seed": 1, "fixtures": "data/custom.jsonl"}
+    ))
+    s = nb.load_session(quiet=True)
+    assert s.fixtures is None and s.dataset == "openpii_nano" and s.n == 5
+    out = capsys.readouterr().out
+    assert "ignoring the fixtures file data/custom.jsonl" in out
+    assert len(out.strip().splitlines()) == 1
+    # Loading drops the key from the file, so the next load shows no note
+    # even when no notebook saves the session in between.
+    saved = json.loads((ws_root / "session.json").read_text())
+    assert saved == {"dataset": "openpii_nano", "n": 5, "seed": 1}
+    nb.load_session(quiet=True)
+    assert capsys.readouterr().out == ""
+
+
+def test_load_session_no_note_for_null_fixtures(ws_root, capsys):
+    # Older versions saved "fixtures": null in every session file.
+    ws_root.mkdir(parents=True, exist_ok=True)
+    (ws_root / "session.json").write_text(json.dumps({"dataset": "openpii_nano", "fixtures": None}))
+    assert nb.load_session(quiet=True).fixtures is None
+    assert capsys.readouterr().out == ""
+    assert json.loads((ws_root / "session.json").read_text()) == {"dataset": "openpii_nano"}
 
 
 def test_old_session_file_without_fixtures_field(ws_root):
@@ -237,25 +257,59 @@ def test_ensure_run_rewrite_clears_every_detector(ws_root, capsys):
     assert [r["id"] for r in iter_jsonl(run_dir / "raw_nb07_email.jsonl")] == ["t9"]
 
 
-def test_ensure_run_reruns_a_detector_whose_raw_file_is_incomplete(ws_root, capsys):
-    texts = {f"t{i}": f"mail u{i}@example.com now" for i in range(6)}
-    _write_unlabeled(ws_root / "data" / "big.jsonl", texts)
-    s = nb.Session(fixtures="data/big.jsonl", detectors=["nb07_email"], device="cpu")
+def test_ensure_run_rewrite_clears_review_files(ws_root):
+    _write_unlabeled(ws_root / "data" / "r.jsonl", {"t1": "a@b.io"})
+    s = nb.Session(fixtures="data/r.jsonl", detectors=["nb07_email"], device="cpu")
     run_dir = nb.ensure_run(s)
-    raw = run_dir / "raw_nb07_email.jsonl"
-    # An interrupted run leaves the first rows and maybe half a line.
-    lines = raw.read_text().splitlines()
-    raw.write_text("\n".join(lines[:3]) + "\n" + lines[3][:10])
+    stale = [
+        "review_llm_anthropic_claude.jsonl", "review_llm_anthropic_claude.meta.json",
+        "review_clef.jsonl", "review_clef.meta.json",
+    ]
+    for name in stale:
+        (run_dir / name).write_text("{}\n")
+    (run_dir / "my_notes.txt").write_text("keep me")
+    _write_unlabeled(ws_root / "data" / "r.jsonl", {"t9": "c@d.io"})
+    nb.ensure_run(s)
+    # Reviews of the old spans must not be summarized against the new raw files.
+    assert [n for n in stale if (run_dir / n).exists()] == []
+    assert (run_dir / "my_notes.txt").read_text() == "keep me"
+
+
+class _FlakyEmailDetector(_EmailDetector):
+    """Fails on the record whose text says "boom" while `fail` is set."""
+
+    fail = True
+
+    def detect(self, text, **ctx):
+        if _FlakyEmailDetector.fail and "boom" in text:
+            raise RuntimeError("interrupted")
+        return super().detect(text, **ctx)
+
+
+registry.register_detector(
+    registry.DetectorSpec(
+        name="nb07_flaky", vocab="nb07vocab", factory=lambda ctx: _FlakyEmailDetector()
+    ),
+    overwrite=True,
+)
+
+
+def test_ensure_run_reruns_a_detector_whose_run_was_interrupted(ws_root, monkeypatch, capsys):
+    texts = {f"t{i}": f"mail u{i}@example.com now" for i in range(6)}
+    texts["t4"] = "boom"
+    _write_unlabeled(ws_root / "data" / "big.jsonl", texts)
+    s = nb.Session(fixtures="data/big.jsonl", detectors=["nb07_flaky"], device="cpu")
+    monkeypatch.setattr(_FlakyEmailDetector, "fail", True)
+    with pytest.raises(RuntimeError, match="interrupted"):
+        nb.ensure_run(s)
+    # The rows written before the failure never reach raw_nb07_flaky.jsonl.
+    assert not (s.run_dir / "raw_nb07_flaky.jsonl").exists()
+    assert list(s.run_dir.glob(".raw_*")) == []
+    monkeypatch.setattr(_FlakyEmailDetector, "fail", False)
     capsys.readouterr()
     nb.ensure_run(s)
-    out = capsys.readouterr().out
-    assert "raw_nb07_email.jsonl covers 3 of 6 records" in out
-    assert "results present" not in out
-    assert sorted(r["id"] for r in iter_jsonl(raw)) == sorted(texts)
-    # A complete file is reused.
-    capsys.readouterr()
-    nb.ensure_run(s)
-    assert "results present for: nb07_email" in capsys.readouterr().out
+    assert "results present" not in capsys.readouterr().out
+    assert [r["id"] for r in iter_jsonl(s.run_dir / "raw_nb07_flaky.jsonl")] == list(texts)
 
 
 # --------------------------------------------------------- allow_remote

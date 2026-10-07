@@ -340,16 +340,23 @@ The previously-shipped `skyflow_minimal` detector was a hand-tuned 24-entity all
 
 ## Fixtures and reports
 
-- `python -m opf_eval.fixtures --dataset NAME --n N --out path` — materialize N examples (deterministic seed)
-- `python -m opf_eval.runner --dataset NAME --detectors X,Y --fixtures path --out dir` — run detectors; manifest carries dataset name + vocab
-- `python -m opf_eval.runner ... --device cuda` — run local PyTorch detectors (opf, gliner*, ai4privacy_modernbert, openmed) on GPU. `auto` picks cuda > mps > cpu. Skyflow + Presidio ignore this.
-- `python -m opf_eval.report --run dir --fixtures path` — emit `report.md` with both fair (per-detector scope) + raw (full dataset vocab) views
-- `python -m opf_eval.report ... --canonical-labels DATE` — override both views to a single explicit label set (one-category drilldowns)
-- `python -m opf_eval.report ... --level fine` — score fine sub-types (GOV_ID vs BANK_ACCOUNT, GIVEN_NAME vs FAMILY_NAME, …)
-- `python -m opf_eval.report ... --detectors X,Y` — limit every section of the report to the named detectors. `report.build_report(run_dir, detectors=[...])` does the same in Python. A name the run has no predictions for is refused with a message that lists the run's detectors.
-- `python -m opf_eval.fixtures validate path` — check a fixtures file (ids, offsets, labels) and print its label distribution
-- `python -m opf_eval.report --run dir --fixtures <silver file>` — writes a "Silver-label report" that scores the detectors against LLM silver labels. Unlabeled fixtures get a note instead of scores. [Evaluate on your own data without labels](#evaluate-on-your-own-data-without-labels) explains both.
-- `python -m opf_eval.runner ... --fresh` — clear a run dir first. A run dir is tied to its fixtures (sha256), so pointing it at different fixtures is refused rather than mixing stale results into the report.
+1. `python -m opf_eval.fixtures --dataset NAME --n N --out path` materializes N examples with a deterministic seed.
+2. `python -m opf_eval.runner --dataset NAME --detectors X,Y --fixtures path --out dir` runs the detectors. The run manifest carries the dataset name and its vocabulary.
+3. `python -m opf_eval.runner ... --device cuda` runs the local PyTorch detectors on a GPU. The value `auto` picks cuda when it is available and falls back to mps and then to cpu. Skyflow and Presidio ignore this flag. These are the local PyTorch detectors:
+   1. `opf`
+   2. `gliner*`
+   3. `ai4privacy_modernbert`
+   4. `openmed`
+4. `python -m opf_eval.report --run dir --fixtures path` emits `report.md` with two views. The fair view scores each detector within its own scope. The raw view scores each detector against the full dataset vocabulary.
+5. `python -m opf_eval.report ... --canonical-labels DATE` overrides both views with one explicit label set so you can drill down into a single category.
+6. `python -m opf_eval.report ... --level fine` scores the fine sub-types. It tells GOV_ID apart from BANK_ACCOUNT and it tells GIVEN_NAME apart from FAMILY_NAME.
+7. `python -m opf_eval.report ... --detectors X,Y` limits every section of the report to the named detectors. `report.build_report(run_dir, detectors=[...])` does the same in Python. A name the run has no predictions for is refused with a message that lists the run's detectors.
+8. `python -m opf_eval.fixtures validate path` checks a fixtures file and prints its label distribution. The check covers these fields of every record:
+   1. The ids.
+   2. The offsets.
+   3. The labels.
+9. `python -m opf_eval.report --run dir --fixtures <silver file>` writes a "Silver-label report" that scores the detectors against LLM silver labels. Unlabeled fixtures get a note instead of scores. [Evaluate on your own data without labels](#evaluate-on-your-own-data-without-labels) explains both.
+10. `python -m opf_eval.runner ... --fresh` clears a run dir first. A run dir is tied to its fixtures by their sha256 so the runner refuses a run dir that points at different fixtures rather than mix stale results into the report.
 
 ### Two scoring views
 
@@ -381,17 +388,20 @@ To share a fork, edit `HARNESS_REPO` in the setup cell.
 
 [plans/](plans/) — see [plans/README.md](plans/README.md) for the full index. Highlights:
 
-- 01: Microsoft Presidio baseline (shipped)
-- 03: GLiNER baseline (shipped)
-- 06: Unified privacy-detection API (shipped)
-- 08: SemEval scoring via nervaluate (shipped)
-- 05: Additional PII-focused models (shipped)
-- 09: Multi-dataset fixtures + per-detector scoring (shipped)
-- 10, 11: Sanitization + search demos (shipped)
-- 12: [Roadmap](plans/12-roadmap.md): public benchmarks, newer open-weight models, cross-benchmark report
-- 13: [Evaluate on your own data without gold labels](plans/13-unlabeled-data-notebook.md) (PRs 1 to 4 are implemented and Bedrock is parked)
-- 02, 04: model & training experiments (not yet shipped)
-- 07: Cloud Run hardening (planned)
+1. Plan 01 is the Microsoft Presidio baseline and it has shipped.
+2. Plan 03 is the GLiNER baseline and it has shipped.
+3. Plan 06 is the unified privacy-detection API and it has shipped.
+4. Plan 08 is SemEval scoring via nervaluate and it has shipped.
+5. Plan 05 adds more PII-focused models and it has shipped.
+6. Plan 09 adds multi-dataset fixtures and per-detector scoring and it has shipped.
+7. Plans 10 and 11 are the sanitization and search demos and they have shipped.
+8. Plan 12 is the [roadmap](plans/12-roadmap.md) and it covers these topics:
+   1. Public benchmarks.
+   2. Newer open-weight models.
+   3. A cross-benchmark report.
+9. Plan 13 is [Evaluate on your own data without gold labels](plans/13-unlabeled-data-notebook.md). Its PRs 1 to 4 are implemented and its Bedrock work is parked.
+10. Plans 02 and 04 cover model and training experiments and they have not shipped yet.
+11. Plan 07 is Cloud Run hardening and it is planned.
 
 ## API server
 

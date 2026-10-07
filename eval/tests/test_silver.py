@@ -373,12 +373,15 @@ def test_label_record_halves_a_piece_whose_answer_hits_max_tokens():
     }
     texts = [_text_of(u) for _, u in client.calls]
     assert len(texts[0]) == len(text)  # first the whole record, then halves
-    # 1859 chars -> two halves of ~930 -> four of ~465 -> eight of ~232.
+    # 1859 chars -> two cores of ~930 -> four of ~465 -> eight of ~232. Each
+    # core is sent with margins of a quarter of its length on either side.
     assert len(texts) == 1 + 2 + 4 + 8
     answered = [t for t in texts if len(t) <= 400]
-    assert len(answered) == 8 and "".join(answered) == text  # in order, no gaps or overlaps
-    whole = set(lines)
-    assert all(set(t.strip("\n").split("\n")) <= whole for t in texts)  # cuts fall between lines
+    assert len(answered) == 8
+    # The answered windows run in order, overlap their neighbours and cover the text.
+    where = [(text.index(t), text.index(t) + len(t)) for t in answered]
+    assert where[0][0] == 0 and where[-1][1] == len(text)
+    assert all(a[0] < b[0] < a[1] < b[1] for a, b in pairwise(where))
 
 
 def test_label_record_gives_up_splitting_at_min_split_chars():
@@ -388,9 +391,11 @@ def test_label_record_gives_up_splitting_at_min_split_chars():
     client = StubClient(always_long)
     with pytest.raises(LLMError, match="max_tokens"):
         silver.label_record(client, "a@x.io\n" * 100, ["EMAIL"], min_split_chars=200)
-    # 700 chars -> 350 + 350 -> 175 * 4: the first quarter is too small to
-    # cut again, so the error propagates after 1 + 2 + 2 calls (depth first).
-    assert [len(_text_of(u)) for _, u in client.calls] == [700, 350, 175]
+    # 700 chars -> cores of 350 -> cores of 175: the first quarter is too
+    # small to cut again, so the error propagates after 1 + 1 + 1 calls
+    # (depth first). Each core is sent with a quarter of its length of the
+    # following text, so 350 + 87 and 175 + 43 characters.
+    assert [len(_text_of(u)) for _, u in client.calls] == [700, 437, 218]
 
 
 def test_label_record_splits_on_the_truncated_flag_and_not_the_message():
@@ -425,6 +430,151 @@ def test_label_record_does_not_split_on_other_errors():
     with pytest.raises(LLMError, match="refused"):
         silver.label_record(client, "a@x.io\n" * 300, ["EMAIL"], min_split_chars=100)
     assert len(client.calls) == 1
+
+
+NAME_RE = r"[A-Z][a-z]+(?: [A-Z][a-z]+)*"  # a run of capitalised words is one name
+
+
+def _names_line(n: int) -> tuple[str, list[str]]:
+    """One long line of lowercase filler and `n` two-word names."""
+    firsts = ["Jane", "Omar", "Lena", "Ravi", "Iris", "Hugo", "Mona", "Theo"]
+    lasts = ["Doe", "Silva", "Kowalski", "Ng", "Abara", "Fischer", "Lund", "Okafor"]
+    names = [f"{firsts[i % 8]} {lasts[(i * 3) % 8]}" for i in range(n)]
+    return " ".join(f"then {name} wrote it down" for name in names), names
+
+
+@pytest.mark.parametrize("max_chars", [250, 300])
+def test_label_record_keeps_a_value_cut_at_a_piece_edge_whole(max_chars):
+    # A single line longer than max_chars is cut at a space. A name whose two
+    # words straddle a cut used to reach the labeler in two halves and came
+    # back as two wrong names ("Jane" and "Doe"). With max_chars=250 the old
+    # pieces cut through names. With 300 the cores of the current pieces do.
+    text, names = _names_line(60)
+    assert "\n" not in text and len(text) > 1500
+    name_ranges = [(m.start(), m.end()) for m in re.finditer(NAME_RE, text)]
+    client = StubClient(regex_responder({"PERSON": NAME_RE}))
+    spans, dropped = silver.label_record(client, text, ["PERSON"], max_chars=max_chars)
+    assert [s["text"] for s in spans] == names
+    assert [(s["start"], s["end"]) for s in spans] == name_ranges
+    assert dropped == []
+    assert all(len(_text_of(u)) <= max_chars for _, u in client.calls)
+    if max_chars == 300:
+        cores = silver._pieces(text, max_chars)
+        assert any(r[0] < a < r[1] for r in name_ranges for a, _ in cores[1:])
+
+
+def test_label_record_counts_values_in_overlapping_margins_once():
+    # Neighbouring pieces share their margins, so a value there is listed by
+    # both labeler calls. It is kept once. The labeler lists both the part of
+    # a value it sees at the edge of its window and the whole value it
+    # guesses, and neither becomes a wrong span or a dropped row.
+    text = "\n".join(f"row {i} owner user{i}@example.org phone 555-{i:04d}" for i in range(60))
+    regex = regex_responder({"EMAIL": EMAIL_RE, "PHONE": PHONE_RE})
+
+    def sees_parts_and_guesses_wholes(system, user, schema):
+        window = _text_of(user)
+        at = text.index(window)
+        found = regex(system, user, schema)["entities"]  # parts of values cut at the edges
+        for label, pattern in (("EMAIL", EMAIL_RE), ("PHONE", PHONE_RE)):
+            for m in re.finditer(pattern, text):
+                if m.start() < at + len(window) and at < m.end():
+                    found.append(item(m.group(0), label))  # whole value, even if cut
+        return {"entities": found}
+
+    client = StubClient(sees_parts_and_guesses_wholes)
+    spans, dropped = silver.label_record(client, text, ["EMAIL", "PHONE"], max_chars=310)
+    assert len(client.calls) > 3
+    whole = {m.group(0) for m in re.finditer(EMAIL_RE, text)}
+    windows = [_text_of(u) for _, u in client.calls]
+    # Some window edge cuts an email, so the labeler did see parts of values.
+    assert any(m.group(0) not in whole for w in windows for m in re.finditer(EMAIL_RE, w))
+    want = sorted(
+        (m.start(), m.end())
+        for pattern in (EMAIL_RE, PHONE_RE)
+        for m in re.finditer(pattern, text)
+    )
+    assert [(s["start"], s["end"]) for s in spans] == want
+    assert dropped == []
+
+
+def test_label_record_keeps_overlap_drops_from_neighbouring_pieces_in_full_text_offsets():
+    # One labeler call sees "Jane Doe" whole and the next sees it in its
+    # margin, so the span starting in the first core is kept. A shorter span
+    # the second call gives inside it starts in the second core and is
+    # dropped as an overlap with offsets into the whole text.
+    text, _ = _names_line(60)
+    cuts = [a for a, _ in silver._pieces(text, 300)[1:]]
+    cut, m = next(
+        (cut, m) for m in re.finditer(NAME_RE, text) for cut in cuts if m.start() < cut < m.end()
+    )
+    name, last = m.group(0), text[cut:m.end()].strip()
+    regex = regex_responder({"PERSON": NAME_RE})
+
+    def also_lists_the_last_name(system, user, schema):
+        answer = regex(system, user, schema)
+        if name in _text_of(user):
+            answer["entities"].append(item(last, "PERSON", name))
+        return answer
+
+    client = StubClient(also_lists_the_last_name)
+    spans, dropped = silver.label_record(client, text, ["PERSON"], max_chars=300)
+    assert (m.start(), m.end()) in [(s["start"], s["end"]) for s in spans]
+    # The name repeats every eighth entry, so other copies are dropped too.
+    assert dropped and all(d["reason"] == "overlap" for d in dropped)
+    assert all(text[d["start"]:d["end"]] == last == d["value"] for d in dropped)
+    assert [d["start"] for d in dropped if m.start() < d["start"] < m.end()] == [cut]
+
+
+def test_label_record_listed_mode_takes_the_occurrence_in_the_core():
+    # The second piece sees one copy of a value in its left margin and one in
+    # its core, and lists the value once. In "listed" mode that item takes
+    # the copy in the core because a span in the margin would be left out.
+    plain = [f"row {i:02d} plain words only" for i in range(30)]
+    cores = silver._pieces("\n".join(plain), 300)
+    starts = [0]
+    for line in plain[:-1]:
+        starts.append(starts[-1] + len(line) + 1)
+    in_first = max(i for i, s in enumerate(starts) if s < cores[0][1])
+    in_second = next(i for i, s in enumerate(starts) if s > cores[1][0] + 20)
+    lines = list(plain)
+    for i in (in_first, in_second):
+        lines[i] = f"row {i:02d} mail ann@x.io ok"
+        assert len(lines[i]) == len(plain[i])
+    text = "\n".join(lines)
+    assert silver._pieces(text, 300) == cores
+
+    def lists_each_value_once(system, user, schema):
+        values = dict.fromkeys(re.findall(EMAIL_RE, _text_of(user)))
+        return {"entities": [item(v, "EMAIL") for v in values]}
+
+    client = StubClient(lists_each_value_once)
+    spans, _ = silver.label_record(
+        client, text, ["EMAIL"], occurrences="listed", max_chars=300
+    )
+    want = [text.index("ann@x.io"), text.rindex("ann@x.io")]
+    assert [s["start"] for s in spans] == want
+
+
+def test_label_record_halving_keeps_a_value_at_the_cut_whole():
+    # One line is halved at the whitespace closest to its middle. A name
+    # straddling that cut used to come back as two wrong names.
+    left = "then it was " * 20
+    right = " wrote it down" * 17
+    text = left + "Jane Doe" + right
+    cut = silver._halve(text)
+    assert text[cut - 5:cut + 3] == "Jane Doe"  # the cut falls between the two words
+    regex = regex_responder({"PERSON": NAME_RE})
+
+    def short_answers(system, user, schema):
+        if len(_text_of(user)) == len(text):
+            raise LLMError("stub hit max_tokens before finishing its answer", truncated=True)
+        return regex(system, user, schema)
+
+    client = StubClient(short_answers)
+    spans, dropped = silver.label_record(client, text, ["PERSON"], min_split_chars=100)
+    assert len(client.calls) == 3
+    assert spans_of(spans) == [(len(left), len(left) + 8, "PERSON")]
+    assert dropped == []
 
 
 # ------------------------------------------------------------------- merge
@@ -824,7 +974,23 @@ def test_plan_calls(unlabeled, tmp_path):
         "n_records": 3, "n_chars": sum(map(len, TEXTS.values())), "n_calls": 6, "n_labelers": 2
     }
     long = from_texts(["x" * 50 + "\n" + "y" * 50, "   "], tmp_path / "long.jsonl")
-    assert silver.plan_calls(long, [StubClient()], max_chars=60)["n_calls"] == 2
+    # Cores of at most 60 - 2 * 15 = 30 characters: two per 50-character line.
+    assert silver.plan_calls(long, [StubClient()], max_chars=60)["n_calls"] == 4
+
+
+def test_plan_calls_matches_the_calls_generate_makes(tmp_path):
+    texts = [
+        " ".join(f"word{i}" for i in range(400)),  # one long line
+        "\n".join(f"line {i} mail user{i}@x.io" for i in range(80)),
+        "\n\n\n" + " " * 500 + "tail ann@x.io",  # a blank stretch before the text
+        "short ann@x.io",
+        "   ",
+    ]
+    fx = from_texts(texts, tmp_path / "many.jsonl", labels=["EMAIL"])
+    client = StubClient(regex_responder({"EMAIL": EMAIL_RE}))
+    silver.generate(fx, [client], tmp_path / "many.silver.jsonl", max_chars=300, progress=False)
+    planned = silver.plan_calls(fx, [client], max_chars=300)["n_calls"]
+    assert planned == len(client.calls) > len(texts)
 
 
 def test_importing_silver_does_not_import_llm_sdks():

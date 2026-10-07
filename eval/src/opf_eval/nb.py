@@ -8,7 +8,8 @@ Every notebook in `notebooks/` starts with the same bootstrap cell and then:
 
 `Session` is saved to `<workspace>/session.json`, so 02 picks up what you
 chose in 01 and 03 scores what 02 ran — but each notebook also runs on its own
-with defaults (see `ensure_run`).
+with defaults (see `ensure_run`). An explicit `fixtures` file on a session is
+never saved, so it stays in the notebook that sets it.
 
 Nothing here is Colab-only: on a laptop the workspace is `eval/` inside the
 repo checkout (or `$PII_BENCH_HOME`), and secrets come from the environment
@@ -372,10 +373,16 @@ class Session:
     `fixtures.from_documents` writes for your own files. Then `dataset`, `n`
     and `seed` are ignored, `fixtures_path` is that file and the run dir is
     named after it. A relative `fixtures` path is taken relative to the
-    workspace root so a saved session means the same file in every notebook.
+    workspace root.
 
-    Notebook 07 can build `Session(fixtures=..., detectors=...)` without
-    saving it, which leaves the session that notebooks 01–06 share untouched.
+    The `fixtures` override lives only in this object and so only in the
+    current kernel. `save()` writes every other field to `session.json` but
+    never `fixtures`, and `load_session()` ignores a `fixtures` key that an
+    older version saved there. Notebooks 01 to 06 load the saved session and
+    expect a dataset sample with gold spans, so an override that leaked to
+    them would have them score unlabeled data without saying so.
+    `nb.session(fixtures=...)` and `Session(fixtures=...)` therefore both
+    work for the notebook that sets them and for no other notebook.
     """
 
     dataset: str = DEFAULT_DATASET
@@ -418,8 +425,11 @@ class Session:
         return (read_meta(self.fixtures_path) or {}).get("gold")
 
     def save(self) -> Session:
-        path = self.ws.session_file
-        path.write_text(json.dumps(dataclasses.asdict(self), indent=2))
+        """Write this session to `session.json` without the `fixtures`
+        override, which stays in memory only."""
+        data = dataclasses.asdict(self)
+        data.pop("fixtures")
+        self.ws.session_file.write_text(json.dumps(data, indent=2))
         return self
 
     def show(self) -> None:
@@ -437,21 +447,15 @@ class Session:
         print(f"run dir:   {self.run_dir}")
 
 
-# Choosing a dataset sample means "stop using the explicit fixtures file".
-_SAMPLE_FIELDS = frozenset({"dataset", "n", "seed"})
-
-
 def session(**kwargs: Any) -> Session:
     """Create, save and return a session. Unspecified fields keep the value
     from the saved session (if any), else the defaults.
 
-    Passing `dataset`, `n` or `seed` without `fixtures` clears a saved
-    `fixtures` override, so a notebook that picks a sample gets that sample.
+    A `fixtures` argument is set on the returned session but is not saved,
+    so it applies to the current notebook only (see `Session`).
     """
     base = dataclasses.asdict(load_session(root=kwargs.get("root"), quiet=True))
-    if _SAMPLE_FIELDS & kwargs.keys() and "fixtures" not in kwargs:
-        base["fixtures"] = None
-    base.update({k: v for k, v in kwargs.items()})
+    base.update(kwargs)
     if isinstance(base.get("detectors"), tuple):
         base["detectors"] = list(base["detectors"])
     s = Session(**base)
@@ -459,24 +463,34 @@ def session(**kwargs: Any) -> Session:
 
 
 def load_session(*, root: str | Path | None = None, quiet: bool = False) -> Session:
-    """The saved session, or defaults if none has been saved yet."""
+    """The saved session, or defaults if none has been saved yet.
+
+    A `fixtures` value in `session.json` is ignored because the override is
+    in memory only (see `Session`). Older versions saved it there. A note
+    says so even when `quiet` is set because the session then differs from
+    what the file says. The key is then removed from the file so the note
+    shows once and not in every later notebook.
+    """
     path = workspace(root).session_file
     if path.exists():
         data = json.loads(path.read_text())
-        known = {f.name for f in dataclasses.fields(Session)}
+        if data.get("fixtures"):
+            print(
+                f"note: ignoring the fixtures file {data['fixtures']} saved in {path} "
+                "because only the notebook that sets one uses it"
+            )
+        if "fixtures" in data:
+            kept = {k: v for k, v in data.items() if k != "fixtures"}
+            try:
+                path.write_text(json.dumps(kept, indent=2))
+            except OSError:
+                pass  # A read-only workspace still loads and the note shows again next time.
+        known = {f.name for f in dataclasses.fields(Session)} - {"fixtures"}
         s = Session(**{k: v for k, v in data.items() if k in known})
     else:
         s = Session(root=str(root) if root else None)
     if not quiet:
         s.show()
-        if s.fixtures:
-            # Notebooks 01–06 expect a dataset sample with gold spans. A saved
-            # override would make them score unlabeled data without saying so.
-            print(
-                "note: the saved session points at an explicit fixtures file, "
-                "not a dataset sample. "
-                "Gold-based scores need a sample: call nb.session(dataset=...) to switch back."
-            )
     return s
 
 
@@ -545,10 +559,12 @@ def ensure_run(
     so rewriting that file (for example after adding documents and parsing
     again) would leave results for the old contents there. Those results are
     cleared and the detectors run again whenever the file's hash differs
-    from the one recorded in the run dir's manifest.
+    from the one recorded in the run dir's manifest. Review files from
+    `opf_eval.review` in that run dir are cleared with them.
 
-    A raw file that lacks some of the fixtures' records, for example after
-    an interrupted run, is removed and that detector runs again.
+    An interrupted run leaves no raw file for the detector it was running
+    because the runner writes each file under a temp name first. That
+    detector simply runs again next time.
     """
     from . import baseline as _baseline
     from .runner import run
@@ -557,7 +573,6 @@ def ensure_run(
     if s.fixtures:
         _clear_if_fixtures_changed(fx, s.run_dir)
     wanted = list(detectors) if detectors is not None else list(s.detectors)
-    _drop_incomplete_raw(fx, s.run_dir, wanted)
     todo = [d for d in wanted if not (s.run_dir / f"raw_{d}.jsonl").exists()]
     seeded: list[str] = []
     if todo and baseline:
@@ -576,34 +591,6 @@ def ensure_run(
     else:
         print(f"results present for: {', '.join(wanted)}")
     return s.run_dir
-
-
-def _drop_incomplete_raw(fixtures: Path, run_dir: Path, detectors: Iterable[str]) -> list[str]:
-    """Remove each `raw_<detector>.jsonl` in `run_dir` that has no row for
-    some record of `fixtures` and return those detectors. A half-written last
-    line counts as missing."""
-    want: set[str] | None = None
-    dropped: list[str] = []
-    for det in detectors:
-        path = Path(run_dir) / f"raw_{det}.jsonl"
-        if not path.exists():
-            continue
-        if want is None:
-            want = {str(r["id"]) for r in _io.iter_jsonl(fixtures)}
-        got: set[str] = set()
-        with path.open(encoding="utf-8", errors="replace") as f:
-            for line in f:
-                try:
-                    got.add(str(json.loads(line)["id"]))
-                except (ValueError, KeyError, TypeError):
-                    continue
-        n_have = len(want & got)
-        if n_have < len(want):
-            print(f"raw_{det}.jsonl covers {n_have} of {len(want)} records (an interrupted run?); "
-                  f"running {det} again")
-            path.unlink()
-            dropped.append(det)
-    return dropped
 
 
 def export_baseline(s: Session, detectors: Iterable[str] | None = None) -> Path:

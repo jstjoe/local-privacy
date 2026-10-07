@@ -35,15 +35,16 @@ Output is `run_dir/review_llm_<provider>_<model>.jsonl` with one row per judged
 span, per located miss, per dropped miss and per failed record, and a
 `.meta.json` sidecar naming the reviewer and prompt version. Rows of a record
 that a server-side fallback model answered carry `fallback_model`, and the
-meta counts those records in `n_fallback_records`. Wrap the client
-in `llm.CachedClient` (or pass `cache_dir` to `make_client`) so a rerun costs
-nothing and returns the same numbers.
+meta counts those records in `n_fallback_records`. A record whose answer
+stops at max_tokens is reviewed again in halves of its candidates (see
+`_judge`), and the meta counts those records in `n_split_records`. Wrap the
+client in `llm.CachedClient` (or pass `cache_dir` to `make_client`) so a rerun
+costs nothing and returns the same numbers.
 """
 
 from __future__ import annotations
 
 import json
-import re
 from collections.abc import Iterable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -51,7 +52,9 @@ from pathlib import Path
 
 from .. import taxonomy
 from ..io import iter_jsonl, read_jsonl, write_jsonl
-from ..llm.base import pop_fallbacks
+from ..llm import describe
+from ..llm.base import LLMError, pop_fallbacks
+from ..silver import locate
 from .pool import (
     context,
     f1,
@@ -78,6 +81,12 @@ UNJUDGED = "unjudged"
 _PII_VERDICTS = frozenset({"correct", "wrong_label", "boundary"})
 # Context shown around each candidate so repeated values point at one occurrence.
 _CANDIDATE_CONTEXT = 30
+# Output budget of one review call. Reasoning models think before they answer
+# and the thinking counts against it, so the client default of 8,000 cuts off
+# records with many candidates. The anthropic SDK refuses a non-streaming call
+# whose max_tokens implies more than 10 minutes (above about 21,333 tokens), so
+# 16,000 stays clear of that guard. It matches `silver.MAX_TOKENS`.
+MAX_TOKENS = 16000
 
 _SYSTEM = """\
 You review the output of personal-data (PII) detectors.
@@ -206,72 +215,6 @@ def build_prompt(text: str, pooled: Sequence[dict], labels: Sequence[str]) -> tu
     return system, "\n".join(lines)
 
 
-# ------------------------------------------------------------ locate misses
-
-
-def _locate(text: str, items: list[dict]) -> tuple[list[dict], list[dict]]:
-    """Find the reviewer's missed values in `text`.
-
-    Uses `silver.locate` (the same offset finder as silver labels) when that
-    module is available, else a small built-in finder with the same rules for
-    the common cases: exact match, then case-insensitive; a `context` that is
-    found in the text picks the occurrence inside it; otherwise every
-    occurrence is returned.
-    """
-    try:
-        from ..silver import locate as silver_locate
-    except ImportError:
-        return _fallback_locate(text, items)
-    return silver_locate(text, items)
-
-
-def _fallback_locate(text: str, items: list[dict]) -> tuple[list[dict], list[dict]]:
-    spans: list[dict] = []
-    dropped: list[dict] = []
-    for item in items:
-        value = item.get("value") or ""
-        label = item["label"]
-        hits = _occurrences(text, value)
-        if not hits:
-            dropped.append({**item, "reason": "not_found"})
-            continue
-        ctx = (item.get("context") or "").strip()
-        if ctx:
-            inside = []
-            for c_start, c_end in _occurrences(text, ctx):
-                inside += [h for h in hits if c_start <= h[0] and h[1] <= c_end]
-            if inside:
-                hits = inside[:1]
-        for start, end in hits:
-            spans.append({
-                "label": taxonomy.parent(label),
-                "fine_label": label,
-                "raw_label": label,
-                "start": start,
-                "end": end,
-                "text": text[start:end],
-            })
-    return _drop_overlaps(spans), dropped
-
-
-def _occurrences(text: str, value: str) -> list[tuple[int, int]]:
-    if not value.strip():
-        return []
-    found = [(m.start(), m.end()) for m in re.finditer(re.escape(value), text)]
-    if not found:
-        found = [(m.start(), m.end()) for m in re.finditer(re.escape(value), text, re.IGNORECASE)]
-    return found
-
-
-def _drop_overlaps(spans: list[dict]) -> list[dict]:
-    """Keep the longer of two overlapping spans; equal length keeps the earlier one."""
-    kept: list[dict] = []
-    for s in sorted(spans, key=lambda s: (-(s["end"] - s["start"]), s["start"])):
-        if not any(s["start"] < k["end"] and k["start"] < s["end"] for k in kept):
-            kept.append(s)
-    return sorted(kept, key=lambda s: s["start"])
-
-
 # ------------------------------------------------------------------- review
 
 
@@ -280,34 +223,95 @@ def review_file_name(reviewer) -> str:
     return f"review_llm_{safe_name(reviewer.provider)}_{safe_name(reviewer.model)}.jsonl"
 
 
-def _review_record(reviewer, ex: dict, candidates: list[dict], labels: list[str]) -> list[dict]:
-    """Rows for one record. Errors from the client become one error row."""
+def _review_record(
+    reviewer, ex: dict, candidates: list[dict], labels: list[str]
+) -> tuple[list[dict], bool]:
+    """Rows for one record and whether its candidates had to be split.
+
+    Errors from the client become one error row.
+    """
     rid = ex["id"]
     text = ex.get("text") or ""
+    pop_fallbacks(reviewer)  # this record's calls run on this thread; start clean
+    splits = [0]
+    try:
+        verdicts, found, dropped = _judge(reviewer, text, candidates, labels, splits)
+    except Exception as exc:  # noqa: BLE001 — any failure becomes an error row, never a guess
+        error = {"id": rid, "kind": "error", "error": f"{type(exc).__name__}: {exc}"}
+        return [error], splits[0] > 0
+    rows = _answer_rows(rid, text, candidates, verdicts, found, dropped)
+    fallbacks = pop_fallbacks(reviewer)
+    if fallbacks:
+        for row in rows:
+            row["fallback_model"] = fallbacks[-1]
+    return rows, splits[0] > 0
+
+
+def _judge(
+    reviewer, text: str, candidates: list[dict], labels: list[str], splits: list[int]
+) -> tuple[dict[int, dict], list[dict], list[dict]]:
+    """Ask the reviewer about `candidates` in `text`.
+
+    Returns the verdicts keyed by the 1-based index into `candidates`, the
+    located misses and the dropped misses. When the answer stops at
+    max_tokens the candidates are cut in half and each half is reviewed
+    against the same whole text, down to a single candidate. The halves'
+    verdicts are mapped back to their indexes in `candidates` and their misses
+    are joined. Each half sees only its own candidates and so lists the PII
+    that the other half covers as missed. `_answer_rows` drops those misses
+    because it checks them against every candidate's verdict. Each split adds
+    one to `splits[0]`. Any other error propagates, and so does a truncated
+    answer for a single candidate or for a record without candidates.
+    """
     system, user = build_prompt(text, candidates, labels)
-    pop_fallbacks(reviewer)  # this record's call runs on this thread; start clean
     try:
         answer = reviewer.complete_json(
             system=system,
             user=user,
             schema=judge_schema(len(candidates), labels),
             name="review",
+            max_tokens=MAX_TOKENS,
         )
-    except Exception as exc:  # noqa: BLE001 — any failure becomes an error row, never a guess
-        return [{"id": rid, "kind": "error", "error": f"{type(exc).__name__}: {exc}"}]
-    rows = _answer_rows(rid, text, candidates, answer)
-    fallbacks = pop_fallbacks(reviewer)
-    if fallbacks:
-        for row in rows:
-            row["fallback_model"] = fallbacks[-1]
-    return rows
-
-
-def _answer_rows(rid: str, text: str, candidates: list[dict], answer: dict) -> list[dict]:
-
+    except LLMError as exc:
+        if not exc.truncated or len(candidates) <= 1:
+            raise
+        splits[0] += 1
+        mid = len(candidates) // 2
+        verdicts, found, dropped = _judge(reviewer, text, candidates[:mid], labels, splits)
+        right, found_right, dropped_right = _judge(
+            reviewer, text, candidates[mid:], labels, splits
+        )
+        verdicts.update({mid + i: v for i, v in right.items()})
+        return verdicts, found + found_right, dropped + dropped_right
     verdicts: dict[int, dict] = {}
     for v in answer.get("verdicts") or []:
-        verdicts.setdefault(int(v["index"]), v)  # a repeated index keeps its first verdict
+        i = int(v["index"])
+        if 1 <= i <= len(candidates):
+            verdicts.setdefault(i, v)  # a repeated index keeps its first verdict
+    found, dropped = locate(text, list(answer.get("missed") or []))
+    return verdicts, found, dropped
+
+
+def _answer_rows(
+    rid: str,
+    text: str,
+    candidates: list[dict],
+    verdicts: Mapping[int, dict],
+    found: list[dict],
+    dropped: list[dict],
+) -> list[dict]:
+    """Span rows for every candidate, then the located misses and the dropped ones.
+
+    `verdicts` is keyed by the 1-based candidate index. `found` and `dropped`
+    may come from several calls about the same text. A miss is kept once per
+    `(start, end)` and a dropped value once per value, label and reason. A
+    miss that an accepted candidate stands for is dropped (see `_covered`).
+    A miss with the exact boundaries of a candidate judged `not_pii` is
+    dropped with the reason `judged_not_pii` because the call that saw that
+    candidate rejected it. A half of a split record lists the other half's
+    candidates as missed because it cannot see them, and without this rule a
+    candidate the other half rejected would be both a `not_pii` span and a miss.
+    """
     rows: list[dict] = []
     for i, span in enumerate(candidates, start=1):
         v = verdicts.get(i)
@@ -327,10 +331,19 @@ def _answer_rows(rid: str, text: str, candidates: list[dict], answer: dict) -> l
             "note": (v.get("note") or "") if v else "",
         })
 
-    found, dropped = _locate(text, list(answer.get("missed") or []))
-    seen: set[tuple[int, int]] = set()
+    unique: dict[tuple[int, int], dict] = {}
     for span in found:
-        key = (span["start"], span["end"])
+        unique.setdefault((span["start"], span["end"]), span)
+    rejected = {(r["start"], r["end"]) for r in rows if r["verdict"] == "not_pii"}
+    dropped = list(dropped)
+    for key, span in sorted(unique.items()):
+        if key in rejected and not _covered(key, rows):
+            dropped.append({
+                "value": span["text"],
+                "label": span.get("fine_label") or span["label"],
+                "reason": "judged_not_pii",
+            })
+            continue
         if _covered(key, rows):
             # The value sits under an accepted candidate, so it was not missed
             # by all detectors. That candidate already carries the verdict.
@@ -340,9 +353,6 @@ def _answer_rows(rid: str, text: str, candidates: list[dict], answer: dict) -> l
                 "reason": "covered_by_candidate",
             })
             continue
-        if key in seen:
-            continue
-        seen.add(key)
         rows.append({
             "id": rid,
             "kind": "missed",
@@ -352,14 +362,19 @@ def _answer_rows(rid: str, text: str, candidates: list[dict], answer: dict) -> l
             "fine_label": span.get("fine_label") or span["label"],
             "text": text[span["start"]:span["end"]],
         })
+    seen: set[tuple] = set()
     for item in dropped:
-        rows.append({
+        row = {
             "id": rid,
             "kind": "dropped",
             "value": item.get("value"),
             "label": item.get("label"),
             "reason": item.get("reason", "not_found"),
-        })
+        }
+        key = (row["value"], row["label"], row["reason"])
+        if key not in seen:
+            seen.add(key)
+            rows.append(row)
     return rows
 
 
@@ -412,8 +427,10 @@ def review_run(
     max_workers: concurrent reviewer calls.
 
     One call per record, including records with no candidates because the
-    reviewer can still find misses there. Blank records are skipped. Returns
-    the path of `review_llm_<provider>_<model>.jsonl` in `run_dir`.
+    reviewer can still find misses there. A record whose answer stops at
+    max_tokens is reviewed again in halves of its candidates, which adds
+    calls (see `_judge`). Blank records are skipped. Returns the path of
+    `review_llm_<provider>_<model>.jsonl` in `run_dir`.
     """
     # Read the argument once: a generator would be empty by the second use.
     detectors = list(detectors) if detectors is not None else None
@@ -428,7 +445,7 @@ def review_run(
         if (ex.get("text") or "").strip()
     ]
 
-    def one(item: tuple[dict, list[dict]]) -> list[dict]:
+    def one(item: tuple[dict, list[dict]]) -> tuple[list[dict], bool]:
         ex, candidates = item
         return _review_record(reviewer, ex, candidates, labels)
 
@@ -442,11 +459,11 @@ def review_run(
         ))
 
     out = run_dir / review_file_name(reviewer)
-    rows = [r for rs in results for r in rs]
+    rows = [r for rs, _ in results for r in rs]
     write_jsonl(out, rows)
     kinds = [r["kind"] for r in rows]
     meta = {
-        "reviewer": _describe(reviewer),
+        "reviewer": describe(reviewer),
         "provider": reviewer.provider,
         "model": reviewer.model,
         "remote": bool(getattr(reviewer, "remote", True)),
@@ -462,6 +479,7 @@ def review_run(
         "n_missed": kinds.count("missed"),
         "n_dropped": kinds.count("dropped"),
         "n_fallback_records": len({r["id"] for r in rows if r.get("fallback_model")}),
+        "n_split_records": sum(1 for _, split in results if split),
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     review_meta_path(out).write_text(json.dumps(meta, indent=2, ensure_ascii=False))
@@ -470,14 +488,6 @@ def review_run(
 
 def _progress(items, *, total: int, desc: str, enabled: bool):
     return progress(items, total=total, desc=desc, enabled=enabled)
-
-
-def _describe(client) -> str:
-    try:
-        from ..llm import describe
-    except ImportError:  # pragma: no cover — the llm package ships with opf_eval
-        return f"{client.model} via {client.provider}"
-    return describe(client)
 
 
 def dry_run_responder(system: str, user: str, schema: dict) -> dict:
@@ -509,6 +519,9 @@ def estimate(
     Returns `{"n_calls", "n_candidates", "n_chars"}`: one call per non-blank
     record, the candidates it would judge and the characters of record text
     (the prompt adds roughly 2,000 characters of instructions per call).
+    `n_calls` is a lower bound because a record whose answer stops at
+    max_tokens is reviewed again in halves of its candidates and every split
+    adds calls.
     """
     detectors = list(detectors) if detectors is not None else None
     run = load_run(run_dir, fixtures, detectors)

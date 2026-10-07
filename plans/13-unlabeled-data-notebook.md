@@ -277,7 +277,7 @@ The code for PRs 1 to 4 differs from the design above in the ways listed here. E
 
 1. `silver.locate` tries Unicode NFC matching after the exact, case-insensitive and whitespace tiers. It uses a match inside a longer word only when no tier has a stand-alone match, so "Ann" never labels "Annual". A context that matches at every occurrence counts as no context.
 2. `locate` drops items with the reasons `empty`, `unknown_label`, `not_found`, `extra_occurrence` and `overlap`.
-3. Records longer than 12,000 characters are sent in pieces. A piece whose answer stops at max_tokens is cut in half and asked again, down to 500 characters.
+3. Records longer than 12,000 characters are sent in pieces. Each piece is a core plus up to 200 characters of context on either side, and only spans that start in the core are kept, so a value at a cut is seen whole once and never comes back as two halves. A piece whose answer stops at max_tokens has its core cut in half and each half is asked again with its own margins, down to cores of 500 characters.
 4. Only `LLMError` becomes an error row in `silver.generate`. Any other exception stops the run.
 5. The silver meta adds `gold_source.names`, `gold_source.providers`, `gold_source.remote`, `n_spans`, `n_dropped`, `labeler_files` and `agreement`.
 6. The report scores silver fixtures on the silver meta's `labels` and leaves out the records in `error_ids` because their empty silver gold would otherwise count every detected span there as spurious. When every labeler failed on every record the report prints a note instead of scores.
@@ -285,9 +285,10 @@ The code for PRs 1 to 4 differs from the design above in the ways listed here. E
 
 ### LLM review
 
-1. The review prompt is `review-v2`. It tells the reviewer to list PII inside a candidate it judged `not_pii` as missed.
+1. The review prompt is `review-v3`. Version 2 tells the reviewer to list PII inside a candidate it judged `not_pii` as missed. Version 3 adds the rule about a second entity inside a `boundary` candidate.
 2. Recall counts entities and not spans, as Part 5 now describes. Pooled spans judged `wrong_label` or `boundary` count as true entities because the reviewer never lists PII that such a candidate already covers. The design's formula would have dropped those entities from the denominator and inflated every detector's recall.
 3. A candidate with no verdict after the client's one retry is written as `unjudged` and left out of every number. A located miss that an accepted candidate already stands for is dropped with the reason `covered_by_candidate`. A miss that only partly overlaps a `boundary` candidate which belongs to another entity stays a miss.
+4. Each review call asks for up to 16,000 output tokens because the reviewer thinks before it answers. A record whose answer still stops at max_tokens is reviewed again in halves of its candidates against the same text, down to one candidate. The halves' misses are joined and checked against every candidate's verdict. A miss with the exact boundaries of a candidate that the other half judged `not_pii` is dropped as `judged_not_pii`. The review meta counts these records in `n_split_records`.
 
 ### Classifier review and Clef-flash
 

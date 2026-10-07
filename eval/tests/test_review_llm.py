@@ -307,6 +307,180 @@ def test_reviewer_errors_become_error_rows(tmp_path):
     assert not [r for r in read_jsonl(path) if r["id"] == "r3" and r["kind"] != "error"]
 
 
+class _Budgeted(StubClient):
+    """A stub that records `max_tokens` and stops early above `max_candidates` candidates.
+
+    `fail` names an `LLMError` to raise for every prompt instead of answering.
+    """
+
+    def __init__(self, responder, *, max_candidates: int | None = None, fail=None):
+        super().__init__(responder)
+        self.max_candidates = max_candidates
+        self.fail = fail
+        self.budgets: list[int] = []
+        self.sizes: list[int] = []
+
+    def complete_json(self, *, system, user, schema, name="result", max_tokens=8000):
+        self.budgets.append(max_tokens)
+        self.sizes.append(len(candidates(user)))
+        if self.fail is not None:
+            raise self.fail
+        if self.max_candidates is not None and len(candidates(user)) > self.max_candidates:
+            raise LLMError(f"hit max_tokens={max_tokens}", truncated=True)
+        return super().complete_json(system=system, user=user, schema=schema, name=name)
+
+
+def own_misses_responder(system: str, user: str, schema: dict) -> dict:
+    """Judges like STANDARD_VERDICTS and lists the PII that its own candidates do not cover.
+
+    A real reviewer that sees only some of the candidates lists the rest as
+    missed, so each half of a split record reports the other half's PII.
+    """
+    text = record_text(user)
+    answer = responder_from(STANDARD_VERDICTS, STANDARD_MISSED)(system, user, schema)
+    own = {span_text for _, _, span_text in candidates(user)}
+    for value, label in (("Jane Doe", "PERSON"), ("jane@x.com", "EMAIL")):
+        if value in text and value not in own:
+            answer["missed"].append({"value": value, "label": label, "context": value})
+    answer["missed"].append({"value": "not in text", "label": "PERSON", "context": ""})
+    return answer
+
+
+def test_review_calls_ask_for_a_larger_output_budget(tmp_path):
+    run_dir, _ = standard_run(tmp_path)
+    reviewer = _Budgeted(rl.dry_run_responder)
+    rl.review_run(run_dir, reviewer, progress=False)
+    assert reviewer.budgets == [rl.MAX_TOKENS] * 3
+    # Above the client default of 8,000 and below the anthropic SDK's
+    # non-streaming guard, which refuses more than 10 minutes at 128k tokens/hour.
+    assert 8000 < rl.MAX_TOKENS <= 10 * 60 * 128_000 // (60 * 60)
+
+
+def test_a_truncated_record_is_reviewed_again_in_halves_of_its_candidates(tmp_path):
+    run_dir, _ = standard_run(tmp_path)
+    whole = rl.review_run(run_dir, StubClient(own_misses_responder), progress=False)
+    rows_whole = read_jsonl(whole)
+    summary_whole = rl.summarize(run_dir, whole)
+    assert json.loads(rl.review_meta_path(whole).read_text())["n_split_records"] == 0
+
+    # r1 has five candidates: 5 -> 2 + 3 -> 2 + (1 + 2).
+    reviewer = _Budgeted(own_misses_responder, max_candidates=2)
+    path = rl.review_run(run_dir, reviewer, progress=False, max_workers=1)
+    rows = read_jsonl(path)
+    assert not [r for r in rows if r["kind"] == "error"]
+    assert reviewer.sizes == [5, 2, 3, 1, 2, 1, 1]
+
+    def kind(rs, k):
+        return [r for r in rs if r["kind"] == k]
+
+    # Every candidate keeps its own verdict and the halves' misses are joined.
+    assert kind(rows, "span") == kind(rows_whole, "span")
+    assert kind(rows, "missed") == kind(rows_whole, "missed")
+    assert [r["text"] for r in kind(rows, "missed")] == ["123-45-6789"]
+    # A half that lists the other half's PII as missed is dropped once per value.
+    dropped = sorted((r["value"], r["reason"]) for r in kind(rows, "dropped") if r["id"] == "r1")
+    assert dropped == [
+        ("Jane Doe", "covered_by_candidate"),
+        ("jane@x.com", "covered_by_candidate"),
+        ("not in text", "not_found"),
+    ]
+    assert rl.summarize(run_dir, path) == summary_whole
+    meta = json.loads(rl.review_meta_path(path).read_text())
+    assert meta["n_split_records"] == 1 and meta["n_errors"] == 0
+
+
+def test_only_truncation_splits_and_one_candidate_is_not_split(tmp_path):
+    preds = {"a": {"r1": [_span(T1, "Jane Doe", "PERSON"), _span(T1, "jane@x.com", "EMAIL")],
+                   "r2": [_span(T2, "Bob", "PERSON")],
+                   "r3": []}}
+    run_dir, _ = make_run(tmp_path, {"r1": T1, "r2": T2, "r3": T3}, preds)
+
+    refused = _Budgeted(rl.dry_run_responder, fail=LLMError("refused: test"))
+    path = rl.review_run(run_dir, refused, progress=False, max_workers=1)
+    assert refused.sizes == [2, 1, 0]  # one call per record, no split
+    assert [r["kind"] for r in read_jsonl(path)] == ["error"] * 3
+
+    cut = _Budgeted(rl.dry_run_responder, fail=LLMError("hit max_tokens", truncated=True))
+    path = rl.review_run(run_dir, cut, progress=False, max_workers=1)
+    # r1 splits once and its first single candidate stops early again, which
+    # fails the record. r2 has one candidate and r3 has none (it only asks for
+    # misses), so neither can be split.
+    assert cut.sizes == [2, 1, 1, 0]
+    assert [r["kind"] for r in read_jsonl(path)] == ["error"] * 3
+    assert json.loads(rl.review_meta_path(path).read_text())["n_split_records"] == 1
+
+
+def test_an_out_of_range_index_in_a_half_does_not_judge_the_other_half():
+    text = "Ann, Bob, Cy and Di."
+    spans = [
+        {**_span(text, name, "PERSON"), "detectors": ["a"]} for name in ("Ann", "Bob", "Cy", "Di")
+    ]
+
+    class Loose:
+        """Answers without schema checks, as a provider that drops index limits might."""
+
+        provider, model = "loose", "m"
+
+        def complete_json(self, *, system, user, schema, name="result", max_tokens=8000):
+            got = [t for _, _, t in candidates(user)]
+            if len(got) > 2:
+                raise LLMError("hit max_tokens", truncated=True)
+            if got == ["Ann", "Bob"]:
+                # Index 3 does not exist in this half.
+                return {"verdicts": [
+                    {"index": i, "verdict": "not_pii", "label": None, "note": ""} for i in (1, 2, 3)
+                ], "missed": []}
+            return {"verdicts": [{"index": 2, "verdict": "correct", "label": None, "note": ""}],
+                    "missed": []}
+
+    rows, split = rl._review_record(Loose(), {"id": "r", "text": text}, spans, ["PERSON"])
+    assert split is True
+    assert [(r["text"], r["verdict"]) for r in rows] == [
+        ("Ann", "not_pii"), ("Bob", "not_pii"), ("Cy", rl.UNJUDGED), ("Di", "correct"),
+    ]
+
+
+def test_a_half_does_not_list_a_candidate_the_other_half_rejected_as_missed():
+    text = "Ann met Acme Corp."
+    spans = [
+        {**_span(text, "Ann", "PERSON"), "detectors": ["a"]},
+        {**_span(text, "Acme Corp", "PERSON"), "detectors": ["a"]},
+    ]
+
+    class Halves:
+        """Stops early on both candidates and lists the candidate it cannot see as missed."""
+
+        provider, model = "halves", "m"
+
+        def complete_json(self, *, system, user, schema, name="result", max_tokens=8000):
+            got = [t for _, _, t in candidates(user)]
+            if len(got) > 1:
+                raise LLMError("hit max_tokens", truncated=True)
+            verdict = "correct" if got == ["Ann"] else "not_pii"
+            other = "Acme Corp" if got == ["Ann"] else "Ann"
+            return {
+                "verdicts": [{"index": 1, "verdict": verdict, "label": None, "note": ""}],
+                "missed": [{"value": other, "label": "PERSON", "context": text}],
+            }
+
+    rows, split = rl._review_record(Halves(), {"id": "r", "text": text}, spans, ["PERSON"])
+    assert split is True
+    assert [(r["text"], r["verdict"]) for r in rows if r["kind"] == "span"] == [
+        ("Ann", "correct"), ("Acme Corp", "not_pii"),
+    ]
+    # The half that judged Acme Corp rejected it, so the other half's miss is dropped.
+    assert not [r for r in rows if r["kind"] == "missed"]
+    assert sorted((r["value"], r["reason"]) for r in rows if r["kind"] == "dropped") == [
+        ("Acme Corp", "judged_not_pii"), ("Ann", "covered_by_candidate"),
+    ]
+
+
+def test_review_locates_misses_with_silver_locate():
+    from opf_eval import silver
+
+    assert rl.locate is silver.locate
+
+
 def test_missing_and_repeated_indexes_are_unjudged(tmp_path):
     run_dir, _ = standard_run(tmp_path)
 
@@ -487,6 +661,13 @@ def test_review_rows_name_a_fallback_model(tmp_path):
     rows = read_jsonl(path)
     assert {r["id"] for r in rows if r.get("fallback_model") == "claude-sonnet-4-5"} == {"r2"}
     assert json.loads(rl.review_meta_path(path).read_text())["n_fallback_records"] == 1
+
+
+def test_docs_and_plan_name_the_current_prompt_version():
+    root = Path(__file__).resolve().parents[2]
+    for doc in ("eval/docs/your-own-data.md", "plans/13-unlabeled-data-notebook.md"):
+        named = re.findall(r"prompt(?: version)? is `(review-v\d+)`", (root / doc).read_text())
+        assert named == [rl.PROMPT_VERSION], doc
 
 
 def test_review_prompt_embeds_its_version(monkeypatch):
