@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 from collections import Counter
-from typing import Callable, Protocol
+from collections.abc import Callable
+from typing import Protocol
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -20,8 +21,8 @@ from .registry import DetectorEntry, detector_categories
 from .schemas import (
     CanonicalLabel,
     DetectorInfo,
-    DetectorsResponse,
     DetectorOptions,
+    DetectorsResponse,
     FindRequest,
     FindResponse,
     HealthResponse,
@@ -31,7 +32,6 @@ from .schemas import (
     SpanOut,
 )
 from .vault_tokens import TokenVaultClient
-
 
 router = APIRouter()
 
@@ -50,7 +50,10 @@ _ERROR_400_EXAMPLE = {
                 "label_token_unconfigured": {
                     "summary": "label_token mode without vault env",
                     "value": {
-                        "detail": "mode='label_token' requires SKYFLOW_TOKEN_VAULT_URL and SKYFLOW_TOKEN_VAULT_ID env vars to be set"
+                        "detail": (
+                            "mode='label_token' requires SKYFLOW_TOKEN_VAULT_URL and "
+                            "SKYFLOW_TOKEN_VAULT_ID env vars to be set"
+                        )
                     },
                 },
             }
@@ -208,7 +211,7 @@ def _build_label_token_renderer_raising_http(
     try:
         return label_token_renderer(spans, client)
     except VaultTokenError as e:
-        raise HTTPException(status_code=502, detail=f"label_token: {e}")
+        raise HTTPException(status_code=502, detail=f"label_token: {e}") from e
 
 
 @router.post(
@@ -221,7 +224,8 @@ def _build_label_token_renderer_raising_http(
         "in increasing strength of identity preservation:\n\n"
         "| `mode` | Looks like | What it preserves |\n"
         "|---|---|---|\n"
-        "| `redact` | `********` | Nothing — fixed 8-char asterisk run regardless of span length. |\n"
+        "| `redact` | `********` | Nothing — fixed 8-char asterisk run "
+        "regardless of span length. |\n"
         "| `label` | `[EMAIL]` | Category only. Default. |\n"
         "| `label_number` | `[EMAIL_1]` | Identity **within one request** via per-label counter; "
         "duplicate `(label, text)` reuses its number. Dropped-overlap spans "
@@ -314,7 +318,7 @@ async def replace(request: Request, body: ReplaceRequest) -> ReplaceResponse:
             replacement=replacement,
             replaced=flag,
         )
-        for (s, replacement), flag in zip(rendered_pairs, replaced_flags)
+        for (s, replacement), flag in zip(rendered_pairs, replaced_flags, strict=True)
     ]
     replaced_text = splice_pieces(body.text, rendered_pairs)
 

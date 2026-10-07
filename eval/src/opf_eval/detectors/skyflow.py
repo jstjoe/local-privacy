@@ -35,7 +35,6 @@ import httpx
 
 from .base import DetectorResult, Span, error_result, make_span
 
-
 DETECT_PATH = "/v1/detect/deidentify/string"
 
 

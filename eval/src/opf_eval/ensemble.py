@@ -26,8 +26,9 @@ import argparse
 import json
 from pathlib import Path
 
-from .datasets import annotated_labels, get as get_dataset_config, names as dataset_names
-from .datasets import observed_labels
+from .datasets import annotated_labels, observed_labels
+from .datasets import get as get_dataset_config
+from .datasets import names as dataset_names
 from .io import iter_jsonl as _read_jsonl
 from .nervaluate_metrics import score as semeval_score
 from .taxonomy import parent, vocab_labels

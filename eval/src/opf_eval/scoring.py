@@ -48,7 +48,7 @@ class Run:
         fixtures: str | Path | None = None,
         *,
         detectors: Iterable[str] | None = None,
-    ) -> "Run":
+    ) -> Run:
         run_dir = Path(run_dir)
         manifest = json.loads((run_dir / "manifest.json").read_text())
         fx_path = Path(fixtures) if fixtures else Path(manifest["fixtures"])

@@ -35,10 +35,14 @@ from .datasets import (
     DATASETS,
     DEFAULT_DATASET,
     annotated_labels,
-    describe as describe_datasets,
-    get as get_dataset_config,
     load_raw,
     register_dataset,
+)
+from .datasets import (
+    describe as describe_datasets,
+)
+from .datasets import (
+    get as get_dataset_config,
 )
 from .io import file_sha256, meta_path, read_meta, write_jsonl
 
@@ -162,7 +166,10 @@ class FixtureReport:
         if self.labels:
             lines.append("labels: " + ", ".join(f"{k}={v}" for k, v in self.labels.most_common()))
         if self.languages:
-            lines.append("languages: " + ", ".join(f"{k}={v}" for k, v in self.languages.most_common()))
+            lines.append(
+                "languages: "
+                + ", ".join(f"{k}={v}" for k, v in self.languages.most_common())
+            )
         for e in self.errors[:20]:
             lines.append(f"  ERROR  {e}")
         for w in self.warnings[:20]:
@@ -249,7 +256,8 @@ def _cmd_materialize(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(prog="python -m opf_eval.fixtures")
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument("--n", type=int, default=None,
-                    help="sample size (default: 5000 for registered datasets, all records for --file)")
+                    help="sample size (default: 5000 for registered datasets, "
+                         "all records for --file)")
     src = ap.add_mutually_exclusive_group()
     src.add_argument("--dataset", default=None, choices=sorted(DATASETS),
                      help=f"registered dataset (default: {DEFAULT_DATASET})")
@@ -291,7 +299,10 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit(0 if all(r.ok for r in reports) else 1)
     if argv[:1] == ["list"]:
         for row in describe_datasets():
-            print(f"{row['name']:<20} {row['labels']:>2} labels  {row['source']:<48} {row['description']}")
+            print(
+                f"{row['name']:<20} {row['labels']:>2} labels  "
+                f"{row['source']:<48} {row['description']}"
+            )
         raise SystemExit(0)
     raise SystemExit(_cmd_materialize(argv))
 

@@ -70,7 +70,8 @@ def test_prompt_and_request_lists_match_v1():
         coarse = dataset_canonicals(vk)
         assert gliner_prompts(coarse) == SNAPSHOT["gliner_prompts_by_ds"][vk]
         # Fine label sets select the same prompts as their coarse parents.
-        assert gliner_prompts(dataset_canonicals(vk, "fine")) == SNAPSHOT["gliner_prompts_by_ds"][vk]
+        fine = dataset_canonicals(vk, "fine")
+        assert gliner_prompts(fine) == SNAPSHOT["gliner_prompts_by_ds"][vk]
         assert (
             canonical_to_skyflow_request_types(sorted(coarse))
             == SNAPSHOT["skyflow_request_by_ds"][vk]

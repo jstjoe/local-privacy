@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from statistics import median
-from typing import Iterable
 
 from .detectors.base import Span
 
@@ -57,7 +57,8 @@ def _match(
     """Greedy 1:1 match by IoU within same label. Returns (tp, fp, fn, per_label_counts)."""
     used_gold: set[int] = set()
     tp = 0
-    per_label: dict[tuple[str, bool], int] = defaultdict(int)  # (label, kind=tp?) -> count, kind: True=tp,False=fp
+    # (label, is_tp) -> count, where is_tp is True for a TP and False for an FP.
+    per_label: dict[tuple[str, bool], int] = defaultdict(int)
     for p in pred:
         best_idx = -1
         best_iou = 0.0
@@ -122,7 +123,9 @@ def _per_label_update(
         by_label_gold[g["label"]].append(g)
     labels = set(by_label_pred) | set(by_label_gold)
     for lbl in labels:
-        tp, fp, fn, _ = _match(by_label_pred.get(lbl, []), by_label_gold.get(lbl, []), iou_threshold=iou_threshold)
+        tp, fp, fn, _ = _match(
+            by_label_pred.get(lbl, []), by_label_gold.get(lbl, []), iou_threshold=iou_threshold
+        )
         bucket = table[lbl]
         bucket.tp += tp
         bucket.fp += fp

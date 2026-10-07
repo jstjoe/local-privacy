@@ -52,7 +52,8 @@ def test_export_then_seed_a_smaller_sample(ws_root, base_root, emails):
     _fake_raw(nb.ensure_fixtures(big), big.run_dir, "regex")
     out = nb.export_baseline(big)
     info = json.loads((out / "baseline.json").read_text())
-    assert (info["dataset"], info["seed"], info["n"], info["detectors"]) == ("t_emails", 1, 8, ["regex"])
+    key = (info["dataset"], info["seed"], info["n"], info["detectors"])
+    assert key == ("t_emails", 1, 8, ["regex"])
     assert "text" not in json.dumps(info).replace("text_sha1", "")  # no fixture text stored
 
     # Same seed, fewer records: a prefix of the exported sample.
@@ -72,7 +73,8 @@ def test_seed_skips_on_mismatch(ws_root, base_root, emails, tmp_path):
     baseline.export(fx, s.run_dir)
 
     # Different detector options -> not used.
-    assert baseline.seed_run_dir(fx, tmp_path / "a", ["regex"], detector_options={"regex": {"t": 1}}) == []
+    options = {"regex": {"t": 1}}
+    assert baseline.seed_run_dir(fx, tmp_path / "a", ["regex"], detector_options=options) == []
     # Unknown detector -> not used.
     assert baseline.seed_run_dir(fx, tmp_path / "b", ["other"]) == []
     # A record's text changed (e.g. a new dataset revision) -> not used.
@@ -92,7 +94,9 @@ def test_ensure_run_without_baseline_flag_does_not_seed(ws_root, base_root, emai
     baseline.export(s.fixtures_path, s.run_dir)
     s2 = nb.session(run_name="fresh")
     called = {}
-    monkeypatch.setattr("opf_eval.runner.run", lambda fx, todo, *a, **k: called.setdefault("todo", todo))
+    monkeypatch.setattr(
+        "opf_eval.runner.run", lambda fx, todo, *a, **k: called.setdefault("todo", todo)
+    )
     nb.ensure_run(s2, baseline=False)
     assert called["todo"] == ["regex"]
 

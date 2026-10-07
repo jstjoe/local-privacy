@@ -9,7 +9,6 @@ import pytest
 
 from opf_eval.runner import _free_detector, run
 
-
 # ----------------------------- _free_detector ---------------------------------
 
 

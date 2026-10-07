@@ -18,13 +18,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable
 
 from opf_eval.detectors import registry as detector_registry
 from opf_eval.detectors.base import Detector
 from opf_eval.taxonomy import CANONICAL_LABELS, detector_supported_canonicals
-
 
 logger = logging.getLogger("opf_api.registry")
 
