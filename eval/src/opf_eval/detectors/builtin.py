@@ -15,7 +15,6 @@ from .registry import (
     register_gliner_model,
 )
 
-
 # ------------------------------------------------------------------- OPF
 
 

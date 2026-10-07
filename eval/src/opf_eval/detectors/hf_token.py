@@ -19,7 +19,6 @@ from transformers import pipeline
 
 from .base import DetectorResult, Span, error_result, make_span
 
-
 AggregationStrategy = Literal["none", "simple", "first", "average", "max"]
 
 

@@ -110,7 +110,7 @@ def test_apply_recipe_writes_union_of_winning_spans(run_dir):
     recipe = {"EMAIL": "detA", "PHONE": "detB"}
     out_path = apply_recipe(recipe, out_dir, fx_path, ensemble_name="ens_test")
     assert out_path.name == "raw_ens_test.jsonl"
-    rows = [json.loads(l) for l in out_path.read_text().splitlines() if l.strip()]
+    rows = [json.loads(line) for line in out_path.read_text().splitlines() if line.strip()]
     by_id = {r["id"]: r for r in rows}
 
     # r1: one EMAIL from detA.
@@ -158,7 +158,7 @@ def test_apply_recipe_dedupes_overlapping_spans(tmp_path: Path):
     )
     recipe = {"EMAIL": "detA", "USERNAME": "detB"}
     out_path = apply_recipe(recipe, out_dir, fx_path, ensemble_name="ens_overlap")
-    rows = [json.loads(l) for l in out_path.read_text().splitlines() if l.strip()]
+    rows = [json.loads(line) for line in out_path.read_text().splitlines() if line.strip()]
     spans = rows[0]["spans"]
     # The EMAIL (starts at 0, longer) wins; USERNAME (starts at 5) is dropped.
     assert [(s["label"], s["start"], s["end"]) for s in spans] == [("EMAIL", 0, 17)]

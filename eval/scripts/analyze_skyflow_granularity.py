@@ -52,12 +52,18 @@ def _iou(a, b):
 
 
 def main(skyflow_jsonl: Path, fixtures_jsonl: Path):
-    fixtures = {json.loads(l)["id"]: json.loads(l) for l in fixtures_jsonl.open() if l.strip()}
-    sky_records = [json.loads(l) for l in skyflow_jsonl.open() if l.strip()]
+    fixtures = {
+        json.loads(line)["id"]: json.loads(line)
+        for line in fixtures_jsonl.open()
+        if line.strip()
+    }
+    sky_records = [json.loads(line) for line in skyflow_jsonl.open() if line.strip()]
 
     raw_label_counts: Counter = Counter()
-    granular_overlap_with_general: Counter = Counter()  # granular -> # times overlapped by same-record general
-    granular_matched_to_gold: Counter = Counter()       # granular -> matches to a gold span (by canonical)
+    # granular -> number of times a general span in the same record overlapped it
+    granular_overlap_with_general: Counter = Counter()
+    # granular -> matches to a gold span (by canonical label)
+    granular_matched_to_gold: Counter = Counter()
     granular_total: Counter = Counter()
 
     for rec in sky_records:

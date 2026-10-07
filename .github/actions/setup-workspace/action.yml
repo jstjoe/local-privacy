@@ -1,0 +1,75 @@
+name: Set up the uv workspace
+description: >-
+  Fetch privacy-filter at a pinned commit and install uv with Python 3.12.
+  Optionally sync the full workspace and install the spaCy model that
+  Presidio loads.
+
+inputs:
+  sync:
+    description: Install every workspace package with all extras from uv.lock.
+    default: "true"
+  spacy-model:
+    description: Install en_core_web_lg into the synced environment.
+    default: "false"
+  cache-suffix:
+    description: >-
+      Keeps the uv cache of a small install apart from the full one. The cache
+      key ignores what was installed so a lint run that saved first would
+      otherwise leave the full jobs with a cache that lacks torch.
+    default: full
+  opf-ref:
+    description: >-
+      The openai/privacy-filter commit to check out. uv.lock records the opf
+      package at this commit so bump both together in one reviewed change.
+    default: f7f00ca7fb869683eb732c010299d901457f19c3
+
+runs:
+  using: composite
+  steps:
+    # privacy-filter is a uv workspace member that is gitignored here. uv
+    # reads every member before it runs anything so even lint needs it. The
+    # checkout is pinned because an upstream change to its dependencies would
+    # otherwise fail `uv lock --check` on every PR until someone relocks.
+    - name: Fetch OPF source at the pinned commit (workspace member)
+      shell: bash
+      env:
+        OPF_REF: ${{ inputs.opf-ref }}
+      run: |
+        git init -q privacy-filter
+        git -C privacy-filter fetch -q --depth 1 https://github.com/openai/privacy-filter "$OPF_REF"
+        git -C privacy-filter checkout -q FETCH_HEAD
+
+    - name: Install uv and Python 3.12
+      # setup-uv publishes no floating v10 tag so the release is pinned by SHA.
+      uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      with:
+        python-version: "3.12"
+        enable-cache: true
+        cache-suffix: ${{ inputs.cache-suffix }}
+        cache-dependency-glob: |
+          uv.lock
+          **/pyproject.toml
+        # The full cache is about 3 GB because of the torch and CUDA wheels.
+        # Caches are scoped per ref so a PR that saved its own copy would push
+        # main's entry out of the 10 GB repository limit. Only main saves and
+        # PRs restore what main saved.
+        save-cache: ${{ github.ref == 'refs/heads/main' }}
+
+    - name: Install the workspace
+      if: inputs.sync == 'true'
+      shell: bash
+      run: uv sync --all-packages --all-extras --frozen
+
+    # Presidio loads this model at build time. spacy.cli.download calls pip
+    # and a uv environment has no pip so the wheel is installed directly.
+    - name: Install spaCy model en_core_web_lg 3.8.0
+      if: inputs.spacy-model == 'true'
+      shell: bash
+      run: >-
+        uv pip install --no-deps
+        "en_core_web_lg @ https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl#sha256=293e9547a655b25499198ab15a525b05b9407a75f10255e405e8c3854329ab63"
+
+    - name: Show the environment size
+      if: inputs.sync == 'true'
+      shell: bash
+      run: du -sh .venv

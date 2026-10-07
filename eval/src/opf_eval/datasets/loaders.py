@@ -18,13 +18,13 @@ whose label it can't map. Records with no usable text are skipped.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
-from typing import Any, Optional, Union
+from typing import Any
 
 from ..taxonomy import parent, to_canonical
 from .base import Loader
 
 # A vocab key, or a callable raw label -> canonical label (None = drop).
-LabelMapper = Union[str, Callable[[str], Optional[str]]]
+LabelMapper = str | Callable[[str], str | None]
 
 
 # Map ai4privacy 300k full-name languages -> ISO 639-1 codes. New datasets
@@ -65,7 +65,7 @@ def _first(rec: dict, keys: Sequence[str]) -> Any:
     return None
 
 
-def _mapper(labels: LabelMapper) -> Callable[[str], "str | None"]:
+def _mapper(labels: LabelMapper) -> Callable[[str], str | None]:
     if isinstance(labels, str):
         vocab = labels
         return lambda raw: to_canonical(vocab, raw)
@@ -85,7 +85,7 @@ def gold_span(canonical: str, raw_label: str, start: int, end: int) -> dict:
 
 def spans_from_dicts(
     raw_spans: Iterable[Any],
-    to_canonical_fn: Callable[[str], "str | None"],
+    to_canonical_fn: Callable[[str], str | None],
     *,
     label_keys: Sequence[str] = _LABEL_KEYS,
     start_keys: Sequence[str] = _START_KEYS,
@@ -199,7 +199,7 @@ def bio_spans(
             spans.append((cur[0], cur[1], cur[2]))
             cur.clear()
 
-    for (start, end), tag in zip(offsets, tags):
+    for (start, end), tag in zip(offsets, tags, strict=False):
         tag = str(tag)
         if tag in ("O", "", "0"):
             close()
@@ -239,7 +239,10 @@ def bio_loader(
     def loader(raw_records: Iterable[dict]) -> Iterable[dict]:
         for idx, rec in enumerate(raw_records):
             tokens = rec.get(tokens_field)
-            tags = rec.get(tags_field) if tags_field else _first(rec, ("ner_tags", "labels", "tags"))
+            if tags_field:
+                tags = rec.get(tags_field)
+            else:
+                tags = _first(rec, ("ner_tags", "labels", "tags"))
             if not tokens or tags is None:
                 continue
             if tag_names is not None:

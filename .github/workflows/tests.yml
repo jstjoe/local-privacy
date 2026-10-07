@@ -1,0 +1,167 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    # Nightly at 06:17 UTC for the slow tests and the notebooks.
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A new push to a PR replaces the run in progress. Every other run gets its
+# own group because GitHub keeps only one pending run per group and silently
+# cancels it when another run queues. Merges and the nightly run on main would
+# otherwise cancel each other while the slow job holds the group.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  HF_HUB_DISABLE_TELEMETRY: "1"
+
+jobs:
+  lint:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-workspace
+        with:
+          sync: "false"
+          cache-suffix: lint
+
+      # Only the dev group is installed so this job skips torch.
+      - name: Ruff
+        run: uv run --frozen --only-group dev ruff check --output-format github
+
+  unit:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-workspace
+        with:
+          spacy-model: "true"
+
+      - name: Check that uv.lock matches the pyproject files
+        run: uv lock --check
+
+      - name: Eval tests
+        run: uv run --no-sync python -m pytest eval/tests -q
+
+      - name: API tests
+        run: uv run --no-sync python -m pytest api/tests -q
+
+  slow:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-workspace
+        with:
+          spacy-model: "true"
+
+      # pytest exits with 5 when it collects no tests. That counts as a pass
+      # with a notice only while no test file uses the slow marker. Once one
+      # does an empty selection means the marker or the files broke so the
+      # job fails. Every other non-zero exit code fails the job too.
+      - name: Slow eval tests
+        env:
+          PII_BENCH_SLOW_TESTS: "1"
+        run: |
+          set +e
+          uv run --no-sync python -m pytest eval/tests -q -m slow
+          code=$?
+          set -e
+          if [ "$code" -eq 5 ]; then
+            if grep -rq 'mark\.slow' eval/tests; then
+              echo "::error::Tests are marked slow but pytest collected none of them."
+              exit 5
+            fi
+            echo "::notice::No tests are marked slow yet so pytest collected nothing."
+            exit 0
+          fi
+          exit "$code"
+
+  # Decides whether a PR or push touches anything the notebooks depend on.
+  changes:
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      notebooks: ${{ steps.filter.outputs.notebooks }}
+    steps:
+      # This job runs no code from the checkout so it keeps the default
+      # credentials that paths-filter can use to fetch the base commit.
+      - uses: actions/checkout@v7
+
+      - id: filter
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: |
+            notebooks:
+              - "notebooks/**"
+              - "eval/src/**"
+              - "eval/pyproject.toml"
+              - "eval/scripts/run_notebooks.py"
+              - "pyproject.toml"
+              - "uv.lock"
+              - ".github/workflows/tests.yml"
+              - ".github/actions/setup-workspace/**"
+
+  notebooks:
+    needs: changes
+    # The changes job is skipped on schedule and workflow_dispatch so this
+    # job checks the event itself. !cancelled() lets it run after a skip.
+    if: >-
+      !cancelled() && (
+        github.event_name == 'schedule' ||
+        github.event_name == 'workflow_dispatch' ||
+        needs.changes.outputs.notebooks == 'true'
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-workspace
+
+      # 01 samples pii_masking_200k from the Hugging Face Hub and 03 scores
+      # that sample from the baseline shipped in opf_eval. Neither loads a
+      # detector model so both run on CPU. The other notebooks run detectors
+      # and need a GPU or a Skyflow account.
+      - name: Run notebooks 01 and 03
+        run: >-
+          uv run --no-sync python eval/scripts/run_notebooks.py
+          notebooks/01_datasets.ipynb
+          notebooks/03_score_and_compare.ipynb
+          --out executed-notebooks
+
+      - name: Upload executed notebooks
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: executed-notebooks
+          path: executed-notebooks
+          if-no-files-found: ignore

@@ -26,9 +26,13 @@ from typing import Any
 
 from .datasets import (
     annotated_labels,
-    get as get_dataset_config,
-    names as dataset_names,
     observed_labels,
+)
+from .datasets import (
+    get as get_dataset_config,
+)
+from .datasets import (
+    names as dataset_names,
 )
 from .detectors import registry
 from .detectors.base import Detector
@@ -103,7 +107,8 @@ def _check_reused_coverage(out_dir: Path, copied: list[str], ids: set[str]) -> N
         if missing:
             warnings.warn(
                 f"[reuse] raw_{det}.jsonl covers {len(ids) - missing}/{len(ids)} fixture ids — "
-                f"it was produced on different fixtures; the report will score it on the overlap only",
+                "it was produced on different fixtures; "
+                "the report will score it on the overlap only",
                 stacklevel=3,
             )
 
@@ -150,7 +155,10 @@ def _free_detector(det: object) -> None:
     # Drop common heavy attributes if the detector stashes them. close()
     # above is the primary path; this is a fallback for detectors that
     # don't define one.
-    for attr in ("_opf", "_model", "model", "_pipe", "_pipeline", "pipeline", "_engine", "engine", "_loaders"):
+    heavy_attrs = (
+        "_opf", "_model", "model", "_pipe", "_pipeline", "pipeline", "_engine", "engine", "_loaders"
+    )
+    for attr in heavy_attrs:
         if hasattr(det, attr):
             try:
                 setattr(det, attr, None)

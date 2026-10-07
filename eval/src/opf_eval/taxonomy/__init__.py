@@ -259,7 +259,7 @@ OPF_CANONICAL_LABELS: tuple[str, ...] = tuple(
 )
 
 
-def _coarse(vocab_key: str) -> Callable[[str], "str | None"]:
+def _coarse(vocab_key: str) -> Callable[[str], str | None]:
     def fn(label: str) -> str | None:
         return to_canonical(vocab_key, label, level="coarse")
 

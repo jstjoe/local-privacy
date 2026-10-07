@@ -5,7 +5,6 @@ import os
 
 import httpx
 
-
 text = "Joe at joe@example.com lives in Elgin, TX. Phone: 555-1234."
 
 r = httpx.post(

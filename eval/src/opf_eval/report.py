@@ -40,7 +40,7 @@ def _fmt_per_label(metrics: dict[str, float | int]) -> str:
 def _per_label_section(
     title: str,
     detectors: list[str],
-    semeval_by_det: dict[str, "SemEvalResult | None"],
+    semeval_by_det: dict[str, SemEvalResult | None],
     labels: list[str],
     *,
     schema: str = "ent_type",
@@ -73,10 +73,10 @@ def _semeval_view(
     labels: tuple[str, ...] | None,
     title: str,
     description: str,
-) -> tuple[list[str], dict[str, "SemEvalResult | None"], dict[str, set[str]]]:
+) -> tuple[list[str], dict[str, SemEvalResult | None], dict[str, set[str]]]:
     """Render a SemEval section. Returns (lines, per-detector results, per-
     detector label scopes) so callers can reuse them for follow-on tables."""
-    results: dict[str, "SemEvalResult | None"] = {}
+    results: dict[str, SemEvalResult | None] = {}
     scopes: dict[str, set[str]] = {}
     for det in detectors:
         scope = scope_for(run, det, level=level, view=view, labels=labels)
@@ -184,7 +184,9 @@ def _coverage_section(run: Run) -> list[str]:
         "|---|---|---|---|",
     ]
     for r in rows:
-        lines.append(f"| {r['detector']} | {r['scored']}/{r['n']} | {r['errors']} | {r['missing']} |")
+        lines.append(
+            f"| {r['detector']} | {r['scored']}/{r['n']} | {r['errors']} | {r['missing']} |"
+        )
     lines.append("")
     return lines
 

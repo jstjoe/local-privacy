@@ -109,7 +109,9 @@ def export(
     meta = read_meta(fixtures) or {}
     dataset, seed = meta.get("dataset"), meta.get("seed")
     if dataset is None or seed is None:
-        raise ValueError(f"{fixtures} has no dataset/seed in its meta sidecar; can't key a baseline")
+        raise ValueError(
+            f"{fixtures} has no dataset/seed in its meta sidecar; can't key a baseline"
+        )
     manifest = json.loads((run_dir / "manifest.json").read_text())
     detectors = list(detectors or manifest["detectors"])
     records = list(iter_jsonl(fixtures))
@@ -174,7 +176,9 @@ def build(
         nb.ensure_spacy_model("en_core_web_lg")
     # Default to the workspace's runs dir (gitignored in a checkout).
     work = Path(work_dir or nb.workspace().runs / "baseline-build")
-    fixtures, _ = ensure_fixtures(work / f"{dataset}_{n}_s{seed}.jsonl", n, dataset=dataset, seed=seed)
+    fixtures, _ = ensure_fixtures(
+        work / f"{dataset}_{n}_s{seed}.jsonl", n, dataset=dataset, seed=seed
+    )
     run_dir = work / "run"
     dev = device or autodetect_device()
     print(f"building baseline: {dataset} n={n} seed={seed} on {dev}: {', '.join(detectors)}")
@@ -185,7 +189,9 @@ def build(
 def main(argv: Sequence[str] | None = None) -> None:
     from .nb import DEFAULT_DATASET, DEFAULT_DETECTORS
 
-    p = argparse.ArgumentParser(prog="python -m opf_eval.baseline", description=__doc__.split("\n\n")[0])
+    p = argparse.ArgumentParser(
+        prog="python -m opf_eval.baseline", description=__doc__.split("\n\n")[0]
+    )
     sub = p.add_subparsers(dest="cmd", required=True)
     b = sub.add_parser("build", help="sample, run detectors, save as the shipped baseline")
     b.add_argument("--dataset", default=DEFAULT_DATASET)

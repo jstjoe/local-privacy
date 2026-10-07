@@ -11,12 +11,14 @@ notebook demo. Lives in `opf_eval` because:
 
 Four renderer factories cover the four user-facing modes:
 
-| Mode           | Factory                                | Notes                                              |
-|----------------|----------------------------------------|----------------------------------------------------|
-| `redact`       | `redact_renderer()`                    | Fixed-length `********` (no info leak).            |
-| `label`        | `label_renderer()`                     | `[CANONICAL_LABEL]` (default mode).                |
-| `label_number` | `label_number_renderer()`              | Per-label counter, duplicate-aware. Stateful.      |
-| `label_token`  | `label_token_renderer(spans, client)`  | One batch insert against a Skyflow vault.          |
+1. `redact` uses `redact_renderer()` and writes a fixed-length `********`
+   that leaks no information.
+2. `label` uses `label_renderer()` and writes `[CANONICAL_LABEL]`. It is the
+   default mode.
+3. `label_number` uses `label_number_renderer()`. It keeps a stateful
+   per-label counter that reuses the number for a duplicate span.
+4. `label_token` uses `label_token_renderer(spans, client)` and makes one
+   batch insert against a Skyflow vault.
 
 `render_modes` is the convenience entry point for the notebook — it
 runs every requested mode at once and returns a dict for easy display.
@@ -24,10 +26,10 @@ runs every requested mode at once and returns a dict for easy display.
 
 from __future__ import annotations
 
-from typing import Callable, Iterable, Literal, Protocol
+from collections.abc import Callable, Iterable
+from typing import Literal, Protocol
 
 from .detectors.base import Span
-
 
 Mode = Literal["redact", "label", "label_number", "label_token"]
 
