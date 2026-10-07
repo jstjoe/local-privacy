@@ -9,6 +9,7 @@ import re
 from pathlib import Path
 
 import pytest
+
 from opf_eval.io import meta_path, read_jsonl, write_jsonl
 from opf_eval.review import DecisionBackend, StubBackend
 from opf_eval.review import classifier as rc
@@ -23,13 +24,17 @@ def _span(text: str, value: str, label: str, fine: str | None = None) -> dict:
             "start": start, "end": start + len(value), "text": value}
 
 
-def make_run(root: Path, records: dict[str, str], preds: dict, *, labels=LABELS, gold=None) -> tuple[Path, Path]:
+def make_run(
+    root: Path, records: dict[str, str], preds: dict, *, labels=LABELS, gold=None
+) -> tuple[Path, Path]:
     fixtures = root / "fixtures.jsonl"
     write_jsonl(fixtures, [
         {"id": rid, "text": text, "language": None, "gold_spans": (gold or {}).get(rid, [])}
         for rid, text in records.items()
     ])
-    meta_path(fixtures).write_text(json.dumps({"gold": "none" if gold is None else None, "labels": labels}))
+    meta_path(fixtures).write_text(
+        json.dumps({"gold": "none" if gold is None else None, "labels": labels})
+    )
     run_dir = root / "run"
     run_dir.mkdir()
     (run_dir / "manifest.json").write_text(json.dumps({
@@ -58,7 +63,9 @@ def test_span_request_shape():
     q = req["questions"]
     assert q["is_pii"] == {"type": "noul", "instructions": rc.IS_PII_Q}
     assert q["label_ok"]["type"] == "noul"
-    assert q["label_ok"]["instructions"] == "Is PHONE (Phone and fax numbers, IMEI) the right type for it?"
+    assert q["label_ok"]["instructions"] == (
+        "Is PHONE (Phone and fax numbers, IMEI) the right type for it?"
+    )
     # Coarse categories of the target labels, in taxonomy order, plus NOT_PII.
     assert list(q["label"]["criteria"]) == ["PERSON", "EMAIL", "PHONE", "ACCOUNT", "NOT_PII"]
     assert q["label"]["type"] == "choice"
@@ -85,7 +92,11 @@ def test_split_segments_lines_sentences_and_trimming():
 
 def test_split_segments_never_cuts_inside_a_span():
     text = "Ship to 12 Long Street\nSpringfield now please. Thank you very much."
-    addr = {"start": text.index("12"), "end": text.index("Springfield") + len("Springfield"), "label": "ADDRESS"}
+    addr = {
+        "start": text.index("12"),
+        "end": text.index("Springfield") + len("Springfield"),
+        "label": "ADDRESS",
+    }
     segs = rc.split_segments(text, max_chars=200, avoid=[addr])
     # The newline sits inside the address, so the two lines stay one segment.
     # The sentence end after "please." still splits.
@@ -110,17 +121,22 @@ def test_split_segments_splits_every_sentence_not_just_long_lines():
     assert pieces == ["My name is Jane Doe.", "I live at 4 Elm St. Call me on 555-1234!", "Ok?"]
     # Initials and titles stay with the name; a semicolon does not split.
     text2 = "Dr. J. Smith called; he left 555-0000. Done."
-    assert [text2[a:b] for a, b in rc.split_segments(text2)] == ["Dr. J. Smith called; he left 555-0000.", "Done."]
+    assert [text2[a:b] for a, b in rc.split_segments(text2)] == [
+        "Dr. J. Smith called; he left 555-0000.", "Done."
+    ]
     # A sentence end inside a span does not split it.
     text3 = "Ask for Acme Inc. Ltd. Sales now. Bye."
     span = (text3.index("Acme"), text3.index(" now"))
-    assert [text3[a:b] for a, b in rc.split_segments(text3, avoid=[span])] == ["Ask for Acme Inc. Ltd. Sales now.", "Bye."]
+    assert [text3[a:b] for a, b in rc.split_segments(text3, avoid=[span])] == [
+        "Ask for Acme Inc. Ltd. Sales now.", "Bye."
+    ]
 
 
 def test_split_segments_never_cuts_inside_overlapping_spans():
     # Two detectors' spans overlap across the limit. The hard cut must move
     # out of their union, not just out of the last span it checked.
-    assert rc.split_segments("x" * 650, max_chars=600, avoid=[(580, 598), (590, 620)]) == [(0, 580), (580, 650)]
+    segs = rc.split_segments("x" * 650, max_chars=600, avoid=[(580, 598), (590, 620)])
+    assert segs == [(0, 580), (580, 650)]
     segs = rc.split_segments("x" * 40, max_chars=8, avoid=[(5, 15), (10, 20)])
     assert all(not (s < a < e) and not (s < b < e) for a, b in segs for s, e in [(5, 20)])
     import random
@@ -140,12 +156,18 @@ def test_split_segments_never_cuts_inside_overlapping_spans():
 
 
 def test_mask_replaces_clips_and_merges():
-    spans = [_span(TEXT, "Jane Doe", "PERSON", "GIVEN_NAME"), _span(TEXT, "jane@x.com", "EMAIL")]
-    assert rc.mask(TEXT, 0, len(TEXT), spans) == "Dear [PERSON],\nplease call 555-1234 or mail [EMAIL].\nThanks."
+    spans = [
+        _span(TEXT, "Jane Doe", "PERSON", "GIVEN_NAME"), _span(TEXT, "jane@x.com", "EMAIL")
+    ]
+    assert rc.mask(TEXT, 0, len(TEXT), spans) == (
+        "Dear [PERSON],\nplease call 555-1234 or mail [EMAIL].\nThanks."
+    )
     # Clipped to the segment: half the name sits inside it.
     a = TEXT.index("Doe")
     assert rc.mask(TEXT, a, a + 4, spans) == "[PERSON],"
-    overlap = [{"start": 5, "end": 13, "label": "PERSON"}, {"start": 10, "end": 15, "label": "PHONE"}]
+    overlap = [
+        {"start": 5, "end": 13, "label": "PERSON"}, {"start": 10, "end": 15, "label": "PHONE"}
+    ]
     # The overlap swallows ",\n" (positions 13-14) up to the end of the second span.
     assert rc.mask(TEXT, 0, 20, overlap) == "Dear [PERSON]pleas"
 
@@ -191,7 +213,10 @@ BELIEFS = {"Jane Doe": (0.9, 0.9), "jane@x.com": (0.95, 0.8), "Contact": (0.2, 0
 
 
 def oracle(req: dict) -> dict:
-    """Span questions answer from BELIEFS; a segment is residual when a digit or '@' survives masking."""
+    """Answer span questions from BELIEFS and segment questions from the masked text.
+
+    A segment is residual when a digit or '@' survives masking.
+    """
     if "is_pii" in req["questions"]:
         p_pii, p_ok = BELIEFS[req["state"]["span"]]
         return {
@@ -202,13 +227,16 @@ def oracle(req: dict) -> dict:
     leftover = bool(re.search(r"\d|@", text))
     return {
         "residual": noul_answer(0.9 if leftover else 0.1),
-        "residual_type": choice_answer({"PHONE": 0.9, "NONE": 0.1} if leftover else {"NONE": 0.9, "PHONE": 0.1}),
+        "residual_type": choice_answer(
+            {"PHONE": 0.9, "NONE": 0.1} if leftover else {"NONE": 0.9, "PHONE": 0.1}
+        ),
     }
 
 
 def standard_run(tmp_path: Path, gold=None):
     preds = {
-        "a": {"r1": [_span(T1, "Jane Doe", "PERSON"), _span(T1, "jane@x.com", "EMAIL"), _span(T1, "555-1234", "PHONE")],
+        "a": {"r1": [_span(T1, "Jane Doe", "PERSON"), _span(T1, "jane@x.com", "EMAIL"),
+                     _span(T1, "555-1234", "PHONE")],
               "r2": [_span(T2, "Bob", "PERSON")]},
         "b": {"r1": [_span(T1, "Jane Doe", "PERSON"), _span(T1, "Contact", "PERSON")],
               "r2": "timeout"},
@@ -224,10 +252,13 @@ def test_review_run_rows_and_meta(tmp_path):
     rows = read_jsonl(path)
     spans = [r for r in rows if r["kind"] == "span"]
     # Jane Doe is asked about once although both detectors found it.
-    assert sorted(r["text"] for r in spans) == ["555-1234", "Bob", "Contact", "Jane Doe", "jane@x.com"]
+    assert sorted(r["text"] for r in spans) == [
+        "555-1234", "Bob", "Contact", "Jane Doe", "jane@x.com"
+    ]
     jane = next(r for r in spans if r["text"] == "Jane Doe")
     assert jane["detectors"] == ["a", "b"]
-    assert (jane["p_pii"], jane["p_label_ok"], jane["best_label"], jane["p_best"]) == (0.9, 0.9, "PERSON", 0.9)
+    got = (jane["p_pii"], jane["p_label_ok"], jane["best_label"], jane["p_best"])
+    assert got == (0.9, 0.9, "PERSON", 0.9)
     segs = [r for r in rows if r["kind"] == "segment"]
     # r1 has two lines (both detectors), r2 two sentences (a only: b errored there).
     assert [(r["id"], r["detector"]) for r in segs] == [
@@ -242,7 +273,8 @@ def test_review_run_rows_and_meta(tmp_path):
     assert [(r["start"], r["end"]) for r in a_r1] == [(r["start"], r["end"]) for r in b_r1]
     meta = json.loads(path.with_name("review_oracle.meta.json").read_text())
     assert meta["backend"] == "oracle" and meta["threshold"] == 0.5 and meta["labels"] == LABELS
-    assert meta["n_span_requests"] == 5 and meta["n_segment_requests"] == 6 and meta["n_errors"] == 0
+    assert meta["n_span_requests"] == 5 and meta["n_segment_requests"] == 6
+    assert meta["n_errors"] == 0
     assert max(backend.batches) <= 2
 
 
@@ -309,7 +341,9 @@ def test_malformed_answers_become_error_rows(tmp_path):
     path = rc.review_run(run_dir, StubBackend(partial), batch_size=8, progress=False)
     rows = read_jsonl(path)
     errors = [r for r in rows if r["kind"] == "error"]
-    assert sorted((r["pass"], r["error"].split(":")[0]) for r in errors) == [("segment", "TypeError"), ("span", "KeyError")]
+    assert sorted((r["pass"], r["error"].split(":")[0]) for r in errors) == [
+        ("segment", "TypeError"), ("span", "KeyError")
+    ]
     # Every other request still has its row.
     assert len([r for r in rows if r["kind"] == "span"]) == 4
     assert len([r for r in rows if r["kind"] == "segment"]) == 5
@@ -328,7 +362,11 @@ def test_summarize_maths_and_threshold_override(tmp_path):
     run_dir, _ = standard_run(tmp_path)
     path = rc.review_run(run_dir, StubBackend(oracle), progress=False)
     s = {r["detector"]: r for r in rc.summarize(run_dir, path)}
-    # a: Jane Doe (0.9, 0.9) ok, jane@x.com (0.95, 0.8) ok, 555-1234 (0.8, 0.35) label not ok, Bob (0.7, 0.6) ok.
+    # Detector a has four spans.
+    # 1. Jane Doe (0.9, 0.9) is ok.
+    # 2. jane@x.com (0.95, 0.8) is ok.
+    # 3. 555-1234 (0.8, 0.35) has the wrong label.
+    # 4. Bob (0.7, 0.6) is ok.
     assert s["a"]["n_spans"] == 4
     assert s["a"]["precision"] == pytest.approx(3 / 4)
     assert s["a"]["precision_any_label"] == 1.0
@@ -339,9 +377,11 @@ def test_summarize_maths_and_threshold_override(tmp_path):
     assert s["b"]["precision"] == 0.5 and s["b"]["precision_any_label"] == 0.5
     assert s["b"]["n_segments"] == 2 and s["b"]["residual_rate"] == 1.0
     strict = {r["detector"]: r for r in rc.summarize(run_dir, path.name, threshold=0.85)}
-    assert strict["a"]["precision"] == pytest.approx(1 / 4)        # only Jane Doe clears 0.85 twice
+    # Only Jane Doe clears 0.85 on both questions.
+    assert strict["a"]["precision"] == pytest.approx(1 / 4)
     assert strict["a"]["precision_any_label"] == pytest.approx(2 / 4)
-    assert strict["a"]["residual_rate"] == pytest.approx(1 / 4) and strict["b"]["residual_rate"] == 1.0
+    assert strict["a"]["residual_rate"] == pytest.approx(1 / 4)
+    assert strict["b"]["residual_rate"] == 1.0
 
 
 def test_summarize_none_without_spans(tmp_path):
@@ -368,7 +408,8 @@ def test_default_stub_answers_count_as_yes_at_the_default_threshold(tmp_path):
 
 def test_threshold_sweep_against_gold(tmp_path):
     gold = {
-        "r1": [_span(T1, "Jane Doe", "PERSON"), _span(T1, "jane@x.com", "EMAIL"), _span(T1, "555-1234", "PHONE")],
+        "r1": [_span(T1, "Jane Doe", "PERSON"), _span(T1, "jane@x.com", "EMAIL"),
+               _span(T1, "555-1234", "PHONE")],
         "r2": [_span(T2, "Bob", "PERSON"), _span(T2, "123-45-6789", "ACCOUNT", "GOV_ID")],
     }
     run_dir, fixtures = standard_run(tmp_path, gold=gold)
@@ -378,7 +419,8 @@ def test_threshold_sweep_against_gold(tmp_path):
     a, b = by[(0.5, "a")], by[(0.5, "b")]
     assert a["true_precision"] == 1.0 and a["estimated_precision"] == pytest.approx(0.75)
     assert a["precision_error"] == pytest.approx(-0.25)
-    assert b["true_precision"] == 0.5 and b["estimated_precision"] == 0.5 and b["precision_error"] == 0.0
+    assert b["true_precision"] == 0.5 and b["estimated_precision"] == 0.5
+    assert b["precision_error"] == 0.0
     # a missed the SSN in r2, so 1 of its 4 segments truly has PII left.
     assert a["true_residual_rate"] == pytest.approx(1 / 4)
     assert b["true_residual_rate"] == 1.0  # both of b's r1 lines keep the e-mail or the phone

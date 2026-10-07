@@ -1,8 +1,8 @@
 """Claude through the Anthropic SDK, on the Anthropic API or on Vertex AI.
 
     from opf_eval.llm import make_client
-    claude = make_client("anthropic")                          # ANTHROPIC_API_KEY or `ant auth login`
-    claude = make_client("anthropic_vertex", region="us")      # GOOGLE_CLOUD_PROJECT + ADC
+    claude = make_client("anthropic")                      # ANTHROPIC_API_KEY or `ant auth login`
+    claude = make_client("anthropic_vertex", region="us")  # GOOGLE_CLOUD_PROJECT + ADC
     claude.complete_json(system=..., user=..., schema=...)
 
 Claude always goes through the Anthropic SDK and never through an
@@ -191,11 +191,18 @@ class AnthropicClient:
             # Server-side fallbacks are a first-party API feature only.
             self.use_fallbacks = False
         else:
-            self.use_fallbacks = sdk_supports_fallbacks() if fallbacks is None else bool(fallbacks)
-        self._sdk_client = sdk_client if sdk_client is not None else self._build(max_retries, timeout)
+            self.use_fallbacks = (
+                sdk_supports_fallbacks() if fallbacks is None else bool(fallbacks)
+            )
+        self._sdk_client = (
+            sdk_client if sdk_client is not None else self._build(max_retries, timeout)
+        )
 
     def __repr__(self) -> str:
-        return f"AnthropicClient(provider={self.provider!r}, model={self.model!r}, effort={self.effort!r})"
+        return (
+            f"AnthropicClient(provider={self.provider!r}, model={self.model!r}, "
+            f"effort={self.effort!r})"
+        )
 
     def _build(self, max_retries: int, timeout: float | None) -> Any:
         anthropic = _sdk()
@@ -207,7 +214,8 @@ class AnthropicClient:
                 return anthropic.Anthropic(**options)
             if not hasattr(anthropic, "AnthropicVertex"):  # pragma: no cover
                 raise ImportError(
-                    "This Anthropic SDK has no Vertex AI client. Run: pip install 'anthropic[vertex]'"
+                    "This Anthropic SDK has no Vertex AI client. "
+                    "Run: pip install 'anthropic[vertex]'"
                 )
             vertex: dict[str, Any] = {"region": self.region, **options}
             if self.project_id:
@@ -246,7 +254,9 @@ class AnthropicClient:
                 )
             return self._sdk_client.messages.create(**kwargs)
         except _sdk_errors() as exc:
-            raise LLMError(f"{self.model} via {self.operator}: {type(exc).__name__}: {exc}") from exc
+            raise LLMError(
+                f"{self.model} via {self.operator}: {type(exc).__name__}: {exc}"
+            ) from exc
         except google_auth_errors() as exc:
             # AnthropicVertex loads and refreshes ADC inside the call.
             raise LLMError(
@@ -256,7 +266,9 @@ class AnthropicClient:
         except Exception as exc:  # the protocol promises LLMError
             # For example a UnicodeEncodeError from the request body or the
             # SDK's ValueError for a max_tokens that needs streaming.
-            raise LLMError(f"{self.model} via {self.operator}: {type(exc).__name__}: {exc}") from exc
+            raise LLMError(
+                f"{self.model} via {self.operator}: {type(exc).__name__}: {exc}"
+            ) from exc
 
     def pop_fallbacks(self) -> list[str]:
         """Models that answered in place of `self.model` through a server-side
@@ -271,12 +283,15 @@ class AnthropicClient:
             raise LLMError(f"refused: {category}", refusal=str(category))
         if stop == "max_tokens":
             raise LLMError(
-                f"{self.model} hit max_tokens={max_tokens} before finishing its answer", truncated=True
+                f"{self.model} hit max_tokens={max_tokens} before finishing its answer",
+                truncated=True,
             )
         # A non-streaming response omits a declined partial, so after a
         # fallback every text block belongs to the answer.
         return "".join(
-            block.text for block in (response.content or []) if getattr(block, "type", None) == "text"
+            block.text
+            for block in (response.content or [])
+            if getattr(block, "type", None) == "text"
         )
 
     def complete_json(
@@ -293,8 +308,10 @@ class AnthropicClient:
         system, user = scrub_surrogates(system), scrub_surrogates(user)
         prompt = user
         errors: list[str] = []
-        for attempt in range(2):
-            response = self._create(system=system, user=prompt, schema=api_schema, max_tokens=max_tokens)
+        for _attempt in range(2):
+            response = self._create(
+                system=system, user=prompt, schema=api_schema, max_tokens=max_tokens
+            )
             text = self._text(response, max_tokens)
             answer, errors = parse_answer(text, schema)
             if not errors:

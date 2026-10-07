@@ -67,7 +67,7 @@ def _same(a: Any, b: Any) -> bool:
     if isinstance(a, (int, float)) and isinstance(b, (int, float)):
         return a == b
     if isinstance(a, list) and isinstance(b, list):
-        return len(a) == len(b) and all(_same(x, y) for x, y in zip(a, b))
+        return len(a) == len(b) and all(_same(x, y) for x, y in zip(a, b, strict=True))
     if isinstance(a, dict) and isinstance(b, dict):
         return a.keys() == b.keys() and all(_same(a[k], b[k]) for k in a)
     return type(a) is type(b) and a == b
@@ -167,7 +167,9 @@ def _validate(value: Any, schema: Any, path: str, errors: list[str]) -> None:
     if "allOf" in schema:
         for sub in schema["allOf"]:
             _validate(value, sub, path, errors)
-    if "anyOf" in schema and not any(not validate(value, sub, path=path) for sub in schema["anyOf"]):
+    if "anyOf" in schema and not any(
+        not validate(value, sub, path=path) for sub in schema["anyOf"]
+    ):
         errors.append(f"{path}: {_short(value)} matches none of the allowed shapes")
     if "oneOf" in schema:
         n = sum(1 for sub in schema["oneOf"] if not validate(value, sub, path=path))
@@ -199,7 +201,11 @@ _SUBSCHEMA_LISTS = ("anyOf", "allOf", "oneOf")
 
 def _is_object_schema(schema: dict) -> bool:
     kind = schema.get("type")
-    return kind == "object" or (isinstance(kind, list) and "object" in kind) or "properties" in schema
+    return (
+        kind == "object"
+        or (isinstance(kind, list) and "object" in kind)
+        or "properties" in schema
+    )
 
 
 def _strip(schema: Any, drop: set[str]) -> Any:

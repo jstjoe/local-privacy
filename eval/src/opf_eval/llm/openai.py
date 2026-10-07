@@ -120,7 +120,10 @@ def _is_response_format_error(exc: Exception) -> bool:
     body = getattr(exc, "body", None)
     if body is not None:
         text += " " + json.dumps(body, default=str).lower()
-    return any(word in text for word in ("response_format", "json_schema", "json_object", "response format"))
+    return any(
+        word in text
+        for word in ("response_format", "json_schema", "json_object", "response format")
+    )
 
 
 class OpenAIClient:
@@ -178,14 +181,17 @@ class OpenAIClient:
             )
             if not self.project_id and not base_url:
                 raise LLMError(
-                    "openai_vertex needs a GCP project: pass project_id= or set GOOGLE_CLOUD_PROJECT"
+                    "openai_vertex needs a GCP project: "
+                    "pass project_id= or set GOOGLE_CLOUD_PROJECT"
                 )
             self.base_url = base_url or vertex_base_url(self.project_id, self.region)
             self._api_key = token_provider
         else:
             if base_url:
                 # Otherwise the OpenAI key would go to another host labelled as OpenAI.
-                raise ValueError("provider 'openai' talks only to OpenAI; use openai_compatible for base_url")
+                raise ValueError(
+                    "provider 'openai' talks only to OpenAI; use openai_compatible for base_url"
+                )
             info = PROVIDERS[provider]
             self.base_url = None
         self.model = model or DEFAULT_MODELS[provider]
@@ -197,10 +203,15 @@ class OpenAIClient:
         self._mode = mode or "json_schema"
         self._mode_fixed = mode is not None or provider == "openai"
         self._mode_lock = threading.Lock()
-        self._sdk_client = sdk_client if sdk_client is not None else self._build(max_retries, timeout)
+        self._sdk_client = (
+            sdk_client if sdk_client is not None else self._build(max_retries, timeout)
+        )
 
     def __repr__(self) -> str:
-        return f"OpenAIClient(provider={self.provider!r}, model={self.model!r}, mode={self._mode!r})"
+        return (
+            f"OpenAIClient(provider={self.provider!r}, model={self.model!r}, "
+            f"mode={self._mode!r})"
+        )
 
     @property
     def mode(self) -> str:
@@ -219,7 +230,9 @@ class OpenAIClient:
         try:
             return openai.OpenAI(**options)
         except openai.OpenAIError as exc:
-            raise LLMError(f"cannot create the {self.provider} client ({exc}); set OPENAI_API_KEY") from exc
+            raise LLMError(
+                f"cannot create the {self.provider} client ({exc}); set OPENAI_API_KEY"
+            ) from exc
 
     def cache_settings(self) -> dict:
         """Settings that change answers and therefore belong in the cache key."""
@@ -232,7 +245,9 @@ class OpenAIClient:
 
     # ------------------------------------------------------------- calls
 
-    def _request(self, *, system: str, user: str, schema: dict, name: str, max_tokens: int, mode: str) -> dict:
+    def _request(
+        self, *, system: str, user: str, schema: dict, name: str, max_tokens: int, mode: str
+    ) -> dict:
         if mode == "json_schema":
             strict = not strict_problems(schema)
             response_format: dict | None = {
@@ -275,7 +290,9 @@ class OpenAIClient:
                     if self._mode == mode:  # another thread may have stepped down already
                         self._mode = MODES[MODES.index(mode) + 1]
             except openai.OpenAIError as exc:
-                raise LLMError(f"{self.model} via {self.operator}: {type(exc).__name__}: {exc}") from exc
+                raise LLMError(
+                    f"{self.model} via {self.operator}: {type(exc).__name__}: {exc}"
+                ) from exc
             except google_auth_errors() as exc:
                 # The SDK calls GoogleTokenProvider before each request, so a
                 # revoked login or an unreachable token endpoint lands here.
@@ -285,7 +302,9 @@ class OpenAIClient:
                 ) from exc
             except Exception as exc:  # the protocol promises LLMError
                 # For example a UnicodeEncodeError from the request body.
-                raise LLMError(f"{self.model} via {self.operator}: {type(exc).__name__}: {exc}") from exc
+                raise LLMError(
+                    f"{self.model} via {self.operator}: {type(exc).__name__}: {exc}"
+                ) from exc
 
     def _text(self, response: Any, max_tokens: int) -> str:
         if not getattr(response, "choices", None):
@@ -299,7 +318,8 @@ class OpenAIClient:
             raise LLMError("refused: content_filter", refusal="content_filter")
         if choice.finish_reason == "length":
             raise LLMError(
-                f"{self.model} hit max_tokens={max_tokens} before finishing its answer", truncated=True
+                f"{self.model} hit max_tokens={max_tokens} before finishing its answer",
+                truncated=True,
             )
         return message.content or ""
 
@@ -316,8 +336,10 @@ class OpenAIClient:
         system, user = scrub_surrogates(system), scrub_surrogates(user)
         prompt = user
         errors: list[str] = []
-        for attempt in range(2):
-            response = self._create(system=system, user=prompt, schema=schema, name=name, max_tokens=max_tokens)
+        for _attempt in range(2):
+            response = self._create(
+                system=system, user=prompt, schema=schema, name=name, max_tokens=max_tokens
+            )
             text = self._text(response, max_tokens)
             answer, errors = parse_answer(text, schema)
             if not errors:

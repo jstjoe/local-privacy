@@ -23,6 +23,11 @@ from .schema import minimal_instance, validate
 Responder = Callable[[str, str, dict], dict]
 
 
+def _minimal_answer(system: str, user: str, schema: dict) -> dict:
+    """The default responder returns the smallest value the schema allows."""
+    return minimal_instance(schema)
+
+
 class StubClient:
     """Implements `LLMClient` by calling `responder(system, user, schema)`.
 
@@ -39,7 +44,7 @@ class StubClient:
         remote: bool = False,
         operator: str = "local stub",
     ):
-        self.responder: Responder = responder or (lambda system, user, schema: minimal_instance(schema))
+        self.responder: Responder = responder or _minimal_answer
         self.provider = provider
         self.model = model
         self.remote = remote
@@ -64,5 +69,7 @@ class StubClient:
         answer = self.responder(system, user, schema)
         errors = validate(answer, schema)
         if errors:
-            raise LLMError(f"{self.model}: answer does not match the schema: {'; '.join(errors[:5])}")
+            raise LLMError(
+                f"{self.model}: answer does not match the schema: {'; '.join(errors[:5])}"
+            )
         return answer

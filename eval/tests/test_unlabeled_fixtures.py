@@ -29,7 +29,10 @@ class EmailDetector:
     name = "unl_email"
 
     def detect(self, text: str, **_):
-        spans = [make_span("unl_vocab", "mail", m.start(), m.end(), m.group()) for m in EMAIL_RE.finditer(text)]
+        spans = [
+            make_span("unl_vocab", "mail", m.start(), m.end(), m.group())
+            for m in EMAIL_RE.finditer(text)
+        ]
         return {"spans": spans, "latency_ms": 0.1, "error": None}
 
 
@@ -67,13 +70,16 @@ def test_default_target_labels():
 
 
 def test_from_texts_sequence(tmp_path):
-    out = fixtures.from_texts(["Call Jane at 555-0100", "   ", f"Mail {EMAIL}"], tmp_path / "pasted.jsonl",
-                              language="en")
+    out = fixtures.from_texts(
+        ["Call Jane at 555-0100", "   ", f"Mail {EMAIL}"], tmp_path / "pasted.jsonl", language="en"
+    )
     assert out == tmp_path / "pasted.jsonl"
     rows = read_jsonl(out)
     # The blank text is left out but keeps its number.
     assert [r["id"] for r in rows] == ["text-0001", "text-0003"]
-    assert rows[0] == {"id": "text-0001", "text": "Call Jane at 555-0100", "language": "en", "gold_spans": []}
+    assert rows[0] == {
+        "id": "text-0001", "text": "Call Jane at 555-0100", "language": "en", "gold_spans": [],
+    }
     assert "doc_id" not in rows[0]
 
     meta = read_meta(out)
@@ -91,7 +97,9 @@ def test_from_texts_sequence(tmp_path):
 
 
 def test_from_texts_mapping_and_labels(tmp_path):
-    out = fixtures.from_texts({"t1": "a", "ticket-9": "b"}, tmp_path / "m.jsonl", labels=["EMAIL", "PHONE", "EMAIL"])
+    out = fixtures.from_texts(
+        {"t1": "a", "ticket-9": "b"}, tmp_path / "m.jsonl", labels=["EMAIL", "PHONE", "EMAIL"]
+    )
     assert [r["id"] for r in read_jsonl(out)] == ["t1", "ticket-9"]
     assert read_meta(out)["labels"] == ["EMAIL", "PHONE"]
     with pytest.raises(ValueError, match="unknown label"):
@@ -154,7 +162,7 @@ def test_from_documents_records_and_meta(tmp_path):
         got = by_doc[doc.id]
         assert [r["id"] for r in got] == [f"{doc.id}#{k}" for k in range(len(expected))]
         assert [r["offset"] for r in got] == [a for a, _ in expected]
-        for r, (a, b) in zip(got, expected):
+        for r, (a, b) in zip(got, expected, strict=True):
             assert r["text"] == doc.text[a:b]
         assert "".join(r["text"] for r in got) == doc.text
 
@@ -164,7 +172,10 @@ def test_from_documents_records_and_meta(tmp_path):
     assert meta["max_chars"] == 200
     assert meta["n_written"] == len(rows)
     assert meta["documents"]["doc-b"] == {
-        "source": "tickets/long.txt", "kind": "text", "n_chunks": len(by_doc["doc-b"]), "warnings": [],
+        "source": "tickets/long.txt",
+        "kind": "text",
+        "n_chunks": len(by_doc["doc-b"]),
+        "warnings": [],
     }
     assert fixtures.validate_fixtures(out).ok
     assert fixtures.documents_path(out).exists()
@@ -186,14 +197,21 @@ def test_from_documents_drops_whitespace_only_chunks(tmp_path):
 
 
 def test_from_documents_edge_cases(tmp_path):
-    empty = Document("scan:empty.pdf", "empty.pdf", "pdf", "", [], ["page 1 has no text layer (needs OCR)"])
+    empty = Document(
+        "scan:empty.pdf", "empty.pdf", "pdf", "", [], ["page 1 has no text layer (needs OCR)"]
+    )
     out = fixtures.from_documents([empty, from_text("x", id="d")], tmp_path / "e.jsonl")
     assert [r["id"] for r in read_jsonl(out)] == ["d#0"]
     assert read_meta(out)["documents"]["scan:empty.pdf"] == {
-        "source": "empty.pdf", "kind": "pdf", "n_chunks": 0, "warnings": ["page 1 has no text layer (needs OCR)"],
+        "source": "empty.pdf",
+        "kind": "pdf",
+        "n_chunks": 0,
+        "warnings": ["page 1 has no text layer (needs OCR)"],
     }
     with pytest.raises(ValueError, match="duplicate document id"):
-        fixtures.from_documents([from_text("x", id="d"), from_text("y", id="d")], tmp_path / "dup.jsonl")
+        fixtures.from_documents(
+            [from_text("x", id="d"), from_text("y", id="d")], tmp_path / "dup.jsonl"
+        )
     # Writing texts over a documents fixture removes the stale segment map.
     fixtures.from_texts(["t"], out)
     assert not fixtures.documents_path(out).exists()
@@ -210,7 +228,9 @@ def test_read_document_map_and_load_documents(tmp_path):
     assert list(loaded) == ["doc-a", "doc-b"]
     for doc in docs:
         got = loaded[doc.id]
-        assert (got.text, got.segments, got.kind, got.source) == (doc.text, doc.segments, doc.kind, doc.source)
+        assert (got.text, got.segments, got.kind, got.source) == (
+            doc.text, doc.segments, doc.kind, doc.source
+        )
 
     # Hand-edited fixtures no longer line up with the sidecar.
     rows = read_jsonl(out)
@@ -243,7 +263,9 @@ def test_map_spans_to_documents_shifts_offsets(tmp_path):
     _raw(run_dir, "unl_email", raw)
 
     rows = fixtures.map_spans_to_documents(out, run_dir, "unl_email", docs={d.id: d for d in docs})
-    assert [(r["doc_id"], r["text"]) for r in rows] == [("doc-a", EMAIL), ("doc-b", "bob@example.org")]
+    assert [(r["doc_id"], r["text"]) for r in rows] == [
+        ("doc-a", EMAIL), ("doc-b", "bob@example.org")
+    ]
     for r in rows:
         doc = next(d for d in docs if d.id == r["doc_id"])
         assert doc.text[r["doc_start"]:r["doc_end"]] == r["text"]
@@ -287,8 +309,14 @@ def test_whitespace_only_chunks_still_rebuild_documents(tmp_path, files, max_cha
         assert loaded[doc.id].text == doc.text
     run_dir = tmp_path / "run"
     run_dir.mkdir()
-    _raw(run_dir, "unl_email", [{"id": r["id"], "detector": "unl_email", **EmailDetector().detect(r["text"])}
-                                for r in records])
+    _raw(
+        run_dir,
+        "unl_email",
+        [
+            {"id": r["id"], "detector": "unl_email", **EmailDetector().detect(r["text"])}
+            for r in records
+        ],
+    )
     rows = fixtures.map_spans_to_documents(out, run_dir, "unl_email")
     assert [r["text"] for r in rows] == [EMAIL]
     assert rows[0]["where"]
@@ -301,7 +329,11 @@ def test_map_spans_warns_when_the_sidecar_no_longer_fits(tmp_path):
     write_jsonl(out, rows)
     run_dir = tmp_path / "run"
     run_dir.mkdir()
-    _raw(run_dir, "unl_email", [{"id": "d#0", "detector": "unl_email", **EmailDetector().detect(rows[0]["text"])}])
+    _raw(
+        run_dir,
+        "unl_email",
+        [{"id": "d#0", "detector": "unl_email", **EmailDetector().detect(rows[0]["text"])}],
+    )
     with pytest.warns(UserWarning, match="sidecar says"):
         got = fixtures.map_spans_to_documents(out, run_dir, "unl_email")
     assert [(r["text"], r["where"]) for r in got] == [(EMAIL, [])]
@@ -311,8 +343,12 @@ def test_map_spans_skips_non_document_records(tmp_path):
     out = fixtures.from_texts([f"mail {EMAIL}"], tmp_path / "t.jsonl")
     run_dir = tmp_path / "run"
     run_dir.mkdir()
-    _raw(run_dir, "d", [{"id": "text-0001", "detector": "d", "spans": [
-        {"label": "EMAIL", "raw_label": "x", "start": 5, "end": 25, "text": EMAIL}], "latency_ms": 1, "error": None}])
+    span = {"label": "EMAIL", "raw_label": "x", "start": 5, "end": 25, "text": EMAIL}
+    _raw(
+        run_dir,
+        "d",
+        [{"id": "text-0001", "detector": "d", "spans": [span], "latency_ms": 1, "error": None}],
+    )
     assert fixtures.map_spans_to_documents(out, run_dir, "d") == []
 
 
@@ -390,8 +426,8 @@ def test_segments_survive_json_round_trip(tmp_path):
 def test_gold_meta_values_are_shared():
     # fixtures, silver, report and nb all spell the sidecar's "gold" values
     # through opf_eval.io so a writer and a reader cannot drift apart.
-    from opf_eval import io, silver
     from opf_eval import fixtures as fx
+    from opf_eval import io, silver
 
     assert fx.UNLABELED == io.GOLD_NONE == "none"
     assert silver.SILVER == io.GOLD_SILVER == "silver"

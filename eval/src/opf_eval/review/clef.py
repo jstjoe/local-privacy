@@ -18,22 +18,26 @@ Memory: the bf16 weights take about 18.8 GB (17.5 GiB). The thresholds in
 same helpers as `opf_eval.nb.gpu_summary` (`opf_eval.hardware`), so the
 notebook's GPU summary and the load plan always agree about a card.
 
-| runtime                                   | plan_load mode | notes                                   |
-| ----------------------------------------- | -------------- | --------------------------------------- |
-| CUDA >= 21 GiB with native bf16 (L4, A100, H100) | bf16    | primary target                          |
-| CUDA >= 21 GiB without native bf16 (V100) | fp16           | float16 weights fit; float16            |
-|                                           |                | activations of a bf16 model can         |
-|                                           |                | overflow and such requests become       |
-|                                           |                | error rows                              |
-| CUDA 12 to 21 GiB (T4 reports ~15 GiB)    | int8           | 8-bit weights via bitsandbytes (about   |
-|                                           |                | 10.7 GiB) with bfloat16 compute where   |
-|                                           |                | the card has it and float16 compute     |
-|                                           |                | otherwise; probabilities may shift      |
-|                                           |                | slightly against bf16                   |
-| CUDA < 12 GiB                             | too-small      |                                         |
-| Apple Silicon >= 32 GiB unified memory    | bf16           | unverified on MPS                       |
-| Apple Silicon < 32 GiB unified memory     | too-small      |                                         |
-| CPU                                       | cpu-too-slow   |                                         |
+| runtime                          | plan_load mode | notes                                |
+| -------------------------------- | -------------- | ------------------------------------ |
+| CUDA >= 21 GiB with native bf16  | bf16           | primary target                       |
+| (L4, A100, H100)                 |                |                                      |
+| CUDA >= 21 GiB without native    | fp16           | float16 weights fit; float16         |
+| bf16 (V100)                      |                | activations of a bf16 model can      |
+|                                  |                | overflow and such requests become    |
+|                                  |                | error rows                           |
+| CUDA 12 to 21 GiB (T4 reports    | int8           | 8-bit weights via bitsandbytes       |
+| ~15 GiB)                         |                | (about 10.7 GiB) with bfloat16       |
+|                                  |                | compute where the card has it and    |
+|                                  |                | float16 compute otherwise;           |
+|                                  |                | probabilities may shift slightly     |
+|                                  |                | against bf16                         |
+| CUDA < 12 GiB                    | too-small      |                                      |
+| Apple Silicon >= 32 GiB unified  | bf16           | unverified on MPS                    |
+| memory                           |                |                                      |
+| Apple Silicon < 32 GiB unified   | too-small      |                                      |
+| memory                           |                |                                      |
+| CPU                              | cpu-too-slow   |                                      |
 
 The model repo ships its own loader, `joint_schema_model.py`. `ClefBackend`
 imports that file from the downloaded snapshot and uses its
@@ -138,7 +142,9 @@ def _unified_memory_gb() -> float | None:
     return hardware.unified_memory_gib()
 
 
-def plan_load(device: str | None = None, vram_gb: float | None = None, *, bf16: bool | None = None) -> dict:
+def plan_load(
+    device: str | None = None, vram_gb: float | None = None, *, bf16: bool | None = None
+) -> dict:
     """How to load Clef-flash on this machine, without loading anything.
 
     Returns `{"mode", "dtype", "quantize", "reason", "device", "vram_gb"}`:
@@ -172,32 +178,38 @@ def plan_load(device: str | None = None, vram_gb: float | None = None, *, bf16: 
                     "reason": "no CUDA device found"}
         if vram >= BF16_MIN_GB and native:
             return {**base, "mode": "bf16", "dtype": "bfloat16", "quantize": None,
-                    "reason": f"{vram:.1f} GiB with native bf16 holds the 17.5 GiB of bf16 weights"}
+                    "reason": f"{vram:.1f} GiB with native bf16 holds the 17.5 GiB of bf16 "
+                              "weights"}
         if vram >= BF16_MIN_GB:
             return {**base, "mode": "fp16", "dtype": "float16", "quantize": None,
-                    "reason": f"{vram:.1f} GiB without native bf16 holds the 17.5 GiB of float16 weights. "
-                              "Float16 activations of a bf16 model can overflow; such requests become "
-                              "error rows."}
+                    "reason": f"{vram:.1f} GiB without native bf16 holds the 17.5 GiB of "
+                              "float16 weights. Float16 activations of a bf16 model can overflow; "
+                              "such requests become error rows."}
         if vram >= INT8_MIN_GB:
             compute = "bfloat16" if native else "float16"
             return {**base, "mode": "int8", "dtype": compute, "quantize": "int8",
-                    "reason": f"{vram:.1f} GiB is too small for the 17.5 GiB of bf16 weights; 8-bit weights "
-                              f"need about 10.7 GiB (bitsandbytes, Linux + CUDA only) and compute in {compute}. "
+                    "reason": f"{vram:.1f} GiB is too small for the 17.5 GiB of bf16 weights; "
+                              "8-bit weights need about 10.7 GiB "
+                              f"(bitsandbytes, Linux + CUDA only) and compute in {compute}. "
                               "Probabilities may shift slightly against a bf16 run."}
         return {**base, "mode": "too-small", "dtype": "float16", "quantize": None,
-                "reason": f"{vram:.1f} GiB is below the {INT8_MIN_GB:.0f} GiB that 8-bit weights need; "
-                          "use an L4 or larger runtime"}
+                "reason": f"{vram:.1f} GiB is below the {INT8_MIN_GB:.0f} GiB that 8-bit "
+                          "weights need; use an L4 or larger runtime"}
     if dev == "mps":
         mem = vram_gb if vram_gb is not None else _unified_memory_gb()
         base = {"device": "mps", "vram_gb": mem}
         if mem is not None and mem >= MPS_MIN_GB:
             return {**base, "mode": "bf16", "dtype": "bfloat16", "quantize": None,
-                    "reason": f"{mem:.0f} GiB of unified memory holds the bf16 weights (unverified on MPS)"}
+                    "reason": f"{mem:.0f} GiB of unified memory holds the bf16 weights "
+                              "(unverified on MPS)"}
         shown = "unknown" if mem is None else f"{mem:.0f} GiB"
         return {**base, "mode": "too-small", "dtype": "bfloat16", "quantize": None,
-                "reason": f"{shown} of unified memory; Clef-flash needs at least {MPS_MIN_GB:.0f} GiB on Apple Silicon"}
-    return {"device": dev, "vram_gb": None, "mode": "cpu-too-slow", "dtype": "float32", "quantize": None,
-            "reason": "no GPU: a 9.4B model on CPU takes minutes per request; use a GPU runtime (L4)"}
+                "reason": f"{shown} of unified memory; Clef-flash needs at least "
+                          f"{MPS_MIN_GB:.0f} GiB on Apple Silicon"}
+    return {"device": dev, "vram_gb": None, "mode": "cpu-too-slow", "dtype": "float32",
+            "quantize": None,
+            "reason": "no GPU: a 9.4B model on CPU takes minutes per request; use a GPU "
+                      "runtime (L4)"}
 
 
 def _mode_settings(mode: str, native_bf16: bool = False) -> tuple[str, str | None]:
@@ -219,7 +231,9 @@ def _require_bitsandbytes() -> None:
         import bitsandbytes  # noqa: F401
         from transformers import BitsAndBytesConfig  # noqa: F401
     except ImportError as exc:
-        raise ImportError(f"8-bit loading needs bitsandbytes (Linux + CUDA): {INSTALL_HINT}") from exc
+        raise ImportError(
+            f"8-bit loading needs bitsandbytes (Linux + CUDA): {INSTALL_HINT}"
+        ) from exc
 
 
 def import_loader(path: str | Path) -> ModuleType:
@@ -262,7 +276,9 @@ def _has_torchvision() -> bool:
     return importlib.util.find_spec("torchvision") is not None
 
 
-def _load_text_only(module: ModuleType, path: Path, device: str, dtype, **kwargs) -> tuple[Any, Any]:
+def _load_text_only(
+    module: ModuleType, path: Path, device: str, dtype, **kwargs
+) -> tuple[Any, Any]:
     """`load_release_model` without the image/video processor.
 
     Same backbone, same head and same tokenizer, but the tokenizer comes
@@ -373,7 +389,9 @@ class ClefBackend:
                         self.path, device=self.device, dtype=dtype, **kwargs
                     )
                 else:
-                    model, processor = _load_text_only(module, self.path, self.device, dtype, **kwargs)
+                    model, processor = _load_text_only(
+                        module, self.path, self.device, dtype, **kwargs
+                    )
                 cached = _CACHE[key] = (model, processor, module)
             _USERS[key] = _USERS.get(key, 0) + 1
         self._key = key
@@ -455,7 +473,9 @@ class ClefBackend:
             self._validate(req)
         processor = self.processor if self.tokenizer is not self.processor else None
         encoded = [
-            self.module.encode_record(self.tokenizer, req, max_length=self.max_length, processor=processor)
+            self.module.encode_record(
+                self.tokenizer, req, max_length=self.max_length, processor=processor
+            )
             for req in requests
         ]
         order = sorted(range(len(requests)), key=lambda i: len(encoded[i].input_ids))
@@ -466,10 +486,10 @@ class ClefBackend:
             batch = self.module.collate_records([encoded[i] for i in idx], self._pad_id(), device)
             with torch.inference_mode():
                 logits = self.model(batch)
-            for i, record_logits in zip(idx, logits):
+            for i, record_logits in zip(idx, logits, strict=False):
                 req, enc = requests[i], encoded[i]
                 answers = {}
-                for question, q_logits in zip(enc.questions, record_logits):
+                for question, q_logits in zip(enc.questions, record_logits, strict=False):
                     q_logits = q_logits.float()
                     if not bool(torch.isfinite(q_logits).all()):
                         # A float16 overflow gives inf or NaN, and a NaN
@@ -480,7 +500,8 @@ class ClefBackend:
                         )
                     probs = q_logits.softmax(-1).tolist()
                     answers[question.question_id] = self.module.systemone_answer(
-                        req["questions"][question.question_id], dict(zip(question.option_ids, probs))
+                        req["questions"][question.question_id],
+                        dict(zip(question.option_ids, probs, strict=False)),
                     )
                 out[i] = {
                     "model": req.get("model", self.model_name),

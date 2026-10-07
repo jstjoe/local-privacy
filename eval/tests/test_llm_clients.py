@@ -20,6 +20,7 @@ import anthropic
 import httpx2
 import openai
 import pytest
+
 from opf_eval import llm
 from opf_eval.llm import (
     CachedClient,
@@ -63,7 +64,11 @@ ENTITY_SCHEMA = {
         }
     },
 }
-GOOD = {"entities": [{"value": "jane@example.com", "label": "EMAIL", "context": "mail jane@example.com now"}]}
+GOOD = {
+    "entities": [
+        {"value": "jane@example.com", "label": "EMAIL", "context": "mail jane@example.com now"}
+    ]
+}
 BAD = {"entities": [{"value": "jane@example.com", "label": "PHONE", "context": "x"}]}
 
 
@@ -89,7 +94,9 @@ class FakeAnthropicSDK:
         self.responses = list(responses)
         self.calls: list[tuple[str, dict]] = []
         self.messages = SimpleNamespace(create=lambda **kw: self._create("messages", kw))
-        self.beta = SimpleNamespace(messages=SimpleNamespace(create=lambda **kw: self._create("beta", kw)))
+        self.beta = SimpleNamespace(
+            messages=SimpleNamespace(create=lambda **kw: self._create("beta", kw))
+        )
 
     def _create(self, kind, kwargs):
         self.calls.append((kind, kwargs))
@@ -105,7 +112,11 @@ def claude_reply(data=None, *, text=None, stop_reason="end_turn", category=None,
     content = list(blocks or [])
     if text is not None:
         content.append(SimpleNamespace(type="text", text=text))
-    details = SimpleNamespace(type="refusal", category=category, explanation=None) if stop_reason == "refusal" else None
+    details = (
+        SimpleNamespace(type="refusal", category=category, explanation=None)
+        if stop_reason == "refusal"
+        else None
+    )
     return SimpleNamespace(stop_reason=stop_reason, stop_details=details, content=content)
 
 
@@ -129,7 +140,9 @@ def gpt_reply(data=None, *, text=None, finish_reason="stop", refusal=None):
     if text is None and data is not None:
         text = json.dumps(data)
     message = SimpleNamespace(content=text, refusal=refusal, role="assistant")
-    return SimpleNamespace(choices=[SimpleNamespace(finish_reason=finish_reason, message=message, index=0)])
+    return SimpleNamespace(
+        choices=[SimpleNamespace(finish_reason=finish_reason, message=message, index=0)]
+    )
 
 
 def openai_400(message: str) -> openai.BadRequestError:
@@ -209,7 +222,10 @@ def test_remote_guard_also_stops_clients_built_while_the_switch_was_on(monkeypat
     claude = make_client("anthropic", sdk_client=claude_sdk, cache_dir=tmp_path)
     gpt = make_client("openai", sdk_client=gpt_sdk)
     local = make_client(
-        "openai_compatible", "qwen3:8b", base_url="http://localhost:11434/v1", sdk_client=FakeOpenAISDK(gpt_reply(GOOD))
+        "openai_compatible",
+        "qwen3:8b",
+        base_url="http://localhost:11434/v1",
+        sdk_client=FakeOpenAISDK(gpt_reply(GOOD)),
     )
     assert claude.complete_json(system="s", user="first", schema=ENTITY_SCHEMA) == GOOD
     assert gpt.complete_json(system="s", user="first", schema=ENTITY_SCHEMA) == GOOD
@@ -225,7 +241,9 @@ def test_remote_guard_also_stops_clients_built_while_the_switch_was_on(monkeypat
     # A local server is not gated.
     assert local.complete_json(system="s", user="second", schema=ENTITY_SCHEMA) == GOOD
     # An explicit allow_remote=True given to make_client still wins over the env var.
-    pinned = make_client("anthropic", sdk_client=FakeAnthropicSDK(claude_reply(GOOD)), allow_remote=True)
+    pinned = make_client(
+        "anthropic", sdk_client=FakeAnthropicSDK(claude_reply(GOOD)), allow_remote=True
+    )
     assert pinned.complete_json(system="s", user="third", schema=ENTITY_SCHEMA) == GOOD
 
 
@@ -234,11 +252,15 @@ def test_remote_guard_lets_local_providers_through(monkeypatch):
     stub = make_client("stub")
     assert stub.remote is False
     local = make_client(
-        "openai_compatible", "qwen3:8b", base_url="http://localhost:11434/v1", sdk_client=FakeOpenAISDK()
+        "openai_compatible",
+        "qwen3:8b",
+        base_url="http://localhost:11434/v1",
+        sdk_client=FakeOpenAISDK(),
     )
     assert local.remote is False
     assert describe(local) == (
-        "qwen3:8b via the server at http://localhost:11434/v1 (local: the text stays on this machine)"
+        "qwen3:8b via the server at http://localhost:11434/v1 "
+        "(local: the text stays on this machine)"
     )
 
 
@@ -304,7 +326,9 @@ def test_validate_accepts_good_and_reports_paths():
 
 
 def test_validate_object_rules():
-    errors = validate({"entities": [{"value": "a", "label": "EMAIL", "extra": 1}], "more": True}, ENTITY_SCHEMA)
+    errors = validate(
+        {"entities": [{"value": "a", "label": "EMAIL", "extra": 1}], "more": True}, ENTITY_SCHEMA
+    )
     assert "$: unexpected property 'more'" in errors
     assert "$.entities[0]: missing required property 'context'" in errors
     assert "$.entities[0]: unexpected property 'extra'" in errors
@@ -338,7 +362,9 @@ def test_validate_types(value, kind, ok):
 
 
 def test_validate_scalar_constraints():
-    assert validate(5, {"type": "integer", "minimum": 0, "maximum": 4}) == ["$: 5 is above the maximum 4"]
+    assert validate(5, {"type": "integer", "minimum": 0, "maximum": 4}) == [
+        "$: 5 is above the maximum 4"
+    ]
     assert validate(-1, {"type": "integer", "minimum": 0}) == ["$: -1 is below the minimum 0"]
     assert validate(0, {"type": "number", "exclusiveMinimum": 0}) != []
     assert validate(1, {"type": "number", "exclusiveMaximum": 1}) != []
@@ -399,7 +425,12 @@ def test_for_anthropic_strips_unsupported_keywords_only():
             # A property *named* like a keyword must survive.
             "pattern": {"type": "string", "pattern": "^a", "maxLength": 3},
             "n": {"anyOf": [{"type": "integer", "minimum": 0, "maximum": 9}, {"type": "null"}]},
-            "tags": {"type": "array", "minItems": 2, "maxItems": 5, "items": {"type": "string", "minLength": 1}},
+            "tags": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 5,
+                "items": {"type": "string", "minLength": 1},
+            },
             "one": {"type": "array", "minItems": 1},
         },
     }
@@ -436,11 +467,21 @@ def test_for_anthropic_closes_every_object_and_rewrites_one_of():
             "verdict": {"oneOf": [{"type": "string", "enum": ["keep", "drop"]}, {"type": "null"}]},
             "spans": {
                 "type": "array",
-                "items": {"type": "object", "properties": {"index": {"type": "integer", "minimum": 0}}},
+                "items": {
+                    "type": "object",
+                    "properties": {"index": {"type": "integer", "minimum": 0}},
+                },
             },
             "meta": {"type": "object", "additionalProperties": {"type": "string", "maxLength": 9}},
-            "both": {"anyOf": [{"type": "string"}], "oneOf": [{"type": "string"}, {"type": "integer"}]},
-            "open": {"type": "object", "properties": {"x": {"type": "string"}}, "additionalProperties": True},
+            "both": {
+                "anyOf": [{"type": "string"}],
+                "oneOf": [{"type": "string"}, {"type": "integer"}],
+            },
+            "open": {
+                "type": "object",
+                "properties": {"x": {"type": "string"}},
+                "additionalProperties": True,
+            },
         },
     }
     sent = for_anthropic(schema)
@@ -448,7 +489,9 @@ def test_for_anthropic_closes_every_object_and_rewrites_one_of():
     assert len(objects) == 4
     assert all(obj["additionalProperties"] is False for obj in objects)
     assert "oneOf" not in json.dumps(sent)
-    assert sent["properties"]["verdict"] == {"anyOf": [{"type": "string", "enum": ["keep", "drop"]}, {"type": "null"}]}
+    assert sent["properties"]["verdict"] == {
+        "anyOf": [{"type": "string", "enum": ["keep", "drop"]}, {"type": "null"}]
+    }
     assert sent["properties"]["spans"]["items"]["properties"]["index"] == {"type": "integer"}
     assert sent["properties"]["both"] == {
         "anyOf": [{"type": "string"}],
@@ -462,7 +505,11 @@ def test_for_anthropic_closes_every_object_and_rewrites_one_of():
 
 def test_strict_problems():
     assert strict_problems(ENTITY_SCHEMA) == []
-    loose = {"type": "object", "properties": {"a": {"type": "string"}, "b": {"type": "string"}}, "required": ["a"]}
+    loose = {
+        "type": "object",
+        "properties": {"a": {"type": "string"}, "b": {"type": "string"}},
+        "required": ["a"],
+    }
     problems = strict_problems(loose)
     assert "$: additionalProperties must be false" in problems
     assert "$: properties not in required: b" in problems
@@ -526,10 +573,14 @@ def test_parse_answer_skips_prose_fragments_that_do_not_fit():
 def test_prompt_mode_answer_after_a_prose_fragment_needs_no_retry():
     text = 'I found [1] entity: ```json\n' + json.dumps(GOOD) + '\n```'
     sdk = FakeOpenAISDK(gpt_reply(text=text))
-    client = OpenAIClient("openai_compatible", "m", base_url="http://localhost:1/v1", mode="prompt", sdk_client=sdk)
+    client = OpenAIClient(
+        "openai_compatible", "m", base_url="http://localhost:1/v1", mode="prompt", sdk_client=sdk
+    )
     assert client.complete_json(system="s", user="u", schema=ENTITY_SCHEMA) == GOOD
     assert len(sdk.calls) == 1
-    claude = AnthropicClient(sdk_client=FakeAnthropicSDK(claude_reply(text='[1] {"entities": []}')), fallbacks=False)
+    claude = AnthropicClient(
+        sdk_client=FakeAnthropicSDK(claude_reply(text='[1] {"entities": []}')), fallbacks=False
+    )
     assert claude.complete_json(system="s", user="u", schema=ENTITY_SCHEMA) == {"entities": []}
 
 
@@ -560,14 +611,23 @@ def test_stub_responder_errors_propagate():
         raise LLMError("refused: cyber")
 
     with pytest.raises(LLMError, match="refused: cyber"):
-        make_client("stub", responder=refuse).complete_json(system="s", user="u", schema=ENTITY_SCHEMA)
+        make_client("stub", responder=refuse).complete_json(
+            system="s", user="u", schema=ENTITY_SCHEMA
+        )
 
 
 # ---------------------------------------------------------------- cache
 
 
 def test_cache_key_matches_the_spec_formula():
-    payload = {"provider": "p", "model": "m", "system": "s", "user": "u", "schema": {"type": "object"}, "name": "n"}
+    payload = {
+        "provider": "p",
+        "model": "m",
+        "system": "s",
+        "user": "u",
+        "schema": {"type": "object"},
+        "name": "n",
+    }
     expected = hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
     assert cache_key(**payload) == expected
     assert cache_key(**payload, settings={}) == expected
@@ -609,7 +669,12 @@ def test_cache_hit_and_miss(tmp_path):
     client.complete_json(system="sys", user=secret, schema=ENTITY_SCHEMA, name="other")
     assert (client.hits, client.misses) == (1, 4)
     # A new client over the same directory reuses the entries.
-    again = CachedClient(StubClient(lambda *a: pytest.fail("inner called on a hit"), model="openai/gpt-oss-120b-maas"), tmp_path)
+    again = CachedClient(
+        StubClient(
+            lambda *a: pytest.fail("inner called on a hit"), model="openai/gpt-oss-120b-maas"
+        ),
+        tmp_path,
+    )
     assert again.complete_json(system="sys", user=secret, schema=ENTITY_SCHEMA) == GOOD
     assert again.hits == 1
 
@@ -678,8 +743,18 @@ def test_cache_treats_a_non_utf8_entry_as_a_miss(tmp_path):
 
 
 def test_cache_includes_backend_settings(tmp_path):
-    low = make_client("anthropic", effort="low", sdk_client=FakeAnthropicSDK(claude_reply(GOOD)), cache_dir=tmp_path)
-    high = make_client("anthropic", effort="high", sdk_client=FakeAnthropicSDK(claude_reply(GOOD)), cache_dir=tmp_path)
+    low = make_client(
+        "anthropic",
+        effort="low",
+        sdk_client=FakeAnthropicSDK(claude_reply(GOOD)),
+        cache_dir=tmp_path,
+    )
+    high = make_client(
+        "anthropic",
+        effort="high",
+        sdk_client=FakeAnthropicSDK(claude_reply(GOOD)),
+        cache_dir=tmp_path,
+    )
     assert isinstance(low, CachedClient)
     k_low = low.key_for(system="s", user="u", schema=ENTITY_SCHEMA)
     k_high = high.key_for(system="s", user="u", schema=ENTITY_SCHEMA)
@@ -711,7 +786,11 @@ def test_cache_is_thread_safe(tmp_path):
     client = CachedClient(StubClient(responder), tmp_path)
     users = [f"text {i % 5}" for i in range(40)]
     with ThreadPoolExecutor(max_workers=8) as pool:
-        results = list(pool.map(lambda u: client.complete_json(system="s", user=u, schema=ENTITY_SCHEMA), users))
+        results = list(
+            pool.map(
+                lambda u: client.complete_json(system="s", user=u, schema=ENTITY_SCHEMA), users
+            )
+        )
     assert all(r == GOOD for r in results)
     assert client.hits + client.misses == 40
     assert len(set(seen)) == 5
@@ -725,7 +804,12 @@ def test_cache_is_thread_safe(tmp_path):
 def test_anthropic_success_uses_structured_output_and_fallbacks():
     sdk = FakeAnthropicSDK(claude_reply(GOOD))
     client = AnthropicClient("anthropic", sdk_client=sdk, fallbacks=True)
-    assert client.complete_json(system="be careful", user="text", schema=ENTITY_SCHEMA, max_tokens=1234) == GOOD
+    assert (
+        client.complete_json(
+            system="be careful", user="text", schema=ENTITY_SCHEMA, max_tokens=1234
+        )
+        == GOOD
+    )
     kind, kwargs = sdk.calls[0]
     assert kind == "beta"
     assert kwargs["betas"] == [FALLBACK_BETA]
@@ -827,14 +911,19 @@ def test_anthropic_refusal_is_an_error():
 def test_anthropic_max_tokens_is_an_error():
     sdk = FakeAnthropicSDK(claude_reply(text='{"entities": [', stop_reason="max_tokens"))
     with pytest.raises(LLMError, match="max_tokens=50") as info:
-        AnthropicClient(sdk_client=sdk).complete_json(system="s", user="u", schema=ENTITY_SCHEMA, max_tokens=50)
+        AnthropicClient(sdk_client=sdk).complete_json(
+            system="s", user="u", schema=ENTITY_SCHEMA, max_tokens=50
+        )
     assert info.value.truncated is True and info.value.refusal is None
 
 
 def test_anthropic_answer_after_a_server_side_fallback():
     fallback = SimpleNamespace(type="fallback")
     sdk = FakeAnthropicSDK(claude_reply(GOOD, blocks=[fallback]))
-    assert AnthropicClient(sdk_client=sdk).complete_json(system="s", user="u", schema=ENTITY_SCHEMA) == GOOD
+    assert (
+        AnthropicClient(sdk_client=sdk).complete_json(system="s", user="u", schema=ENTITY_SCHEMA)
+        == GOOD
+    )
 
 
 def test_anthropic_invalid_answer_retries_once_with_the_errors():
@@ -850,7 +939,10 @@ def test_anthropic_invalid_answer_retries_once_with_the_errors():
 
 def test_anthropic_non_json_then_valid():
     sdk = FakeAnthropicSDK(claude_reply(text="I cannot format that"), claude_reply(GOOD))
-    assert AnthropicClient(sdk_client=sdk).complete_json(system="s", user="u", schema=ENTITY_SCHEMA) == GOOD
+    assert (
+        AnthropicClient(sdk_client=sdk).complete_json(system="s", user="u", schema=ENTITY_SCHEMA)
+        == GOOD
+    )
 
 
 def test_anthropic_gives_up_after_one_retry():
@@ -868,7 +960,9 @@ def test_anthropic_strips_unsupported_keywords_but_still_enforces_them():
         "properties": {"score": {"type": "integer", "minimum": 0, "maximum": 10}},
     }
     sdk = FakeAnthropicSDK(claude_reply({"score": 42}), claude_reply({"score": 7}))
-    assert AnthropicClient(sdk_client=sdk).complete_json(system="s", user="u", schema=schema) == {"score": 7}
+    assert AnthropicClient(sdk_client=sdk).complete_json(system="s", user="u", schema=schema) == {
+        "score": 7
+    }
     sent = sdk.calls[0][1]["output_config"]["format"]["schema"]
     assert sent["properties"]["score"] == {"type": "integer"}
     assert "above the maximum 10" in sdk.calls[1][1]["messages"][0]["content"]
@@ -888,7 +982,9 @@ def test_anthropic_transport_errors_become_llm_errors():
 def test_anthropic_other_sdk_exceptions_become_llm_errors(exc):
     sdk = FakeAnthropicSDK(exc)
     with pytest.raises(LLMError, match=type(exc).__name__):
-        AnthropicClient(sdk_client=sdk).complete_json(system="s", user="u", schema=ENTITY_SCHEMA, max_tokens=32000)
+        AnthropicClient(sdk_client=sdk).complete_json(
+            system="s", user="u", schema=ENTITY_SCHEMA, max_tokens=32000
+        )
 
 
 def test_anthropic_reports_the_model_behind_a_server_side_fallback(tmp_path):
@@ -901,8 +997,12 @@ def test_anthropic_reports_the_model_behind_a_server_side_fallback(tmp_path):
     client.complete_json(system="s", user="u2", schema=ENTITY_SCHEMA)
     assert client.pop_fallbacks() == []  # the requested model answered
     # The usage iterations name the fallback model too.
-    usage = SimpleNamespace(iterations=[SimpleNamespace(type="message"),
-                                        SimpleNamespace(type="fallback_message", model="claude-haiku-4-5")])
+    usage = SimpleNamespace(
+        iterations=[
+            SimpleNamespace(type="message"),
+            SimpleNamespace(type="fallback_message", model="claude-haiku-4-5"),
+        ]
+    )
     reply = claude_reply(GOOD)
     reply.usage = usage
     assert llm.anthropic.fallback_model(reply) == "claude-haiku-4-5"
@@ -921,19 +1021,23 @@ def test_anthropic_reports_the_model_behind_a_server_side_fallback(tmp_path):
 
 
 def test_lone_surrogates_are_scrubbed_from_prompts_and_answers(tmp_path):
-    lone = '{"entities": [{"value": "Ann \\ud83d", "label": "PERSON", "context": "Ann \\ud83d went"}]}'
+    lone = (
+        '{"entities": [{"value": "Ann \\ud83d", "label": "PERSON", "context": "Ann \\ud83d went"}]}'
+    )
     sdk = FakeAnthropicSDK(claude_reply(text=lone))
     client = CachedClient(AnthropicClient(sdk_client=sdk), tmp_path)
     answer = client.complete_json(system="s", user="Ann \ud83d went", schema=ENTITY_SCHEMA)
     assert answer["entities"][0]["value"] == "Ann \ufffd"
-    assert sdk.calls[0][1]["messages"][0]["content"] == "Ann \ufffd went"  # same length, valid UTF-8
+    # The replacement keeps the length and is valid UTF-8.
+    assert sdk.calls[0][1]["messages"][0]["content"] == "Ann \ufffd went"
     # The answer was cached, so a rerun is a hit.
     assert client.complete_json(system="s", user="Ann \ud83d went", schema=ENTITY_SCHEMA) == answer
     assert (client.hits, client.misses) == (1, 1)
 
     sdk = FakeOpenAISDK(gpt_reply(text=lone))
     oai = make_client("openai", sdk_client=sdk)
-    assert oai.complete_json(system="s", user="Ann \ud83d", schema=ENTITY_SCHEMA)["entities"][0]["value"] == "Ann \ufffd"
+    oai_answer = oai.complete_json(system="s", user="Ann \ud83d", schema=ENTITY_SCHEMA)
+    assert oai_answer["entities"][0]["value"] == "Ann \ufffd"
     assert sdk.calls[0]["messages"][-1]["content"] == "Ann \ufffd"
 
 
@@ -950,17 +1054,27 @@ def test_anthropic_rejects_bad_options():
 def test_openai_other_sdk_exceptions_become_llm_errors():
     sdk = FakeOpenAISDK(UnicodeEncodeError("utf-8", "Ann \ud83d", 4, 5, "surrogates not allowed"))
     with pytest.raises(LLMError, match="UnicodeEncodeError"):
-        make_client("openai", sdk_client=sdk).complete_json(system="s", user="u", schema=ENTITY_SCHEMA)
+        make_client("openai", sdk_client=sdk).complete_json(
+            system="s", user="u", schema=ENTITY_SCHEMA
+        )
 
 
 def test_openai_success_uses_strict_json_schema():
     sdk = FakeOpenAISDK(gpt_reply(GOOD))
     client = make_client("openai", sdk_client=sdk)
     assert client.model == "gpt-6.1-sol"
-    assert client.complete_json(system="sys", user="text", schema=ENTITY_SCHEMA, name="silver labels", max_tokens=900) == GOOD
+    assert (
+        client.complete_json(
+            system="sys", user="text", schema=ENTITY_SCHEMA, name="silver labels", max_tokens=900
+        )
+        == GOOD
+    )
     kwargs = sdk.calls[0]
     assert kwargs["model"] == "gpt-6.1-sol"
-    assert kwargs["messages"] == [{"role": "system", "content": "sys"}, {"role": "user", "content": "text"}]
+    assert kwargs["messages"] == [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "text"},
+    ]
     assert kwargs["response_format"] == {
         "type": "json_schema",
         "json_schema": {"name": "silver_labels", "schema": ENTITY_SCHEMA, "strict": True},
@@ -984,34 +1098,51 @@ def test_openai_non_strict_schema_and_reasoning_effort():
 def test_openai_refusal_and_truncation_are_errors():
     sdk = FakeOpenAISDK(gpt_reply(text=None, refusal="I can't help with that."))
     with pytest.raises(LLMError, match="refused: I can't help") as info:
-        make_client("openai", sdk_client=sdk).complete_json(system="s", user="u", schema=ENTITY_SCHEMA)
+        make_client("openai", sdk_client=sdk).complete_json(
+            system="s", user="u", schema=ENTITY_SCHEMA
+        )
     assert info.value.refusal == "I can't help with that." and info.value.truncated is False
     sdk = FakeOpenAISDK(gpt_reply(text="", finish_reason="content_filter"))
     with pytest.raises(LLMError, match="refused: content_filter") as info:
-        make_client("openai", sdk_client=sdk).complete_json(system="s", user="u", schema=ENTITY_SCHEMA)
+        make_client("openai", sdk_client=sdk).complete_json(
+            system="s", user="u", schema=ENTITY_SCHEMA
+        )
     assert info.value.refusal == "content_filter"
     sdk = FakeOpenAISDK(gpt_reply(text='{"entities": [', finish_reason="length"))
     with pytest.raises(LLMError, match="max_tokens") as info:
-        make_client("openai", sdk_client=sdk).complete_json(system="s", user="u", schema=ENTITY_SCHEMA)
+        make_client("openai", sdk_client=sdk).complete_json(
+            system="s", user="u", schema=ENTITY_SCHEMA
+        )
     assert info.value.truncated is True and info.value.refusal is None
     sdk = FakeOpenAISDK(SimpleNamespace(choices=[]))
     with pytest.raises(LLMError, match="no choices"):
-        make_client("openai", sdk_client=sdk).complete_json(system="s", user="u", schema=ENTITY_SCHEMA)
+        make_client("openai", sdk_client=sdk).complete_json(
+            system="s", user="u", schema=ENTITY_SCHEMA
+        )
 
 
 def test_openai_invalid_answer_retries_once():
     sdk = FakeOpenAISDK(gpt_reply(BAD), gpt_reply(GOOD))
-    assert make_client("openai", sdk_client=sdk).complete_json(system="s", user="u", schema=ENTITY_SCHEMA) == GOOD
+    assert (
+        make_client("openai", sdk_client=sdk).complete_json(
+            system="s", user="u", schema=ENTITY_SCHEMA
+        )
+        == GOOD
+    )
     assert "did not match the required JSON schema" in sdk.calls[1]["messages"][-1]["content"]
     sdk = FakeOpenAISDK(gpt_reply(BAD), gpt_reply(text="nope"))
     with pytest.raises(LLMError, match="after one retry"):
-        make_client("openai", sdk_client=sdk).complete_json(system="s", user="u", schema=ENTITY_SCHEMA)
+        make_client("openai", sdk_client=sdk).complete_json(
+            system="s", user="u", schema=ENTITY_SCHEMA
+        )
 
 
 def test_openai_api_does_not_step_down_on_a_400():
     sdk = FakeOpenAISDK(openai_400("Invalid schema for response_format 'result'"))
     with pytest.raises(LLMError, match="response_format"):
-        make_client("openai", sdk_client=sdk).complete_json(system="s", user="u", schema=ENTITY_SCHEMA)
+        make_client("openai", sdk_client=sdk).complete_json(
+            system="s", user="u", schema=ENTITY_SCHEMA
+        )
     assert len(sdk.calls) == 1
 
 
@@ -1021,9 +1152,14 @@ def test_compatible_falls_back_from_json_schema_to_json_object():
         gpt_reply(GOOD),
         gpt_reply(GOOD),
     )
-    client = make_client("openai_compatible", "llama3", base_url="http://localhost:8000/v1", sdk_client=sdk)
+    client = make_client(
+        "openai_compatible", "llama3", base_url="http://localhost:8000/v1", sdk_client=sdk
+    )
     assert client.mode == "json_schema"
-    assert client.complete_json(system="label PII", user="u", schema=ENTITY_SCHEMA, max_tokens=300) == GOOD
+    assert (
+        client.complete_json(system="label PII", user="u", schema=ENTITY_SCHEMA, max_tokens=300)
+        == GOOD
+    )
     assert sdk.calls[0]["response_format"]["type"] == "json_schema"
     second = sdk.calls[1]
     assert second["response_format"] == {"type": "json_object"}
@@ -1044,7 +1180,9 @@ def test_compatible_steps_down_to_prompt_only_and_parses_fences():
         openai_400("'response_format' of type 'json_object' is not supported by this model"),
         gpt_reply(text="Here it is:\n```json\n" + json.dumps(GOOD) + "\n```"),
     )
-    client = make_client("openai_compatible", "m", base_url="http://127.0.0.1:1234/v1", sdk_client=sdk)
+    client = make_client(
+        "openai_compatible", "m", base_url="http://127.0.0.1:1234/v1", sdk_client=sdk
+    )
     assert client.complete_json(system="", user="u", schema=ENTITY_SCHEMA) == GOOD
     assert "response_format" not in sdk.calls[2]
     assert "JSON Schema" in sdk.calls[2]["messages"][0]["content"]
@@ -1061,11 +1199,19 @@ def test_compatible_other_400s_are_errors():
 
 def test_compatible_forced_mode():
     sdk = FakeOpenAISDK(openai_400("response_format unsupported"))
-    client = make_client("openai_compatible", "m", base_url="http://localhost:1/v1", sdk_client=sdk, mode="json_schema")
+    client = make_client(
+        "openai_compatible",
+        "m",
+        base_url="http://localhost:1/v1",
+        sdk_client=sdk,
+        mode="json_schema",
+    )
     with pytest.raises(LLMError):
         client.complete_json(system="s", user="u", schema=ENTITY_SCHEMA)
     with pytest.raises(ValueError, match="mode"):
-        make_client("openai_compatible", "m", base_url="http://localhost:1/v1", sdk_client=sdk, mode="xml")
+        make_client(
+            "openai_compatible", "m", base_url="http://localhost:1/v1", sdk_client=sdk, mode="xml"
+        )
 
 
 def test_compatible_client_wiring_and_key(monkeypatch):
@@ -1079,7 +1225,11 @@ def test_compatible_client_wiring_and_key(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-real-openai-key")
     client = make_client("openai_compatible", "qwen", base_url="https://gpu-box.example.com/v1")
     # A real OpenAI key is never sent to another server.
-    assert built == {"max_retries": 2, "base_url": "https://gpu-box.example.com/v1", "api_key": "not-needed"}
+    assert built == {
+        "max_retries": 2,
+        "base_url": "https://gpu-box.example.com/v1",
+        "api_key": "not-needed",
+    }
     assert client.remote is True
     assert client.operator == "the server at https://gpu-box.example.com/v1"
     assert client.cache_settings() == {"base_url": "https://gpu-box.example.com/v1"}
@@ -1119,7 +1269,9 @@ def test_openai_transport_errors_become_llm_errors():
     request = httpx2.Request("POST", "https://api.openai.com/v1/chat/completions")
     sdk = FakeOpenAISDK(openai.APIConnectionError(request=request))
     with pytest.raises(LLMError, match="APIConnectionError"):
-        make_client("openai", sdk_client=sdk).complete_json(system="s", user="u", schema=ENTITY_SCHEMA)
+        make_client("openai", sdk_client=sdk).complete_json(
+            system="s", user="u", schema=ENTITY_SCHEMA
+        )
 
 
 class FakeCredentials:
@@ -1177,7 +1329,9 @@ def test_openai_vertex_wiring_uses_adc_tokens(monkeypatch):
     creds.valid = False  # expired
     assert token() == "ya29.token-2"
     assert creds.refreshes == 2
-    assert describe(client).startswith("openai/gpt-oss-120b-maas via your GCP project (Vertex AI), region us-central1")
+    assert describe(client).startswith(
+        "openai/gpt-oss-120b-maas via your GCP project (Vertex AI), region us-central1"
+    )
 
     monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "env-project")
     make_client("openai_vertex", region="global")
@@ -1200,13 +1354,19 @@ def test_openai_vertex_without_credentials(monkeypatch):
 
 def test_openai_vertex_needs_a_project(monkeypatch):
     with pytest.raises(LLMError, match="GOOGLE_CLOUD_PROJECT"):
-        OpenAIClient("openai_vertex", token_provider=SimpleNamespace(project_id=None), sdk_client=FakeOpenAISDK())
+        OpenAIClient(
+            "openai_vertex",
+            token_provider=SimpleNamespace(project_id=None),
+            sdk_client=FakeOpenAISDK(),
+        )
 
 
 def test_anthropic_vertex_takes_the_project_from_adc(monkeypatch):
     import google.auth
 
-    monkeypatch.setattr(google.auth, "default", lambda scopes=None, **kw: (FakeCredentials(), "adc-project"))
+    monkeypatch.setattr(
+        google.auth, "default", lambda scopes=None, **kw: (FakeCredentials(), "adc-project")
+    )
     built = {}
 
     class FakeVertex:
@@ -1223,7 +1383,9 @@ def test_anthropic_vertex_without_a_project_fails_at_construction(monkeypatch):
     import google.auth
     import google.auth.exceptions
 
-    monkeypatch.setattr(anthropic, "AnthropicVertex", lambda **kw: pytest.fail("SDK client was built"))
+    monkeypatch.setattr(
+        anthropic, "AnthropicVertex", lambda **kw: pytest.fail("SDK client was built")
+    )
     monkeypatch.setattr(google.auth, "default", lambda scopes=None, **kw: (FakeCredentials(), None))
     with pytest.raises(LLMError, match="anthropic_vertex needs a GCP project"):
         make_client("anthropic_vertex")
@@ -1272,7 +1434,9 @@ def test_openai_vertex_token_failure_is_an_llm_error(error):
         max_retries=0,
     )
     client = OpenAIClient("openai_vertex", project_id="p", sdk_client=sdk)
-    with pytest.raises(LLMError, match="Google credentials failed.*gcloud auth application-default login"):
+    with pytest.raises(
+        LLMError, match="Google credentials failed.*gcloud auth application-default login"
+    ):
         client.complete_json(system="s", user="u", schema=ENTITY_SCHEMA)
 
 
@@ -1290,12 +1454,16 @@ def test_anthropic_vertex_token_failure_is_an_llm_error(error):
         max_retries=0,
     )
     client = AnthropicClient("anthropic_vertex", project_id="p", sdk_client=sdk)
-    with pytest.raises(LLMError, match="Google credentials failed.*gcloud auth application-default login"):
+    with pytest.raises(
+        LLMError, match="Google credentials failed.*gcloud auth application-default login"
+    ):
         client.complete_json(system="s", user="u", schema=ENTITY_SCHEMA)
 
 
 def test_openai_vertex_falls_back_like_a_compatible_server(monkeypatch):
-    sdk = FakeOpenAISDK(openai_400("Unsupported parameter: response_format.json_schema"), gpt_reply(GOOD))
+    sdk = FakeOpenAISDK(
+        openai_400("Unsupported parameter: response_format.json_schema"), gpt_reply(GOOD)
+    )
     client = OpenAIClient("openai_vertex", project_id="p", sdk_client=sdk)
     assert client.complete_json(system="s", user="u", schema=ENTITY_SCHEMA) == GOOD
     assert sdk.calls[1]["response_format"] == {"type": "json_object"}
@@ -1339,7 +1507,10 @@ def test_anthropic_request_body_through_the_real_sdk():
     request, body = seen[0]
     assert FALLBACK_BETA in request.headers["anthropic-beta"]
     assert body["fallbacks"] == "default"
-    assert body["output_config"] == {"format": {"type": "json_schema", "schema": ENTITY_SCHEMA}, "effort": "low"}
+    assert body["output_config"] == {
+        "format": {"type": "json_schema", "schema": ENTITY_SCHEMA},
+        "effort": "low",
+    }
     assert body["system"] == "sys"
     assert "thinking" not in body and "temperature" not in body
 
@@ -1368,7 +1539,9 @@ def test_anthropic_refusal_through_the_real_sdk():
         max_retries=0,
     )
     with pytest.raises(LLMError, match="refused: bio"):
-        AnthropicClient(sdk_client=sdk, fallbacks=False).complete_json(system="s", user="u", schema=ENTITY_SCHEMA)
+        AnthropicClient(sdk_client=sdk, fallbacks=False).complete_json(
+            system="s", user="u", schema=ENTITY_SCHEMA
+        )
 
 
 def test_openai_compatible_fallback_through_the_real_sdk():
@@ -1378,7 +1551,9 @@ def test_openai_compatible_fallback_through_the_real_sdk():
         body = json.loads(request.content)
         bodies.append(body)
         if body.get("response_format", {}).get("type") == "json_schema":
-            return httpx2.Response(400, json={"error": {"message": "response_format json_schema is not supported"}})
+            return httpx2.Response(
+                400, json={"error": {"message": "response_format json_schema is not supported"}}
+            )
         return httpx2.Response(
             200,
             json={
@@ -1390,7 +1565,11 @@ def test_openai_compatible_fallback_through_the_real_sdk():
                     {
                         "index": 0,
                         "finish_reason": "stop",
-                        "message": {"role": "assistant", "content": json.dumps(GOOD), "refusal": None},
+                        "message": {
+                            "role": "assistant",
+                            "content": json.dumps(GOOD),
+                            "refusal": None,
+                        },
                     }
                 ],
             },
@@ -1402,8 +1581,13 @@ def test_openai_compatible_fallback_through_the_real_sdk():
         http_client=openai.DefaultHttpxClient(transport=httpx2.MockTransport(handler)),
         max_retries=0,
     )
-    client = OpenAIClient("openai_compatible", "llama3", base_url="http://localhost:9/v1", sdk_client=sdk)
+    client = OpenAIClient(
+        "openai_compatible", "llama3", base_url="http://localhost:9/v1", sdk_client=sdk
+    )
     assert client.complete_json(system="s", user="u", schema=ENTITY_SCHEMA, max_tokens=256) == GOOD
-    assert [b.get("response_format", {}).get("type") for b in bodies] == ["json_schema", "json_object"]
+    assert [b.get("response_format", {}).get("type") for b in bodies] == [
+        "json_schema",
+        "json_object",
+    ]
     assert bodies[0]["response_format"]["json_schema"]["strict"] is True
     assert bodies[1]["max_tokens"] == 256

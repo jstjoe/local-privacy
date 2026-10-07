@@ -243,7 +243,9 @@ def from_text(text: str, *, id: str | None = None, source: str = "<pasted>") -> 
     text = normalize_newlines(text)
     b = TextBuilder()
     lines_into(b, text)
-    doc_id = id if id is not None else f"{hashlib.sha1(text.encode('utf-8')).hexdigest()[:12]}:pasted"
+    doc_id = (
+        id if id is not None else f"{hashlib.sha1(text.encode('utf-8')).hexdigest()[:12]}:pasted"
+    )
     return b.build(id=doc_id, source=source, kind="text")
 
 

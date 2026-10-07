@@ -26,8 +26,14 @@ from opf_eval.documents.html import html_to_lines
 DATA = Path(__file__).parent / "data" / "documents"
 EMAIL = "jane.doe@example.com"
 
-CSV_TEXT = "name,email,phone\r\nJane Doe,jane.doe@example.com,555-867-5309\r\nBob Smith,,555-0100\r\n\r\n"
-TXT_TEXT = "Notes from the call\r\n\r\nJane Doe can be reached at jane.doe@example.com\r\n  indented line\r\n"
+CSV_TEXT = (
+    "name,email,phone\r\nJane Doe,jane.doe@example.com,555-867-5309\r\n"
+    "Bob Smith,,555-0100\r\n\r\n"
+)
+TXT_TEXT = (
+    "Notes from the call\r\n\r\n"
+    "Jane Doe can be reached at jane.doe@example.com\r\n  indented line\r\n"
+)
 MD_TEXT = "# Contact\n\n- **Email:** jane.doe@example.com\n- Phone: 555-867-5309\n"
 HTML_TEXT = """<!doctype html>
 <html><head><title>Secret title</title><style>p { color: red }</style>
@@ -99,13 +105,21 @@ def _email(body_plain: str | None, body_html: str | None = None) -> EmailMessage
 
 
 def _write_eml(path: Path) -> None:
-    msg = _email("Hi Bob,\n\nMy SSN is 123-45-6789.\nThanks\n", "<p>HTML version should not be used</p>")
+    msg = _email(
+        "Hi Bob,\n\nMy SSN is 123-45-6789.\nThanks\n", "<p>HTML version should not be used</p>"
+    )
     msg.add_attachment(b"Attached notes for jane.doe@example.com\n", maintype="text",
                        subtype="plain", filename="notes.txt")
-    msg.add_attachment(CSV_TEXT.encode(), maintype="text", subtype="csv", filename="../../people.csv")
-    msg.add_attachment(b"\x89PNG\r\n\x1a\n0000", maintype="image", subtype="png", filename="photo.png")
+    msg.add_attachment(
+        CSV_TEXT.encode(), maintype="text", subtype="csv", filename="../../people.csv"
+    )
+    msg.add_attachment(
+        b"\x89PNG\r\n\x1a\n0000", maintype="image", subtype="png", filename="photo.png"
+    )
     inner = _email("Forwarded body with 555-867-5309\n")
-    inner.add_attachment(b"deep secret 987-65-4321\n", maintype="text", subtype="plain", filename="deep.txt")
+    inner.add_attachment(
+        b"deep secret 987-65-4321\n", maintype="text", subtype="plain", filename="deep.txt"
+    )
     msg.add_attachment(inner)  # message/rfc822
     path.write_bytes(msg.as_bytes())
 
@@ -137,7 +151,10 @@ def samples(tmp_path_factory) -> dict[str, Path]:
     _write_docx(paths["docx"])
     _write_eml(paths["eml"])
     paths["eml_html"].write_bytes(
-        _email(None, "<html><body><p>Hello</p><p>Reach me at jane.doe@example.com</p></body></html>").as_bytes()
+        _email(
+            None,
+            "<html><body><p>Hello</p><p>Reach me at jane.doe@example.com</p></body></html>",
+        ).as_bytes()
     )
     paths["pdf"].write_bytes((DATA / "sample.pdf").read_bytes())
     return paths
@@ -217,7 +234,9 @@ def test_segment_json_round_trip():
 
 
 def test_check_reports_bad_segments():
-    doc = Document("x", "s", "txt", "abcdef", [Segment(0, 3, {}), Segment(2, 4, {}), Segment(5, 9, {})])
+    doc = Document(
+        "x", "s", "txt", "abcdef", [Segment(0, 3, {}), Segment(2, 4, {}), Segment(5, 9, {})]
+    )
     problems = doc.check()
     assert any("overlaps" in p for p in problems)
     assert any("out of range" in p for p in problems)
@@ -272,7 +291,9 @@ def test_markdown_is_kept_as_written(samples):
 def test_csv(samples):
     doc = parse(samples["csv"])
     assert_invariants(doc)
-    assert doc.text == "name\temail\tphone\nJane Doe\tjane.doe@example.com\t555-867-5309\nBob Smith\t555-0100"
+    assert doc.text == (
+        "name\temail\tphone\nJane Doe\tjane.doe@example.com\t555-867-5309\nBob Smith\t555-0100"
+    )
     assert where_of(doc, EMAIL) == [{"row": 2, "column": "email"}]
     assert where_of(doc, "555-0100") == [{"row": 3, "column": "phone"}]
     assert where_of(doc, "name") == [{"row": 1, "column": "name"}]
@@ -383,17 +404,27 @@ def _docx_with_hidden_text(path: Path) -> None:
         "</w:sdtContent></w:sdt>"
     ))
     p = d.add_paragraph("Contact: ")  # tracked insertion
-    p._p.append(parse_xml(f"<w:ins {w} w:id='1' w:author='a'><w:r><w:t>{EMAIL}</w:t></w:r></w:ins>"))
+    p._p.append(
+        parse_xml(f"<w:ins {w} w:id='1' w:author='a'><w:r><w:t>{EMAIL}</w:t></w:r></w:ins>")
+    )
     p = d.add_paragraph("Name: ")  # inline content control
-    p._p.append(parse_xml(f"<w:sdt {w}><w:sdtContent><w:r><w:t>Jane Doe</w:t></w:r></w:sdtContent></w:sdt>"))
+    p._p.append(parse_xml(
+        f"<w:sdt {w}><w:sdtContent><w:r><w:t>Jane Doe</w:t></w:r></w:sdtContent></w:sdt>"
+    ))
     p = d.add_paragraph("Ref: ")  # simple field
-    p._p.append(parse_xml(f"<w:fldSimple {w} w:instr='REF x'><w:r><w:t>555-867-5309</w:t></w:r></w:fldSimple>"))
+    p._p.append(parse_xml(
+        f"<w:fldSimple {w} w:instr='REF x'><w:r><w:t>555-867-5309</w:t></w:r></w:fldSimple>"
+    ))
     p = d.add_paragraph("Kept")  # tracked deletion and a tab
-    p._p.append(parse_xml(f"<w:del {w} w:id='2' w:author='a'><w:r><w:delText>deleted 999-99-9999</w:delText></w:r></w:del>"))
+    p._p.append(parse_xml(
+        f"<w:del {w} w:id='2' w:author='a'>"
+        "<w:r><w:delText>deleted 999-99-9999</w:delText></w:r></w:del>"
+    ))
     p._p.append(parse_xml(f"<w:r {w}><w:tab/><w:t>after tab</w:t></w:r>"))
     table = d.add_table(rows=1, cols=1)  # content control inside a table cell
     table.cell(0, 0)._tc.append(parse_xml(
-        f"<w:sdt {w}><w:sdtContent><w:p><w:r><w:t>cell control 4111</w:t></w:r></w:p></w:sdtContent></w:sdt>"
+        f"<w:sdt {w}><w:sdtContent>"
+        "<w:p><w:r><w:t>cell control 4111</w:t></w:r></w:p></w:sdtContent></w:sdt>"
     ))
     d.save(path)
 
@@ -441,7 +472,8 @@ def test_docx_warns_about_text_it_cannot_place(tmp_path):
     table.cell(0, 0).text = "plain cell"
     # A table row wrapped in a content control is not a row python-docx sees.
     table._tbl.append(parse_xml(
-        f"<w:sdt {nsdecls('w')}><w:sdtContent><w:tr><w:tc><w:p><w:r><w:t>hidden row</w:t></w:r></w:p>"
+        f"<w:sdt {nsdecls('w')}><w:sdtContent>"
+        "<w:tr><w:tc><w:p><w:r><w:t>hidden row</w:t></w:r></w:p>"
         "</w:tc></w:tr></w:sdtContent></w:sdt>"
     ))
     path = tmp_path / "rowsdt.docx"
@@ -465,7 +497,9 @@ def test_pdf_with_a_password_is_skipped_with_a_clear_reason(samples, tmp_path):
     w.write(open_)
 
     docs, skipped = parse_many([locked, open_])
-    assert skipped == [{"path": str(locked), "reason": "ValueError: PDF is encrypted and needs a password"}]
+    assert skipped == [
+        {"path": str(locked), "reason": "ValueError: PDF is encrypted and needs a password"}
+    ]
     assert [d.source for d in docs] == [str(open_)]
     assert where_of(docs[0], EMAIL) == [{"page": 1}]
 
@@ -505,7 +539,9 @@ def test_html(samples):
 def test_html_edge_cases():
     # A missing </head> must not hide the body; unclosed skip tags end at their parent.
     assert html_to_lines("<html><head><title>t</title><body><p>visible</p>") == ["visible"]
-    assert html_to_lines("<p>a<br/>b</p><ul><li>one</li><li>two</li></ul>") == ["a", "b", "one", "two"]
+    assert html_to_lines("<p>a<br/>b</p><ul><li>one</li><li>two</li></ul>") == [
+        "a", "b", "one", "two"
+    ]
     assert html_to_lines("") == []
     assert html_to_lines("<script>x</script>  ") == []
     assert html_to_lines("<p>&lt;tag&gt; &#169;</p>") == ["<tag> ©"]
@@ -518,7 +554,10 @@ def test_html_title_and_unclosed_head_follow_browser_rules():
     page = "<html><head><meta charset=utf-8><title>T</title><p>Jane Doe jane@example.com</p></html>"
     assert html_to_lines(page) == ["Jane Doe jane@example.com"]
     # Tags allowed in a head keep it open, and tags inside a title do not end it.
-    page = "<head><title>a <b>x</b></title><link rel=x><noscript><style>s</style></noscript><p>shown"
+    page = (
+        "<head><title>a <b>x</b></title><link rel=x>"
+        "<noscript><style>s</style></noscript><p>shown"
+    )
     assert html_to_lines(page) == ["shown"]
 
 
@@ -552,7 +591,9 @@ def test_text_encodings_are_detected_or_reported(tmp_path):
     bad.write_bytes(b"ok \x81\x8d end")
     doc = parse(bad)
     assert doc.text == "ok \ufffd\ufffd end"
-    assert doc.warnings == ["text is not valid UTF-8; 2 undecodable byte sequence(s) replaced with U+FFFD"]
+    assert doc.warnings == [
+        "text is not valid UTF-8; 2 undecodable byte sequence(s) replaced with U+FFFD"
+    ]
 
 
 def test_empty_result_is_a_warning(tmp_path):
@@ -580,14 +621,18 @@ def test_eml(samples):
     # Attachments: parsed and located under their (sanitised) filename.
     assert where_of(doc, EMAIL, occurrence=1) == [{"attachment": "notes.txt", "line": 1}]
     assert where_of(doc, "555-0100") == [{"attachment": "people.csv", "row": 3, "column": "phone"}]
-    assert where_of(doc, "Forwarded body") == [{"attachment": "attached.eml", "part": "body", "line": 1}]
+    assert where_of(doc, "Forwarded body") == [
+        {"attachment": "attached.eml", "part": "body", "line": 1}
+    ]
     assert where_of(doc, "987-65-4321") == [{"attachment": "attached.eml/deep.txt", "line": 1}]
     assert any("photo.png" in w and "unsupported" in w for w in doc.warnings)
     # Every gap between segments is whitespace or a header label.
     prev = 0
     for seg in doc.segments:
         gap = doc.text[prev:seg.start].strip()
-        assert gap == "" or gap.rstrip(":") in {"From", "To", "Cc", "Bcc", "Reply-To", "Subject", "Date"}
+        assert gap == "" or gap.rstrip(":") in {
+            "From", "To", "Cc", "Bcc", "Reply-To", "Subject", "Date"
+        }
         prev = seg.end
 
 
@@ -666,14 +711,18 @@ def test_parse_many_walks_folders_and_skips(samples, tmp_path):
     assert set(reasons) == {"archive.zip", "~$letter.docx", "broken.docx"}
     assert "unsupported" in reasons["archive.zip"]
     assert "lock" in reasons["~$letter.docx"]
-    assert reasons["broken.docx"].startswith(("BadZipFile", "PackageNotFoundError", "KeyError", "ValueError"))
+    assert reasons["broken.docx"].startswith(
+        ("BadZipFile", "PackageNotFoundError", "KeyError", "ValueError")
+    )
 
     shallow, _ = parse_many(root, recursive=False)
     assert [d.id.split(":", 1)[1] for d in shallow] == ["a.txt"]
 
 
 def test_parse_many_lists_and_duplicates(samples, tmp_path):
-    docs, skipped = parse_many([samples["csv"], str(samples["csv"]), tmp_path / "nope.txt", samples["md"]])
+    docs, skipped = parse_many(
+        [samples["csv"], str(samples["csv"]), tmp_path / "nope.txt", samples["md"]]
+    )
     assert [d.kind for d in docs] == ["csv", "md"]
     assert {s["reason"] for s in skipped} == {"not found", f"duplicate of {samples['csv']}"}
     docs, skipped = parse_many(samples["txt"])
@@ -728,7 +777,9 @@ def test_chunk_never_emits_a_separator_only_chunk():
     doc = from_text("a" * 9 + "\n\n" + "b" * 30)
     ranges = chunk(doc, max_chars=10)
     assert_chunks(doc, ranges, 10)
-    assert [doc.text[a:b] for a, b in ranges] == ["a" * 9, "\n\n" + "b" * 8, "b" * 10, "b" * 10, "b" * 2]
+    assert [doc.text[a:b] for a, b in ranges] == [
+        "a" * 9, "\n\n" + "b" * 8, "b" * 10, "b" * 10, "b" * 2
+    ]
     # Trailing whitespace joins the last chunk when it fits.
     doc = from_text("abc\n\n\n")
     assert chunk(doc, max_chars=10) == [(0, 6)]
@@ -757,7 +808,9 @@ def test_chunk_fuzz_has_no_blank_chunks_when_avoidable():
         cuts = {b for _, b in ranges[:-1]}
         for seg in doc.segments:
             if seg.end - seg.start <= max_chars:
-                assert not any(seg.start < c < seg.end for c in cuts), (doc.text, max_chars, ranges, seg)
+                assert not any(seg.start < c < seg.end for c in cuts), (
+                    doc.text, max_chars, ranges, seg
+                )
 
 
 def test_chunk_keeps_a_segment_whole_when_separators_push_it_past_the_limit():
@@ -778,7 +831,9 @@ def test_chunk_keeps_a_segment_whole_when_separators_push_it_past_the_limit():
     b.blank_line()
     b.add("Jane Doe 123", {"page": 2})
     doc = b.build(id="t", source="t", kind="pdf")
-    assert [doc.text[a:b] for a, b in chunk(doc, max_chars=12)] == ["x" * 8 + "\n\n", "Jane Doe 123"]
+    assert [doc.text[a:b] for a, b in chunk(doc, max_chars=12)] == [
+        "x" * 8 + "\n\n", "Jane Doe 123"
+    ]
 
 
 def test_chunk_text_without_segments():

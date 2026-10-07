@@ -23,9 +23,9 @@ Usage:
 Hosted providers are gated by `PII_BENCH_ALLOW_REMOTE` (see `remote_allowed`).
 `make_client` refuses a hosted provider when it is off, before any
 credentials are read. Every hosted request checks the switch again, so a
-client built while it was on sends nothing once it is turned off. Amazon Bedrock backends are parked until an AWS account
-exists (plan 13, PR 5); the protocol and the cache do not change when they
-arrive.
+client built while it was on sends nothing once it is turned off. Amazon
+Bedrock backends are parked until an AWS account exists (plan 13, PR 5).
+The protocol and the cache do not change when they arrive.
 
 The SDKs are imported only when a client is built, so this package imports
 without the `llm` extra installed.

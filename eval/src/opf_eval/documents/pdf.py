@@ -30,7 +30,9 @@ def extract(path: Path) -> TextBuilder:
         try:
             result = reader.decrypt("")
         except Exception as e:
-            raise ValueError(f"PDF is encrypted and could not be opened ({type(e).__name__}: {e})") from e
+            raise ValueError(
+                f"PDF is encrypted and could not be opened ({type(e).__name__}: {e})"
+            ) from e
         if result == PasswordType.NOT_DECRYPTED:
             raise ValueError("PDF is encrypted and needs a password")
 

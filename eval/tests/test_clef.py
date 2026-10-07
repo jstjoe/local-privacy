@@ -24,6 +24,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+
 from opf_eval.io import meta_path, read_jsonl, write_jsonl
 from opf_eval.review import DecisionBackend, clef
 from opf_eval.review import classifier as rc
@@ -91,7 +92,9 @@ def _fake_cuda_torch(monkeypatch, cards):
 
     cuda = types.SimpleNamespace(
         is_available=lambda: True,
-        get_device_properties=lambda i: types.SimpleNamespace(total_memory=int(cards[i][1] * 1024**3)),
+        get_device_properties=lambda i: types.SimpleNamespace(
+            total_memory=int(cards[i][1] * 1024**3)
+        ),
         get_device_name=lambda i: cards[i][0],
         get_device_capability=lambda i: cards[i][2],
         is_bf16_supported=is_bf16_supported,
@@ -226,7 +229,10 @@ class _FakeModel:
         self.batches.append([len(r.input_ids) for r in batch["records"]])
         out = []
         for r in batch["records"]:
-            out.append([torch.tensor([float(len(r.input_ids))] + [0.0] * (len(q.option_ids) - 1)) for q in r.questions])
+            out.append([
+                torch.tensor([float(len(r.input_ids))] + [0.0] * (len(q.option_ids) - 1))
+                for q in r.questions
+            ])
         return out
 
 
@@ -288,10 +294,19 @@ def test_non_finite_logits_raise_instead_of_becoming_probabilities(bad, tmp_path
 
     class Overflow(_FakeModel):
         def __call__(self, batch):
-            return [[torch.tensor([bad, 0.0], dtype=torch.float16) if q.question_id == "residual"
-                     else torch.zeros(len(q.option_ids)) for q in r.questions] for r in batch["records"]]
+            return [
+                [
+                    torch.tensor([bad, 0.0], dtype=torch.float16)
+                    if q.question_id == "residual"
+                    else torch.zeros(len(q.option_ids))
+                    for q in r.questions
+                ]
+                for r in batch["records"]
+            ]
 
-    backend = clef.ClefBackend.from_components(Overflow(), SimpleNamespace(pad_token_id=0), _fake_module())
+    backend = clef.ClefBackend.from_components(
+        Overflow(), SimpleNamespace(pad_token_id=0), _fake_module()
+    )
     req = rc.segment_requests("Call Ann today.", [], LABELS)[0][2]
     with pytest.raises(FloatingPointError, match="non-finite"):
         backend.answer([req])
@@ -345,7 +360,9 @@ def _stub_tokenizer(folder: Path):
         "<|endoftext|>", "<|im_start|>", "<|im_end|>", "<|vision_start|>", "<|vision_end|>",
         "<|image_pad|>", "<|video_pad|>", "<think>", "</think>",
     ])
-    tok = PreTrainedTokenizerFast(tokenizer_object=tk, pad_token="<|endoftext|>", eos_token="<|im_end|>")
+    tok = PreTrainedTokenizerFast(
+        tokenizer_object=tk, pad_token="<|endoftext|>", eos_token="<|im_end|>"
+    )
     tok.save_pretrained(folder)
     return tok
 
@@ -376,25 +393,37 @@ def build_tiny_release(folder: Path, *, real_tokenizer: bool = False) -> Path:
         hidden_size=32, intermediate_size=64, num_hidden_layers=2,
         layer_types=["linear_attention", "full_attention"], full_attention_interval=2,
         num_attention_heads=2, num_key_value_heads=1, head_dim=16,
-        linear_num_key_heads=2, linear_num_value_heads=2, linear_key_head_dim=8, linear_value_head_dim=8,
+        linear_num_key_heads=2, linear_num_value_heads=2,
+        linear_key_head_dim=8, linear_value_head_dim=8,
         vocab_size=max(512, len(tok)), eos_token_id=tok.eos_token_id,
     )
-    t["rope_parameters"]["mrope_section"] = [2, 1, 1]  # sums to head_dim * partial_rotary_factor / 2
+    # The sections sum to head_dim * partial_rotary_factor / 2.
+    t["rope_parameters"]["mrope_section"] = [2, 1, 1]
     cfg["vision_config"].update(depth=1, hidden_size=16, intermediate_size=32, num_heads=2,
                                 out_hidden_size=32, num_position_embeddings=16)
-    config = transformers.Qwen3_5Config(**{k: v for k, v in cfg.items() if k not in ("architectures", "transformers_version")})
+    config = transformers.Qwen3_5Config(**{
+        k: v for k, v in cfg.items() if k not in ("architectures", "transformers_version")
+    })
     torch.manual_seed(0)
     transformers.Qwen3_5ForConditionalGeneration(config).save_pretrained(folder)
 
     module = clef.import_loader(folder)
-    head_cfg = {"hidden_size": 32, "width": 16, "routing_layers": 1, "layers": 1, "heads": 2, "feedforward": 32}
+    head_cfg = {
+        "hidden_size": 32, "width": 16, "routing_layers": 1,
+        "layers": 1, "heads": 2, "feedforward": 32,
+    }
     head = module.JointSchemaHead(**head_cfg)
-    with torch.no_grad():  # the release head starts its gates at 0; make the logits depend on the input
+    # The release head starts its gates at 0, so open them to make the logits
+    # depend on the input.
+    with torch.no_grad():
         head.prior_logit_scale.fill_(1.0)
         head.joint_logit_scale.fill_(1.0)
         head.residual_gate.fill_(1.0)
     (folder / "joint_head_config.json").write_text(json.dumps(head_cfg))
-    save_file({k: v.contiguous() for k, v in head.state_dict().items()}, str(folder / "joint_head.safetensors"))
+    save_file(
+        {k: v.contiguous() for k, v in head.state_dict().items()},
+        str(folder / "joint_head.safetensors"),
+    )
     return folder
 
 
@@ -417,7 +446,7 @@ def _requests() -> list[dict]:
 
 def _check_answers(reqs: list[dict], answers: list[dict]) -> None:
     assert len(answers) == len(reqs)
-    for req, res in zip(reqs, answers):
+    for req, res in zip(reqs, answers, strict=True):
         assert set(res["answers"]) == set(req["questions"])
         for qid, a in res["answers"].items():
             q = req["questions"][qid]
@@ -440,7 +469,7 @@ def test_tiny_clef_batched_answers_match_single_requests(tiny_release):
         # The repo's own one-request path must give the same probabilities, so
         # padding and sorting in our batches change nothing.
         proc = SimpleNamespace(tokenizer=backend.tokenizer)
-        for req, ours in zip(reqs, answers):
+        for req, ours in zip(reqs, answers, strict=True):
             ref = backend.module.systemone(backend.model, proc, req, max_length=backend.max_length)
             for qid, a in ref["answers"].items():
                 got = ours["answers"][qid]
@@ -486,11 +515,17 @@ def test_tiny_clef_review_run(tiny_release, tmp_path):
     meta_path(fixtures).write_text(json.dumps({"gold": "none", "labels": LABELS}))
     run_dir = tmp_path / "run"
     run_dir.mkdir()
-    (run_dir / "manifest.json").write_text(json.dumps({"fixtures": str(fixtures), "labels": LABELS, "detectors": ["a"]}))
+    (run_dir / "manifest.json").write_text(
+        json.dumps({"fixtures": str(fixtures), "labels": LABELS, "detectors": ["a"]})
+    )
     start = TEXT.index("jane@")
-    write_jsonl(run_dir / "raw_a.jsonl", [{"id": "r1", "detector": "a", "error": None, "latency_ms": 1.0, "spans": [
-        {"label": "EMAIL", "fine_label": "EMAIL", "raw_label": "email", "start": start, "end": start + 10, "text": "jane@x.com"},
-    ]}])
+    email = {
+        "label": "EMAIL", "fine_label": "EMAIL", "raw_label": "email",
+        "start": start, "end": start + 10, "text": "jane@x.com",
+    }
+    write_jsonl(run_dir / "raw_a.jsonl", [
+        {"id": "r1", "detector": "a", "error": None, "latency_ms": 1.0, "spans": [email]},
+    ])
     backend = clef.ClefBackend(tiny_release, device="cpu", mode="fp32", loader="text")
     try:
         path = rc.review_run(run_dir, backend, progress=False, batch_size=2)
@@ -505,7 +540,10 @@ def test_tiny_clef_review_run(tiny_release, tmp_path):
 
 
 @pytest.mark.slow
-@pytest.mark.skipif(os.environ.get("PII_BENCH_CLEF_TOKENIZER") != "1", reason="set PII_BENCH_CLEF_TOKENIZER=1 to fetch the 20 MB tokenizer")
+@pytest.mark.skipif(
+    os.environ.get("PII_BENCH_CLEF_TOKENIZER") != "1",
+    reason="set PII_BENCH_CLEF_TOKENIZER=1 to fetch the 20 MB tokenizer",
+)
 def test_tiny_clef_with_the_real_tokenizer(tmp_path):
     folder = build_tiny_release(tmp_path / "tiny-real", real_tokenizer=True)
     backend = clef.ClefBackend(folder, device="cpu", mode="fp32", loader="text")

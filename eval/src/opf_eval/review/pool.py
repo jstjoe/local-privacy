@@ -134,7 +134,9 @@ def coarse_scope(labels: Iterable[str]) -> set[str]:
     return {taxonomy.parent(lbl) for lbl in labels if taxonomy.is_known(lbl)}
 
 
-def target_labels(run: Run, labels: Iterable[str] | None = None, fixtures: str | Path | None = None) -> list[str]:
+def target_labels(
+    run: Run, labels: Iterable[str] | None = None, fixtures: str | Path | None = None
+) -> list[str]:
     """The labels a review targets.
 
     Order: explicit `labels`; the fixtures sidecar's `labels` (what
@@ -155,7 +157,10 @@ def target_labels(run: Run, labels: Iterable[str] | None = None, fixtures: str |
             out = sorted(taxonomy.ALL_LABELS)
     unknown = [lbl for lbl in out if not taxonomy.is_known(lbl)]
     if unknown:
-        raise ValueError(f"unknown label(s) {unknown}; use canonical labels such as {', '.join(taxonomy.COARSE_LABELS[:5])}")
+        raise ValueError(
+            f"unknown label(s) {unknown}; use canonical labels such as "
+            f"{', '.join(taxonomy.COARSE_LABELS[:5])}"
+        )
     if not out:
         raise ValueError("labels must not be empty")
     return out
@@ -175,11 +180,17 @@ def ok_ids(run_dir: str | Path, detector: str) -> set[str]:
     return {r["id"] for r in iter_jsonl(path) if not r.get("error")}
 
 
-def load_run(run_dir: str | Path, fixtures: str | Path | None = None, detectors: Iterable[str] | None = None) -> Run:
+def load_run(
+    run_dir: str | Path,
+    fixtures: str | Path | None = None,
+    detectors: Iterable[str] | None = None,
+) -> Run:
     """`scoring.Run.load` with a clear error for a missing run directory."""
     run_dir = Path(run_dir)
     if not (run_dir / "manifest.json").exists():
-        raise FileNotFoundError(f"{run_dir} has no manifest.json; run the detectors first (nb.ensure_run)")
+        raise FileNotFoundError(
+            f"{run_dir} has no manifest.json; run the detectors first (nb.ensure_run)"
+        )
     run = Run.load(run_dir, fixtures, detectors=detectors)
     if detectors is not None:
         _detectors(run, detectors)  # raise for a detector without results
@@ -223,7 +234,13 @@ def context(text: str, start: int, end: int, width: int = 60) -> str:
     )
 
 
-def progress(items: Sequence[T] | Iterable[T], *, total: int | None = None, desc: str = "", enabled: bool = True) -> Iterator[T]:
+def progress(
+    items: Sequence[T] | Iterable[T],
+    *,
+    total: int | None = None,
+    desc: str = "",
+    enabled: bool = True,
+) -> Iterator[T]:
     """Wrap `items` in a tqdm bar when tqdm is installed and `enabled`; else pass through."""
     if not enabled:
         yield from items

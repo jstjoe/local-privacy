@@ -13,6 +13,7 @@ import re
 from pathlib import Path
 
 import pytest
+
 from opf_eval import fixtures as fx
 from opf_eval import scoring
 from opf_eval.detectors import make_span, registry
@@ -65,9 +66,13 @@ def make_run(
         out = []
         for rid, spans in by_id.items():
             if isinstance(spans, str):
-                out.append({"id": rid, "detector": det, "spans": [], "latency_ms": 1.0, "error": spans})
+                out.append(
+                    {"id": rid, "detector": det, "spans": [], "latency_ms": 1.0, "error": spans}
+                )
             else:
-                out.append({"id": rid, "detector": det, "spans": spans, "latency_ms": 1.0, "error": None})
+                out.append(
+                    {"id": rid, "detector": det, "spans": spans, "latency_ms": 1.0, "error": None}
+                )
         write_jsonl(run_dir / f"raw_{det}.jsonl", out)
     return run_dir, fixtures
 
@@ -75,7 +80,11 @@ def make_run(
 def candidates(user: str) -> list[tuple[int, str, str]]:
     """(index, label, span text) for each candidate line of a review prompt."""
     out = []
-    for m in re.finditer(r'^\[(\d+)\] ([A-Z_]+)(?: \([A-Z_]+\))? ("(?:[^"\\]|\\.)*") at ', user, re.MULTILINE):
+    pattern = (
+        r'^\[(\d+)\] ([A-Z_]+)(?: \([A-Z_]+\))? '
+        r'("(?:[^"\\]|\\.)*") at '
+    )
+    for m in re.finditer(pattern, user, re.MULTILINE):
         out.append((int(m.group(1)), m.group(2), json.loads(m.group(3))))
     return out
 
@@ -84,8 +93,11 @@ def record_text(user: str) -> str:
     return user.split("<<<\n", 1)[1].split("\n>>>", 1)[0]
 
 
-def responder_from(verdicts: dict[str, tuple[str, str | None]], missed: dict[str, list[dict]] | None = None,
-                   fail_on: str | None = None):
+def responder_from(
+    verdicts: dict[str, tuple[str, str | None]],
+    missed: dict[str, list[dict]] | None = None,
+    fail_on: str | None = None,
+):
     """A reviewer that judges candidates by their text and reports fixed misses per text."""
     missed = missed or {}
 
@@ -140,7 +152,9 @@ STANDARD_VERDICTS = {
     "555-1234": ("wrong_label", "PHONE"),
     "jane@x": ("boundary", None),
 }
-STANDARD_MISSED = {"SSN 123": [{"value": "123-45-6789", "label": "GOV_ID", "context": "SSN 123-45-6789."}]}
+STANDARD_MISSED = {
+    "SSN 123": [{"value": "123-45-6789", "label": "GOV_ID", "context": "SSN 123-45-6789."}]
+}
 
 
 def test_pooled_spans_dedups_and_credits_every_detector(tmp_path):
@@ -156,7 +170,9 @@ def test_pooled_spans_dedups_and_credits_every_detector(tmp_path):
     assert jane["canonical"] is True
     assert set(jane) == {"start", "end", "label", "fine_label", "text", "detectors", "canonical"}
     # b errored on r2, so only a's span is pooled there.
-    assert [(s["text"], s["detectors"], s["fine_label"]) for s in pooled["r2"]] == [("Bob", ["a"], "GIVEN_NAME")]
+    assert [(s["text"], s["detectors"], s["fine_label"]) for s in pooled["r2"]] == [
+        ("Bob", ["a"], "GIVEN_NAME")
+    ]
     assert pooled["r3"][0]["detectors"] == ["a", "b"]
 
 
@@ -167,9 +183,9 @@ def test_pooled_spans_flags_unknown_labels_and_applies_scope(tmp_path):
             _span(text, "Mia", "PERSON", "GIVEN_NAME"),
             {**_span(text, "Oslo", "NRP"), "fine_label": "NRP"},
             _span(text, "mia@z.io", "EMAIL"),
-            {"label": "EMAIL", "start": 5, "end": 5, "text": ""},          # empty: ignored
-            {"label": "EMAIL", "start": 20, "end": 999, "text": "x"},      # out of range: ignored
-            _span(text, "Mia", "PERSON", "GIVEN_NAME"),                    # repeated by one detector
+            {"label": "EMAIL", "start": 5, "end": 5, "text": ""},      # empty: ignored
+            {"label": "EMAIL", "start": 20, "end": 999, "text": "x"},  # out of range: ignored
+            _span(text, "Mia", "PERSON", "GIVEN_NAME"),                # repeated by one detector
         ]},
         "b": {"r1": [_span(text, "Mia", "PERSON", "FAMILY_NAME")], "r2": []},
         "c": {"r1": [_span(text, "Mia", "PERSON", "FAMILY_NAME")]},
@@ -184,7 +200,8 @@ def test_pooled_spans_flags_unknown_labels_and_applies_scope(tmp_path):
     assert by_text["Mia"]["fine_label"] == "FAMILY_NAME"
     assert pooled["r2"] == []
     scoped = pooled_spans(run, labels=["PERSON", "GIVEN_NAME"])
-    assert sorted(s["text"] for s in scoped["r1"]) == ["Mia", "Oslo"]  # unknown labels survive the scope
+    # Unknown labels survive the scope.
+    assert sorted(s["text"] for s in scoped["r1"]) == ["Mia", "Oslo"]
     only_a = pooled_spans(run, ["a"])
     assert {s["text"]: s["detectors"] for s in only_a["r1"]}["Mia"] == ["a"]
     with pytest.raises(ValueError, match="no raw results"):
@@ -296,7 +313,10 @@ def test_missing_and_repeated_indexes_are_unjudged(tmp_path):
     def respond(system, user, schema):
         n = len(candidates(user))
         # Every verdict points at candidate 1, so the others get none.
-        return {"verdicts": [{"index": 1, "verdict": "correct", "label": None, "note": ""}] * n, "missed": []}
+        return {
+            "verdicts": [{"index": 1, "verdict": "correct", "label": None, "note": ""}] * n,
+            "missed": [],
+        }
 
     path = rl.review_run(run_dir, StubClient(respond), progress=False, max_workers=1)
     r1 = [r for r in read_jsonl(path) if r["id"] == "r1" and r["kind"] == "span"]
@@ -311,7 +331,8 @@ def test_missed_values_are_located_or_dropped(tmp_path):
     preds = {"a": {"r1": [_span(text, "ann@q.com", "EMAIL")]}}
     run_dir, _ = make_run(tmp_path, {"r1": text}, preds, labels=["CREDIT_CARD", "EMAIL", "PERSON"])
     missed = [
-        {"value": "Ann", "label": "PERSON", "context": "Ann again."},     # second occurrence via context
+        # The second occurrence is found through the context.
+        {"value": "Ann", "label": "PERSON", "context": "Ann again."},
         {"value": "4111 1111 1111 1111", "label": "CREDIT_CARD", "context": "paid with 4111"},
         {"value": "ann@q.com", "label": "EMAIL", "context": "and ann@q.com"},  # already a candidate
         {"value": "not in text", "label": "PERSON", "context": ""},
@@ -365,12 +386,14 @@ def test_summarize_maths(tmp_path):
     assert a["recall"] == pytest.approx(3 / 5)
     assert a["f1"] == pytest.approx(2 * 1.0 * 0.6 / 1.6)
     assert a["missed_by_all"] == 1
-    assert (b["n_spans"], b["correct"], b["wrong_label"], b["boundary"], b["not_pii"]) == (5, 2, 1, 1, 1)
+    counts = (b["n_spans"], b["correct"], b["wrong_label"], b["boundary"], b["not_pii"])
+    assert counts == (5, 2, 1, 1, 1)
     assert b["precision"] == pytest.approx(2 / 5)
     assert b["recall"] == pytest.approx(2 / 5)  # Jane Doe + sue@y.org
     lenient = {r["detector"]: r for r in rl.summarize(run_dir, path, lenient=True)}
     assert lenient["b"]["precision"] == pytest.approx(3 / 5)
-    assert lenient["b"]["recall"] == pytest.approx(3 / 5)  # + the e-mail entity via the boundary span
+    # The e-mail entity counts too because of the boundary span.
+    assert lenient["b"]["recall"] == pytest.approx(3 / 5)
     assert lenient["a"]["precision"] == 1.0
 
 
@@ -385,7 +408,11 @@ def test_a_span_bridging_two_entities_does_not_merge_them(tmp_path):
         "email_only": {"r1": [_span(text, "jane@x.com", "EMAIL")]},
     }
     run_dir, _ = make_run(tmp_path, {"r1": text}, preds)
-    verdicts = {"Jane Doe jane@x.com": ("boundary", None), "Jane Doe": ("correct", None), "jane@x.com": ("correct", None)}
+    verdicts = {
+        "Jane Doe jane@x.com": ("boundary", None),
+        "Jane Doe": ("correct", None),
+        "jane@x.com": ("correct", None),
+    }
     path = rl.review_run(run_dir, StubClient(responder_from(verdicts)), progress=False)
     s = {r["detector"]: r for r in rl.summarize(run_dir, path)}
     assert s["email_only"]["recall"] == pytest.approx(1 / 2)
@@ -407,10 +434,14 @@ def test_a_miss_inside_an_over_long_boundary_span_of_another_entity_stays_missed
     }
     run_dir, _ = make_run(tmp_path, {"r1": text}, preds)
     verdicts = {"Jane Doe": ("correct", None), "Jane Doe met John": ("boundary", None)}
-    missed = {"John Roe": [{"value": "John Roe", "label": "PERSON", "context": "met John Roe today"}]}
+    missed = {
+        "John Roe": [{"value": "John Roe", "label": "PERSON", "context": "met John Roe today"}]
+    }
     path = rl.review_run(run_dir, StubClient(responder_from(verdicts, missed)), progress=False)
     rows = read_jsonl(path)
-    assert [(r["kind"], r.get("text")) for r in rows if r["kind"] != "span"] == [("missed", "John Roe")]
+    assert [(r["kind"], r.get("text")) for r in rows if r["kind"] != "span"] == [
+        ("missed", "John Roe")
+    ]
     strict = {r["detector"]: r for r in rl.summarize(run_dir, path)}
     assert strict["A"]["recall"] == pytest.approx(1 / 2)
     assert strict["A"]["missed_by_all"] == 1
@@ -475,8 +506,10 @@ def test_review_prompt_embeds_its_version(monkeypatch):
 def test_entities_attach_each_other_span_to_one_anchor():
     def sp(a, b, verdict):
         return {"start": a, "end": b, "verdict": verdict}
-    groups = rl._entities([sp(0, 8, "correct"), sp(9, 19, "correct"), sp(0, 19, "boundary"), sp(30, 35, "wrong_label"),
-                           sp(32, 40, "boundary"), sp(5, 7, "correct")])
+    groups = rl._entities([
+        sp(0, 8, "correct"), sp(9, 19, "correct"), sp(0, 19, "boundary"),
+        sp(30, 35, "wrong_label"), sp(32, 40, "boundary"), sp(5, 7, "correct"),
+    ])
     assert [[(s["start"], s["end"]) for s in g] for g in groups] == [
         [(0, 8), (5, 7)], [(9, 19), (0, 19)], [(30, 35), (32, 40)],
     ]
@@ -493,7 +526,9 @@ def test_pii_inside_a_not_pii_candidate_stays_missed(tmp_path):
     reviewer = StubClient(responder_from({"Invoice for Jane Doe": ("not_pii", None)}, missed))
     path = rl.review_run(run_dir, reviewer, progress=False)
     rows = read_jsonl(path)
-    assert [(r["kind"], r.get("text")) for r in rows if r["kind"] != "span"] == [("missed", "Jane Doe")]
+    assert [(r["kind"], r.get("text")) for r in rows if r["kind"] != "span"] == [
+        ("missed", "Jane Doe")
+    ]
     s = {r["detector"]: r for r in rl.summarize(run_dir, path)}
     assert s["none"]["recall"] == 0.0 and s["none"]["missed_by_all"] == 1
     assert s["wide"]["recall"] == 0.0 and s["wide"]["precision"] == 0.0
@@ -504,17 +539,22 @@ def test_pii_inside_a_not_pii_candidate_stays_missed(tmp_path):
 
 def test_detectors_may_be_a_generator(tmp_path):
     run_dir, _ = standard_run(tmp_path)
-    assert rl.estimate(run_dir, detectors=(d for d in ["a"])) == rl.estimate(run_dir, detectors=["a"])
+    from_generator = rl.estimate(run_dir, detectors=(d for d in ["a"]))
+    assert from_generator == rl.estimate(run_dir, detectors=["a"])
     assert rl.estimate(run_dir, detectors=["a"])["n_candidates"] == 4
-    path = rl.review_run(run_dir, StubClient(rl.dry_run_responder), detectors=(d for d in ["a"]), progress=False)
+    path = rl.review_run(
+        run_dir, StubClient(rl.dry_run_responder), detectors=(d for d in ["a"]), progress=False
+    )
     meta = json.loads((run_dir / (path.stem + ".meta.json")).read_text())
     assert meta["detectors"] == ["a"] and meta["n_spans"] == 4
 
 
 def test_summarize_excludes_records_a_detector_errored_on(tmp_path):
     run_dir, _ = standard_run(tmp_path)
-    path = rl.review_run(run_dir, StubClient(responder_from(STANDARD_VERDICTS, STANDARD_MISSED)), progress=False)
-    s = {r["detector"]: r for r in rl.summarize(run_dir, path.name)}  # a bare name resolves inside run_dir
+    reviewer = StubClient(responder_from(STANDARD_VERDICTS, STANDARD_MISSED))
+    path = rl.review_run(run_dir, reviewer, progress=False)
+    # A bare name resolves inside run_dir.
+    s = {r["detector"]: r for r in rl.summarize(run_dir, path.name)}
     assert s["a"]["n_records"] == 3
     assert s["b"]["n_records"] == 2  # b errored on r2
     # a: r1 4 entities + r2 Bob + r3 sue = 6; found Jane Doe, jane@x.com, Bob, sue = 4.
@@ -534,9 +574,12 @@ def test_disagreements_have_context_and_document_offsets(tmp_path):
         "d1#0": {"text": T1, "doc_id": "abc:file.txt", "offset": 1000},
         "r3": T3,
     }
-    preds = {"b": {"d1#0": [_span(T1, "Contact", "PERSON"), _span(T1, "Jane Doe", "PERSON")], "r3": []}}
+    preds = {"b": {
+        "d1#0": [_span(T1, "Contact", "PERSON"), _span(T1, "Jane Doe", "PERSON")], "r3": []
+    }}
     run_dir, _ = make_run(tmp_path, records, preds)
-    path = rl.review_run(run_dir, StubClient(responder_from(STANDARD_VERDICTS, STANDARD_MISSED)), progress=False)
+    reviewer = StubClient(responder_from(STANDARD_VERDICTS, STANDARD_MISSED))
+    path = rl.review_run(run_dir, reviewer, progress=False)
     rows = rl.disagreements(run_dir, path)
     assert [(r["kind"], r["verdict"], r["text"]) for r in rows] == [
         ("span", "not_pii", "Contact"),
@@ -590,7 +633,9 @@ def test_missing_run_dir_is_a_clear_error(tmp_path):
 
 # -------------------------------------------- through the real pipeline
 
-register_vocab("review_test_vocab", {"mail": "EMAIL", "phone": "PHONE"}, kind="detector", overwrite=True)
+register_vocab(
+    "review_test_vocab", {"mail": "EMAIL", "phone": "PHONE"}, kind="detector", overwrite=True
+)
 _MAIL = re.compile(r"[\w.]+@[\w.]+\w")
 _PHONE = re.compile(r"\d{3}-\d{4}")
 
@@ -599,8 +644,14 @@ class _RegexDetector:
     name = "review_regex"
 
     def detect(self, text: str, **_: object) -> dict:
-        spans = [make_span("review_test_vocab", "mail", m.start(), m.end(), m.group()) for m in _MAIL.finditer(text)]
-        spans += [make_span("review_test_vocab", "phone", m.start(), m.end(), m.group()) for m in _PHONE.finditer(text)]
+        spans = [
+            make_span("review_test_vocab", "mail", m.start(), m.end(), m.group())
+            for m in _MAIL.finditer(text)
+        ]
+        spans += [
+            make_span("review_test_vocab", "phone", m.start(), m.end(), m.group())
+            for m in _PHONE.finditer(text)
+        ]
         return {"spans": spans, "latency_ms": 0.1, "error": None}
 
 

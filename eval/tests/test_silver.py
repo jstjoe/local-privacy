@@ -15,6 +15,7 @@ import unicodedata
 from itertools import pairwise
 
 import pytest
+
 from opf_eval import datasets, fixtures, report, runner, silver
 from opf_eval.detectors import make_span, registry
 from opf_eval.fixtures import (
@@ -112,7 +113,9 @@ def test_locate_exact_span_fields():
 
 def test_locate_fine_label_gets_coarse_parent():
     (span,), _ = silver.locate("Hi Ann", [item("Ann", "GIVEN_NAME")])
-    assert (span["label"], span["fine_label"], span["raw_label"]) == ("PERSON", "GIVEN_NAME", "GIVEN_NAME")
+    assert (span["label"], span["fine_label"], span["raw_label"]) == (
+        "PERSON", "GIVEN_NAME", "GIVEN_NAME"
+    )
 
 
 def test_locate_case_insensitive_then_whitespace_fallbacks():
@@ -160,7 +163,9 @@ def test_locate_stand_alone_match_in_a_later_tier_beats_an_embedded_one(text, va
 
 def test_locate_matches_across_unicode_normalisation_forms():
     nfd = unicodedata.normalize("NFD", "José García lives in Málaga")
-    spans, dropped = silver.locate(nfd, [item("José García", "PERSON"), item("málaga", "CITY", "in Málaga")])
+    spans, dropped = silver.locate(
+        nfd, [item("José García", "PERSON"), item("málaga", "CITY", "in Málaga")]
+    )
     assert dropped == []
     assert [s["text"] for s in spans] == [nfd[:13], nfd[-7:]]  # whole clusters, marks included
     assert [unicodedata.normalize("NFC", s["text"]) for s in spans] == ["José García", "Málaga"]
@@ -191,7 +196,7 @@ def test_nfc_view_is_nfc_and_maps_back_to_whole_clusters():
         nfc, starts, ends = silver._nfc_view(text)
         assert nfc == unicodedata.normalize("NFC", text), repr(text)
         assert len(starts) == len(ends) == len(nfc)
-        assert all(a < b for a, b in zip(starts, ends))
+        assert all(a < b for a, b in zip(starts, ends, strict=True))
 
 
 def test_locate_values_next_to_cjk_text_are_not_embedded():
@@ -257,7 +262,9 @@ def test_locate_drops_with_reasons():
     assert [d["reason"] for d in dropped] == [
         "not_found", "empty", "unknown_label", "unknown_label", "empty",
     ]
-    assert dropped[0] == {"value": "bob@y.io", "label": "EMAIL", "context": "", "reason": "not_found"}
+    assert dropped[0] == {
+        "value": "bob@y.io", "label": "EMAIL", "context": "", "reason": "not_found"
+    }
 
 
 def test_locate_overlaps_keep_the_longer_span():
@@ -265,7 +272,8 @@ def test_locate_overlaps_keep_the_longer_span():
     spans, dropped = silver.locate(text, [item("Jane", "GIVEN_NAME"), item("Jane Doe", "PERSON")])
     assert spans_of(spans) == [(3, 11, "PERSON")]
     assert dropped == [{
-        "value": "Jane", "label": "GIVEN_NAME", "context": "", "reason": "overlap", "start": 3, "end": 7,
+        "value": "Jane", "label": "GIVEN_NAME", "context": "", "reason": "overlap",
+        "start": 3, "end": 7,
     }]
 
 
@@ -292,7 +300,9 @@ def test_locate_context_pin_beats_an_unpinned_item_on_the_same_span(occurrences)
 
 def test_locate_output_is_sorted_and_disjoint():
     text = "b@y.io then a@x.io then 555-0101"
-    spans, _ = silver.locate(text, [item("555-0101", "PHONE"), item("a@x.io", "EMAIL"), item("b@y.io", "EMAIL")])
+    spans, _ = silver.locate(
+        text, [item("555-0101", "PHONE"), item("a@x.io", "EMAIL"), item("b@y.io", "EMAIL")]
+    )
     assert [s["start"] for s in spans] == sorted(s["start"] for s in spans)
     assert all(a["end"] <= b["start"] for a, b in pairwise(spans))
 
@@ -328,7 +338,9 @@ def test_label_record_splits_long_text_and_shifts_offsets():
     assert all(len(_text_of(u)) <= 300 for _, u in client.calls)
     assert len(spans) == 80
     assert all(text[s["start"]:s["end"]] == s["text"] for s in spans)
-    assert {s["text"] for s in spans if s["label"] == "EMAIL"} == {f"user{i}@x.io" for i in range(40)}
+    assert {s["text"] for s in spans if s["label"] == "EMAIL"} == {
+        f"user{i}@x.io" for i in range(40)
+    }
 
 
 def test_label_record_propagates_llm_errors():
@@ -356,7 +368,9 @@ def test_label_record_halves_a_piece_whose_answer_hits_max_tokens():
     assert len(spans) == 120
     assert all(text[s["start"]:s["end"]] == s["text"] for s in spans)
     assert [s["start"] for s in spans] == sorted(s["start"] for s in spans)
-    assert {s["text"] for s in spans if s["label"] == "EMAIL"} == {f"jane{i}@x.io" for i in range(60)}
+    assert {s["text"] for s in spans if s["label"] == "EMAIL"} == {
+        f"jane{i}@x.io" for i in range(60)
+    }
     texts = [_text_of(u) for _, u in client.calls]
     assert len(texts[0]) == len(text)  # first the whole record, then halves
     # 1859 chars -> two halves of ~930 -> four of ~465 -> eight of ~232.
@@ -417,7 +431,13 @@ def test_label_record_does_not_split_on_other_errors():
 
 
 def S(start, end, label="EMAIL", fine=None):
-    return {"label": label, "fine_label": fine or label, "raw_label": fine or label, "start": start, "end": end}
+    return {
+        "label": label,
+        "fine_label": fine or label,
+        "raw_label": fine or label,
+        "start": start,
+        "end": end,
+    }
 
 
 def test_merge_modes():
@@ -425,7 +445,10 @@ def test_merge_modes():
     b = [S(0, 5), S(10, 15, "PHONE")]
     c = [S(0, 5), S(30, 35)]
     lists = [a, b, c]
-    key = lambda spans: [(s["start"], s["end"], s["votes"]) for s in spans]
+
+    def key(spans):
+        return [(s["start"], s["end"], s["votes"]) for s in spans]
+
     assert key(silver.merge(lists, "union")) == [(0, 5, 3), (10, 15, 2), (20, 25, 1), (30, 35, 1)]
     assert key(silver.merge(lists, "majority")) == [(0, 5, 3), (10, 15, 2)]
     assert key(silver.merge(lists, "intersection")) == [(0, 5, 3)]
@@ -457,7 +480,8 @@ def test_merge_counts_only_labelers_that_agree_with_the_kept_span():
     # A agrees with B and B agrees with C, but A and C do not agree (IoU 0.25).
     a, b, c = [S(0, 10, "PERSON")], [S(3, 13, "PERSON")], [S(6, 16, "PERSON")]
     (span,) = silver.merge([a, b, c], "intersection")
-    assert (span["start"], span["end"], span["votes"]) == (3, 13, 3)  # B's span is the one all agree with
+    # B's span is the one all agree with.
+    assert (span["start"], span["end"], span["votes"]) == (3, 13, 3)
     assert [(s["start"], s["votes"]) for s in silver.merge([a, c], "union")] == [(0, 1)]
     assert silver.merge([a, c], "intersection") == []
     # "Dr. Jane Doe", "Jane Doe" and "Jane": only "Jane Doe" has every labeler's agreement.
@@ -485,7 +509,9 @@ def test_merge_picks_most_common_fine_label():
         [S(0, 8, "PERSON", "GIVEN_NAME")],
     ]
     (span,) = silver.merge(lists, "union")
-    assert (span["label"], span["fine_label"], span["raw_label"]) == ("PERSON", "GIVEN_NAME", "GIVEN_NAME")
+    assert (span["label"], span["fine_label"], span["raw_label"]) == (
+        "PERSON", "GIVEN_NAME", "GIVEN_NAME"
+    )
     (span,) = silver.merge(lists[:2], "union")  # tie -> first labeler's
     assert span["fine_label"] == "PERSON"
 
@@ -569,7 +595,9 @@ def unlabeled(tmp_path):
 def test_generate_two_labelers_end_to_end(unlabeled, tmp_path, capsys):
     full = StubClient(regex_responder({"EMAIL": EMAIL_RE, "PHONE": PHONE_RE}), model="full")
     mails = StubClient(regex_responder({"EMAIL": EMAIL_RE}), model="mails")
-    out = silver.generate(unlabeled, [full, mails], tmp_path / "mine.silver.jsonl", merge_how="union")
+    out = silver.generate(
+        unlabeled, [full, mails], tmp_path / "mine.silver.jsonl", merge_how="union"
+    )
     assert out == tmp_path / "mine.silver.jsonl"
 
     rows = {r["id"]: r for r in read_jsonl(out)}
@@ -712,7 +740,9 @@ def test_generate_labels_and_level(unlabeled, tmp_path):
         seen.append(schema["properties"]["entities"]["items"]["properties"]["label"]["enum"])
         return {"entities": []}
 
-    silver.generate(unlabeled, [StubClient(spy)], tmp_path / "a.jsonl", labels=["EMAIL"], progress=False)
+    silver.generate(
+        unlabeled, [StubClient(spy)], tmp_path / "a.jsonl", labels=["EMAIL"], progress=False
+    )
     assert seen[-1] == ["EMAIL"]
     assert read_meta(tmp_path / "a.jsonl")["labels"] == ["EMAIL"]
     silver.generate(
@@ -774,7 +804,10 @@ def test_generate_through_the_cache_is_free_the_second_time(unlabeled, tmp_path)
     n_calls = len(inner.calls)
     second = silver.generate(unlabeled, [cached], tmp_path / "b.jsonl", progress=False)
     assert len(inner.calls) == n_calls == 3 and cached.hits == 3
-    strip = lambda p: [r["gold_spans"] for r in read_jsonl(p)]
+
+    def strip(p):
+        return [r["gold_spans"] for r in read_jsonl(p)]
+
     assert strip(first) == strip(second)
 
 
@@ -787,7 +820,9 @@ def test_generate_is_deterministic_across_worker_counts(unlabeled, tmp_path):
 
 def test_plan_calls(unlabeled, tmp_path):
     plan = silver.plan_calls(unlabeled, 2)
-    assert plan == {"n_records": 3, "n_chars": sum(map(len, TEXTS.values())), "n_calls": 6, "n_labelers": 2}
+    assert plan == {
+        "n_records": 3, "n_chars": sum(map(len, TEXTS.values())), "n_calls": 6, "n_labelers": 2
+    }
     long = from_texts(["x" * 50 + "\n" + "y" * 50, "   "], tmp_path / "long.jsonl")
     assert silver.plan_calls(long, [StubClient()], max_chars=60)["n_calls"] == 2
 
@@ -795,7 +830,8 @@ def test_plan_calls(unlabeled, tmp_path):
 def test_importing_silver_does_not_import_llm_sdks():
     code = (
         "import sys, opf_eval.silver\n"
-        "bad = [m for m in ('anthropic', 'openai', 'google.auth', 'pypdf', 'docx', 'openpyxl') if m in sys.modules]\n"
+        "bad = [m for m in ('anthropic', 'openai', 'google.auth', 'pypdf', 'docx', 'openpyxl') "
+        "if m in sys.modules]\n"
         "assert not bad, bad\n"
     )
     subprocess.run([sys.executable, "-c", code], check=True)
@@ -810,13 +846,18 @@ class _MailDetector:
     name = "silver_mail"
 
     def detect(self, text, **_):
-        spans = [make_span("silvervocab", "mail", m.start(), m.end(), m.group(0)) for m in re.finditer(EMAIL_RE, text)]
+        spans = [
+            make_span("silvervocab", "mail", m.start(), m.end(), m.group(0))
+            for m in re.finditer(EMAIL_RE, text)
+        ]
         return {"spans": spans, "latency_ms": 0.0, "error": None}
 
 
 register_vocab("silvervocab", {"mail": "EMAIL", "tel": "PHONE"}, kind="detector", overwrite=True)
 registry.register_detector(
-    registry.DetectorSpec(name="silver_mail", vocab="silvervocab", factory=lambda ctx: _MailDetector()),
+    registry.DetectorSpec(
+        name="silver_mail", vocab="silvervocab", factory=lambda ctx: _MailDetector()
+    ),
     overwrite=True,
 )
 
@@ -875,7 +916,9 @@ def test_report_silver_single_labeler_and_error_records(run_on_unlabeled, unlabe
     assert "| silver_mail | 2 | 1.000 | 1.000 | 1.000 | 1.000 |" in md
 
 
-def test_report_silver_with_every_record_failed_prints_no_scores(run_on_unlabeled, unlabeled, tmp_path):
+def test_report_silver_with_every_record_failed_prints_no_scores(
+    run_on_unlabeled, unlabeled, tmp_path
+):
     def down(system, user, schema):
         raise LLMError("down")
 
@@ -885,7 +928,8 @@ def test_report_silver_with_every_record_failed_prints_no_scores(run_on_unlabele
     md = report.build_report(run_on_unlabeled, fixtures=out)
     assert md.splitlines()[0].startswith("# Silver-label report — ")
     assert "No silver labels, so no scores" in md
-    assert f"| {silver.labeler_name(client)} | 3 | `s.labeler_{silver.labeler_name(client)}.jsonl` |" in md
+    name = silver.labeler_name(client)
+    assert f"| {name} | 3 | `s.labeler_{name}.jsonl` |" in md
     assert "SemEval" not in md and "0.000" not in md
     assert "| silver_mail | 3 | 2 |" in md  # detected spans are still listed
 
@@ -895,8 +939,9 @@ def test_report_gold_title_unchanged(tmp_path):
     fx.write_text(json.dumps({"id": "1", "text": "ann@x.io", "gold_spans": [S(0, 8)]}) + "\n")
     run_dir = tmp_path / "run"
     run_dir.mkdir()
-    (run_dir / "raw_silver_mail.jsonl").write_text(json.dumps(
-        {"id": "1", "detector": "silver_mail", "latency_ms": 1, "error": None, "spans": [S(0, 8)]}) + "\n")
+    (run_dir / "raw_silver_mail.jsonl").write_text(json.dumps({
+        "id": "1", "detector": "silver_mail", "latency_ms": 1, "error": None, "spans": [S(0, 8)]
+    }) + "\n")
     (run_dir / "manifest.json").write_text(json.dumps({
         "started_at": "t", "fixtures": str(fx), "n_examples": 1, "detectors": ["silver_mail"],
         "labels": ["EMAIL"],
@@ -905,13 +950,19 @@ def test_report_gold_title_unchanged(tmp_path):
     assert md.startswith("# PII detector benchmark — t") and "silver labels" not in md
 
 
-def test_report_cli_with_silver_fixtures(run_on_unlabeled, unlabeled, tmp_path, monkeypatch, capsys):
+def test_report_cli_with_silver_fixtures(
+    run_on_unlabeled, unlabeled, tmp_path, monkeypatch, capsys
+):
     out = silver.generate(unlabeled, [StubClient(regex_responder({"EMAIL": EMAIL_RE}))],
                           tmp_path / "s.jsonl", progress=False)
-    monkeypatch.setattr(sys, "argv", ["report", "--run", str(run_on_unlabeled), "--fixtures", str(out)])
+    monkeypatch.setattr(
+        sys, "argv", ["report", "--run", str(run_on_unlabeled), "--fixtures", str(out)]
+    )
     report.main()
     assert (run_on_unlabeled / "report.md").read_text().startswith("# Silver-label report")
-    monkeypatch.setattr(sys, "argv", ["report", "--run", str(run_on_unlabeled), "--out", str(tmp_path / "u.md")])
+    monkeypatch.setattr(
+        sys, "argv", ["report", "--run", str(run_on_unlabeled), "--out", str(tmp_path / "u.md")]
+    )
     report.main()
     assert "No gold labels" in (tmp_path / "u.md").read_text()
 

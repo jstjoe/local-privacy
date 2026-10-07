@@ -334,7 +334,11 @@ def _answer_rows(rid: str, text: str, candidates: list[dict], answer: dict) -> l
         if _covered(key, rows):
             # The value sits under an accepted candidate, so it was not missed
             # by all detectors. That candidate already carries the verdict.
-            dropped.append({"value": span["text"], "label": span.get("fine_label") or span["label"], "reason": "covered_by_candidate"})
+            dropped.append({
+                "value": span["text"],
+                "label": span.get("fine_label") or span["label"],
+                "reason": "covered_by_candidate",
+            })
             continue
         if key in seen:
             continue
@@ -430,7 +434,12 @@ def review_run(
 
     with ThreadPoolExecutor(max_workers=max(1, max_workers)) as pool:
         # map() keeps submission order, so the file follows the fixtures.
-        results = list(_progress(pool.map(one, work), total=len(work), desc=f"review {reviewer.model}", enabled=progress))
+        results = list(_progress(
+            pool.map(one, work),
+            total=len(work),
+            desc=f"review {reviewer.model}",
+            enabled=progress,
+        ))
 
     out = run_dir / review_file_name(reviewer)
     rows = [r for rs in results for r in rs]
@@ -672,7 +681,9 @@ def disagreements(
         }
         if rec.get("doc_id") is not None:
             offset = int(rec.get("offset") or 0)
-            row.update(doc_id=rec["doc_id"], doc_start=r["start"] + offset, doc_end=r["end"] + offset)
+            row.update(
+                doc_id=rec["doc_id"], doc_start=r["start"] + offset, doc_end=r["end"] + offset
+            )
         out.append(row)
         if limit is not None and len(out) >= limit:
             break

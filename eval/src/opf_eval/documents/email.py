@@ -122,7 +122,9 @@ def _attachments(b: TextBuilder, msg: EmailMessage, depth: int) -> None:
             b.warnings.append(f"attachment {name!r} skipped (unsupported type {ctype})")
             continue
         if depth >= MAX_ATTACHMENT_DEPTH:
-            b.warnings.append(f"attachment {name!r} skipped (nested more than {MAX_ATTACHMENT_DEPTH} deep)")
+            b.warnings.append(
+                f"attachment {name!r} skipped (nested more than {MAX_ATTACHMENT_DEPTH} deep)"
+            )
             continue
         data = _attachment_bytes(part)
         if not data:
@@ -134,7 +136,9 @@ def _attachments(b: TextBuilder, msg: EmailMessage, depth: int) -> None:
             try:
                 inner = extract_path(tmp_path, SUPPORTED_SUFFIXES[suffix], depth=depth + 1)
             except Exception as e:  # noqa: BLE001 — a broken attachment must not lose the email
-                b.warnings.append(f"attachment {name!r} could not be parsed ({type(e).__name__}: {e})")
+                b.warnings.append(
+                    f"attachment {name!r} could not be parsed ({type(e).__name__}: {e})"
+                )
                 continue
         b.warnings.extend(f"attachment {name!r}: {w}" for w in inner.warnings)
         if not inner.text:

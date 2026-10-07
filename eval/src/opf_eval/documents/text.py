@@ -58,7 +58,9 @@ def decode_text(data: bytes) -> tuple[str, list[str]]:
             return data[len(bom):].decode(encoding, errors="replace"), []
     guessed = _utf16_without_bom(data)
     if guessed:
-        return data.decode(guessed, errors="replace"), [f"no byte-order mark; decoded as {guessed.upper()}"]
+        return data.decode(guessed, errors="replace"), [
+            f"no byte-order mark; decoded as {guessed.upper()}"
+        ]
     try:
         return data.decode("utf-8"), []
     except UnicodeDecodeError:
@@ -69,7 +71,9 @@ def decode_text(data: bytes) -> tuple[str, list[str]]:
         pass
     text = data.decode("utf-8", errors="replace")
     bad = text.count("�") - data.decode("utf-8", errors="ignore").count("�")
-    return text, [f"text is not valid UTF-8; {bad} undecodable byte sequence(s) replaced with U+FFFD"]
+    return text, [
+        f"text is not valid UTF-8; {bad} undecodable byte sequence(s) replaced with U+FFFD"
+    ]
 
 
 def decode(data: bytes) -> str:

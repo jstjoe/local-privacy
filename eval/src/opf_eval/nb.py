@@ -27,7 +27,8 @@ Notebook 07 evaluates detectors on the user's own data, which has no gold
 spans. It points a session at an explicit fixtures file instead of a dataset
 sample and uses a few extra helpers:
 
-    nb.allow_remote()                       # may hosted LLMs see the data? (env PII_BENCH_ALLOW_REMOTE)
+    nb.allow_remote()                       # may hosted LLMs see the data?
+                                            # (env PII_BENCH_ALLOW_REMOTE)
     folder = nb.inputs_dir()                # <workspace>/inputs: drop files here
     nb.upload_files()                       # Colab: upload into that folder
     nb.drive_folder("pii-inputs")           # Colab: a folder in My Drive
@@ -292,7 +293,12 @@ TOKEN_VAULT_SECRETS = (
 # credentials (see `gcloud_auth`).
 # OPENAI_COMPATIBLE_API_KEY is for an `openai_compatible` server that needs a
 # key, which `opf_eval.llm` reads from the environment.
-LLM_SECRETS = ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_CLOUD_PROJECT", "OPENAI_COMPATIBLE_API_KEY")
+LLM_SECRETS = (
+    "ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
+    "GOOGLE_CLOUD_PROJECT",
+    "OPENAI_COMPATIBLE_API_KEY",
+)
 
 
 # ------------------------------------------------------- remote providers
@@ -418,7 +424,10 @@ class Session:
 
     def show(self) -> None:
         if self.fixtures:
-            note = {_io.GOLD_NONE: "unlabeled: no gold spans", _io.GOLD_SILVER: "silver labels from LLMs"}
+            note = {
+                _io.GOLD_NONE: "unlabeled: no gold spans",
+                _io.GOLD_SILVER: "silver labels from LLMs",
+            }
             gold = note.get(self.gold or "", "")
             print(f"data:      your fixtures{f'  ({gold})' if gold else ''}")
         else:
@@ -464,7 +473,8 @@ def load_session(*, root: str | Path | None = None, quiet: bool = False) -> Sess
             # Notebooks 01–06 expect a dataset sample with gold spans. A saved
             # override would make them score unlabeled data without saying so.
             print(
-                "note: the saved session points at an explicit fixtures file, not a dataset sample. "
+                "note: the saved session points at an explicit fixtures file, "
+                "not a dataset sample. "
                 "Gold-based scores need a sample: call nb.session(dataset=...) to switch back."
             )
     return s
@@ -630,7 +640,8 @@ def upload_files(dest: str | Path | None = None) -> list[Path]:
     folder = Path(dest) if dest is not None else inputs_dir()
     if not in_colab():
         raise RuntimeError(
-            f"upload_files() needs Colab's file picker. On this machine copy your files into {folder} "
+            "upload_files() needs Colab's file picker. "
+            f"On this machine copy your files into {folder} "
             "and parse that folder instead."
         )
     from google.colab import files  # type: ignore[import-not-found]
@@ -987,7 +998,9 @@ def spans_in_context(
     has_where = any(s.get("where") for _, s in placed)
     shown = placed if limit is None else placed[:limit]
 
-    columns = ["label", "span"] + (["detector"] if has_det else []) + (["where"] if has_where else [])
+    columns = (
+        ["label", "span"] + (["detector"] if has_det else []) + (["where"] if has_where else [])
+    )
     columns.append("context")
     lines = [
         "| " + " | ".join(columns) + " |",
@@ -1013,11 +1026,16 @@ def spans_in_context(
     hidden = len(placed) - len(shown)
     if hidden:
         lines.append("")
-        lines.append(f"_… {hidden} more span{'s' if hidden != 1 else ''} not shown (raise `limit`)._")
+        lines.append(
+            f"_… {hidden} more span{'s' if hidden != 1 else ''} not shown (raise `limit`)._"
+        )
     skipped = len(spans) - len(placed)
     if skipped:
         lines.append("")
-        lines.append(f"_{skipped} span{'s' if skipped != 1 else ''} with offsets outside the text skipped._")
+        lines.append(
+            f"_{skipped} span{'s' if skipped != 1 else ''} "
+            "with offsets outside the text skipped._"
+        )
     return "\n".join(lines)
 
 

@@ -180,7 +180,10 @@ def build_prompt(text: str, labels: Sequence[str]) -> tuple[str, str]:
     labels = _check_labels(labels)
     has_specific = any(not taxonomy.LABELS[lbl].is_coarse for lbl in labels)
     rules = [
-        "List EVERY occurrence. When the same value appears several times, list it once per occurrence.",
+        (
+            "List EVERY occurrence. When the same value appears several times, "
+            "list it once per occurrence."
+        ),
         (
             "Copy `value` from the text exactly, character for character: same spelling, case, "
             "spacing and punctuation. Never normalise, correct, translate or reformat it."
@@ -266,7 +269,9 @@ def _nfc_view(text: str) -> tuple[str, list[int], list[int]]:
         cluster = nfc(text[i:j])
         while j < n:
             longer = nfc(text[i:j + 1])
-            if not unicodedata.combining(text[j]) and len(longer) >= len(cluster) + len(nfc(text[j])):
+            if not unicodedata.combining(text[j]) and (
+                len(longer) >= len(cluster) + len(nfc(text[j]))
+            ):
                 break  # text[j] neither attaches nor composes
             cluster, j = longer, j + 1
         parts.append(cluster)
@@ -282,7 +287,11 @@ def _tiers(text: str, needle: str) -> Iterable[list[tuple[int, int]]]:
     on the NFC forms of both strings (text from PDFs or macOS is often NFD,
     and LLMs answer in NFC). NFC matches are mapped back to `text` offsets."""
     for pattern, flags in _patterns(needle):
-        yield [(m.start(), m.end()) for m in re.finditer(pattern, text, flags) if m.end() > m.start()]
+        yield [
+            (m.start(), m.end())
+            for m in re.finditer(pattern, text, flags)
+            if m.end() > m.start()
+        ]
     if unicodedata.is_normalized("NFC", text) and unicodedata.is_normalized("NFC", needle):
         return
     nfc, starts, ends = _nfc_view(text)
@@ -382,7 +391,9 @@ def locate(
     takes one occurrence: its pinned one if free, else the first free one.
     """
     if occurrences not in OCCURRENCE_MODES:
-        raise ValueError(f"unknown occurrences mode {occurrences!r}; expected one of {OCCURRENCE_MODES}")
+        raise ValueError(
+            f"unknown occurrences mode {occurrences!r}; expected one of {OCCURRENCE_MODES}"
+        )
     allowed = set(labels) if labels is not None else None
     dropped: list[tuple[int, dict]] = []  # (item order, row) so drops keep answer order
     groups: dict[tuple[str, str], list[tuple[int, Mapping]]] = {}
@@ -423,17 +434,18 @@ def locate(
         if occurrences == "all":
             if all(p is not None for p in pins):
                 taken: set[tuple[int, int]] = set()
-                for (order, item), pin in zip(members, pins):
+                for (order, item), pin in zip(members, pins, strict=True):
                     free = [o for o in pin if o not in taken] or pin
                     taken.add(free[0])
                     chosen.append((*free[0], order, item.get("context") or "", True))
             else:
                 first_order, first_item = members[0]
-                chosen = [(a, b, first_order, first_item.get("context") or "", False) for a, b in occs]
+                first_context = first_item.get("context") or ""
+                chosen = [(a, b, first_order, first_context, False) for a, b in occs]
         else:
             taken = set()
             # Pinned items choose first so an unpinned one cannot take their occurrence.
-            ranked = sorted(zip(members, pins), key=lambda mp: mp[1] is None)
+            ranked = sorted(zip(members, pins, strict=True), key=lambda mp: mp[1] is None)
             for (order, item), pin in ranked:
                 free_pin = [o for o in (pin or []) if o not in taken]
                 free_any = [o for o in occs if o not in taken]
@@ -493,7 +505,9 @@ def _pieces(text: str, max_chars: int) -> list[tuple[int, int]]:
     if len(text) <= max_chars:
         return [(0, len(text))]
     lines = [Segment(m.start(), m.end(), {}) for m in re.finditer(r"[^\n]+", text)]
-    return chunk(Document(id="", source="", kind="text", text=text, segments=lines), max_chars=max_chars)
+    return chunk(
+        Document(id="", source="", kind="text", text=text, segments=lines), max_chars=max_chars
+    )
 
 
 def _halve(text: str) -> int:
@@ -504,7 +518,9 @@ def _halve(text: str) -> int:
     n = len(text)
     mid, lo, hi = n // 2, n // 4, n - n // 4
     for pattern in (r"\n", r"\s"):
-        cuts = [m.end() for m in re.finditer(pattern, text) if lo <= m.end() <= hi and 0 < m.end() < n]
+        cuts = [
+            m.end() for m in re.finditer(pattern, text) if lo <= m.end() <= hi and 0 < m.end() < n
+        ]
         if cuts:
             return min(cuts, key=lambda c: (abs(c - mid), c))
     return mid
@@ -564,7 +580,9 @@ def label_record(
             ask(a, cut)
             ask(cut, b)
             return
-        got, lost = locate(piece, answer.get("entities") or [], occurrences=occurrences, labels=labels)
+        got, lost = locate(
+            piece, answer.get("entities") or [], occurrences=occurrences, labels=labels
+        )
         for s in got:
             s["start"] += a
             s["end"] += a
@@ -653,7 +671,12 @@ def merge(span_lists: Sequence[Sequence[Mapping]], how: str = "majority") -> lis
     kept: list[dict] = []
     order = sorted(
         candidates.values(),
-        key=lambda c: (-c["span"]["votes"], -c["exact"], -(c["span"]["end"] - c["span"]["start"]), c["span"]["start"]),
+        key=lambda c: (
+            -c["span"]["votes"],
+            -c["exact"],
+            -(c["span"]["end"] - c["span"]["start"]),
+            c["span"]["start"],
+        ),
     )
     for c in order:
         s = c["span"]
@@ -685,8 +708,12 @@ def agreement(per_labeler: Mapping[str, Mapping[str, Sequence[Mapping]]]) -> lis
         ids = [i for i in spans_a if i in spans_b]
         n_a = n_b = matched = 0
         for rid in ids:
-            ka = Counter((int(s["start"]), int(s["end"]), taxonomy.parent(s["label"])) for s in spans_a[rid])
-            kb = Counter((int(s["start"]), int(s["end"]), taxonomy.parent(s["label"])) for s in spans_b[rid])
+            ka = Counter(
+                (int(s["start"]), int(s["end"]), taxonomy.parent(s["label"])) for s in spans_a[rid]
+            )
+            kb = Counter(
+                (int(s["start"]), int(s["end"]), taxonomy.parent(s["label"])) for s in spans_b[rid]
+            )
             n_a += sum(ka.values())
             n_b += sum(kb.values())
             matched += sum((ka & kb).values())
@@ -835,7 +862,9 @@ def generate(
     if merge_how not in MERGE_MODES:
         raise ValueError(f"unknown merge mode {merge_how!r}; expected one of {MERGE_MODES}")
     if occurrences not in OCCURRENCE_MODES:
-        raise ValueError(f"unknown occurrences mode {occurrences!r}; expected one of {OCCURRENCE_MODES}")
+        raise ValueError(
+            f"unknown occurrences mode {occurrences!r}; expected one of {OCCURRENCE_MODES}"
+        )
     if out_path.resolve() == fixtures.resolve():
         raise ValueError("out_path must differ from fixtures: the unlabeled input is kept as it is")
     meta_in = read_meta(fixtures) or {}
@@ -850,7 +879,11 @@ def generate(
 
     # results[name][record id] = {"id", "spans", "dropped", "error"}
     results: dict[str, dict[str, dict]] = {name: {} for name in names}
-    work = [(name, client, rec) for name, client in zip(names, labelers) for rec in records]
+    work = [
+        (name, client, rec)
+        for name, client in zip(names, labelers, strict=True)
+        for rec in records
+    ]
     bar = _Progress(len(work), progress)
 
     def run(client: LLMClient, rec: dict) -> dict:
@@ -886,7 +919,9 @@ def generate(
 
     out_rows, error_ids = [], []
     for rec in records:
-        answered = [results[name][rec["id"]] for name in names if not results[name][rec["id"]]["error"]]
+        answered = [
+            results[name][rec["id"]] for name in names if not results[name][rec["id"]]["error"]
+        ]
         if not answered:
             error_ids.append(rec["id"])
         gold = merge([row["spans"] for row in answered], merge_how) if answered else []
@@ -900,7 +935,10 @@ def generate(
     agree = agreement(ok) if len(names) > 1 else []
     n_errors = {name: sum(1 for row in results[name].values() if row["error"]) for name in names}
     n_dropped = {name: sum(len(row["dropped"]) for row in results[name].values()) for name in names}
-    n_fallback = {name: sum(1 for row in results[name].values() if row.get("fallback_models")) for name in names}
+    n_fallback = {
+        name: sum(1 for row in results[name].values() if row.get("fallback_models"))
+        for name in names
+    }
     meta = {
         **meta_in,
         "gold": SILVER,
@@ -947,11 +985,16 @@ def _print_summary(out_path: Path, meta: Mapping, names: Sequence[str]) -> None:
     print(f"[silver] wrote {meta['n_written']} records, {meta['n_spans']} silver spans "
           f"(merge: {meta['gold_source']['merge']}) to {out_path}")
     for name in names:
-        print(f"[silver]   {name}: {meta['n_errors'][name]} errors, {meta['n_dropped'][name]} dropped values")
+        print(
+            f"[silver]   {name}: {meta['n_errors'][name]} errors, "
+            f"{meta['n_dropped'][name]} dropped values"
+        )
         n_fallback = (meta.get("n_fallback") or {}).get(name)
         if n_fallback:
-            print(f"[silver]   {name}: {n_fallback} records were answered by a server-side fallback model "
-                  "(see fallback_models in the labeler file)")
+            print(
+                f"[silver]   {name}: {n_fallback} records were answered by a server-side "
+                "fallback model (see fallback_models in the labeler file)"
+            )
     for row in meta["agreement"]:
         if row["f1"] is None:
             print(f"[silver]   agreement {row['a']} vs {row['b']}: no record was answered by both")
@@ -959,7 +1002,10 @@ def _print_summary(out_path: Path, meta: Mapping, names: Sequence[str]) -> None:
             print(f"[silver]   agreement {row['a']} vs {row['b']}: span F1 {row['f1']:.3f} "
                   f"over {row['n_records']} records")
     if meta["error_ids"]:
-        print(f"[silver]   {len(meta['error_ids'])} records got no labels because every labeler failed")
+        print(
+            f"[silver]   {len(meta['error_ids'])} records got no labels "
+            "because every labeler failed"
+        )
 
 
 def is_silver(fixtures: str | Path) -> bool:
@@ -1038,7 +1084,9 @@ def calibrate(
     gold_meta = read_meta(gold_path) or {}
     labels = list(gold_meta.get("labels") or [])
     if not labels:
-        raise ValueError(f"{dataset} sample at {gold_path} records no annotated labels to calibrate on")
+        raise ValueError(
+            f"{dataset} sample at {gold_path} records no annotated labels to calibrate on"
+        )
     gold_rows = read_jsonl(gold_path)
 
     stripped = workdir / f"calib_{tag}.unlabeled.jsonl"
@@ -1080,7 +1128,10 @@ def calibrate(
     return {
         **{s: _schema_numbers(result.by_schema[s]) for s in SCHEMAS},
         "by_label": {
-            lbl: {k: float(result.by_label[lbl]["ent_type"][k]) for k in ("precision", "recall", "f1")}
+            lbl: {
+                k: float(result.by_label[lbl]["ent_type"][k])
+                for k in ("precision", "recall", "f1")
+            }
             for lbl in sorted(result.by_label)
         },
         "n": len(pairs),

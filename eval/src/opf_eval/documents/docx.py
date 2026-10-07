@@ -134,7 +134,9 @@ def _add_table(b: TextBuilder, table, where_of) -> None:
             b.add(text, where_of(r, c))
 
 
-def _add_blocks(b: TextBuilder, elements, parent, where_of, counters: dict, *, into_controls: bool) -> None:
+def _add_blocks(
+    b: TextBuilder, elements, parent, where_of, counters: dict, *, into_controls: bool
+) -> None:
     """Emit the paragraphs and tables among `elements` in order.
 
     `where_of(kind, index)` turns ("paragraph", i) or ("table", t) into a
@@ -159,7 +161,9 @@ def _add_blocks(b: TextBuilder, elements, parent, where_of, counters: dict, *, i
         elif tag == W_SDT and into_controls:
             content = el.find(W_SDT_CONTENT)
             if content is not None:
-                _add_blocks(b, content.iterchildren(), parent, where_of, counters, into_controls=True)
+                _add_blocks(
+                    b, content.iterchildren(), parent, where_of, counters, into_controls=True
+                )
 
 
 def extract(path: Path) -> TextBuilder:
@@ -179,7 +183,14 @@ def extract(path: Path) -> TextBuilder:
     control = 0
     for child in body.iterchildren():
         if child.tag in (W_P, W_TBL):
-            _add_blocks(b, (child,), parent, lambda kind, i: {kind: i}, body_counters, into_controls=False)
+            _add_blocks(
+                b,
+                (child,),
+                parent,
+                lambda kind, i: {kind: i},
+                body_counters,
+                into_controls=False,
+            )
         elif child.tag == W_SDT:
             content = child.find(W_SDT_CONTENT)
             if content is not None:
@@ -195,7 +206,8 @@ def extract(path: Path) -> TextBuilder:
     if got_chars < body_chars:
         b.warnings.append(
             f"{body_chars - got_chars} characters of body text could not be extracted "
-            "(content in a layout this parser does not read, such as table rows inside a content control)"
+            "(content in a layout this parser does not read, "
+            "such as table rows inside a content control)"
         )
 
     first_extra = True

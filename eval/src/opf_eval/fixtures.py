@@ -174,7 +174,8 @@ def _target_labels(labels: Iterable[str] | None) -> list[str]:
     unknown = [lbl for lbl in labels if not taxonomy.is_known(lbl)]
     if unknown:
         raise ValueError(
-            f"unknown label(s) {unknown}; use canonical labels such as {', '.join(taxonomy.COARSE_LABELS[:5])}"
+            f"unknown label(s) {unknown}; use canonical labels such as "
+            f"{', '.join(taxonomy.COARSE_LABELS[:5])}"
         )
     return labels
 
@@ -363,11 +364,15 @@ def load_documents(fixtures: str | Path) -> dict[str, Document]:
         blank = [(int(offset), piece) for offset, piece in row.get("blank") or []]
         for offset, piece in sorted(pieces.get(row["id"], []) + blank):
             if offset != pos:
-                raise ValueError(f"document {row['id']!r}: chunk at offset {offset} does not follow {pos}")
+                raise ValueError(
+                    f"document {row['id']!r}: chunk at offset {offset} does not follow {pos}"
+                )
             text.append(piece)
             pos += len(piece)
         if pos != row["length"]:
-            raise ValueError(f"document {row['id']!r}: chunks give {pos} chars, sidecar says {row['length']}")
+            raise ValueError(
+                f"document {row['id']!r}: chunks give {pos} chars, sidecar says {row['length']}"
+            )
         out[row["id"]] = Document(
             id=row["id"],
             source=row["source"],
@@ -409,7 +414,10 @@ def map_spans_to_documents(
     elif not isinstance(docs, Mapping):
         docs = {d.id: d for d in docs}
 
-    order = {doc_id: i for i, doc_id in enumerate(dict.fromkeys(m["doc_id"] for m in doc_map.values()))}
+    order = {
+        doc_id: i
+        for i, doc_id in enumerate(dict.fromkeys(m["doc_id"] for m in doc_map.values()))
+    }
     rows: list[dict] = []
     for raw in iter_jsonl(Path(run_dir) / f"raw_{detector}.jsonl"):
         info = doc_map.get(raw.get("id"))
@@ -434,7 +442,11 @@ def map_spans_to_documents(
                 "where": doc.locate(start, end) if doc is not None else [],
                 "chunk_id": raw["id"],
             })
-    rows.sort(key=lambda r: (order.get(r["doc_id"], len(order)), r["doc_start"], r["doc_end"], str(r["label"])))
+    rows.sort(
+        key=lambda r: (
+            order.get(r["doc_id"], len(order)), r["doc_start"], r["doc_end"], str(r["label"])
+        )
+    )
     return rows
 
 

@@ -33,7 +33,8 @@ def _write_unlabeled(path: Path, texts: dict[str, str], *, gold: str = "none") -
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w") as f:
         for rid, text in texts.items():
-            f.write(json.dumps({"id": rid, "text": text, "language": None, "gold_spans": []}) + "\n")
+            row = {"id": rid, "text": text, "language": None, "gold_spans": []}
+            f.write(json.dumps(row) + "\n")
     meta_path(path).write_text(json.dumps({
         "version": 2, "dataset": f"custom:{path.stem}", "source": "texts", "gold": gold,
         "vocab_key": None, "labels": ["EMAIL", "PHONE"], "n_written": len(texts),
@@ -56,7 +57,8 @@ def test_explicit_fixtures_sets_paths(ws_root, tmp_path):
     assert s.fixtures_path == fx
     # The run dir is named after the fixtures file, not the dataset sample.
     assert s.run_dir == ws_root / "results" / "runs" / "tickets"
-    assert nb.Session(fixtures=str(fx), run_name="mine").run_dir == ws_root / "results" / "runs" / "mine"
+    mine = nb.Session(fixtures=str(fx), run_name="mine")
+    assert mine.run_dir == ws_root / "results" / "runs" / "mine"
 
 
 def test_relative_fixtures_resolve_against_workspace(ws_root):
@@ -65,7 +67,9 @@ def test_relative_fixtures_resolve_against_workspace(ws_root):
     assert s.run_dir.name == "custom"
 
 
-def test_ensure_fixtures_returns_explicit_file_without_materializing(ws_root, tmp_path, monkeypatch, capsys):
+def test_ensure_fixtures_returns_explicit_file_without_materializing(
+    ws_root, tmp_path, monkeypatch, capsys
+):
     fx = _write_unlabeled(tmp_path / "mine.jsonl", {"a": "x"})
 
     def boom(*a, **k):  # pragma: no cover - would mean we tried to sample a dataset
@@ -85,7 +89,8 @@ def test_ensure_fixtures_missing_explicit_file(ws_root, tmp_path):
 
 
 def test_session_gold_from_sidecar(ws_root, tmp_path):
-    assert nb.Session(fixtures=str(_write_unlabeled(tmp_path / "u.jsonl", {"a": "x"}))).gold == "none"
+    unlabeled = _write_unlabeled(tmp_path / "u.jsonl", {"a": "x"})
+    assert nb.Session(fixtures=str(unlabeled)).gold == "none"
     silver = _write_unlabeled(tmp_path / "s.jsonl", {"a": "x"}, gold="silver")
     assert nb.Session(fixtures=str(silver)).gold == "silver"
     # No sidecar at all: nothing to report.
@@ -137,7 +142,9 @@ def test_load_session_flags_saved_fixtures_override(ws_root, tmp_path, capsys):
 
 def test_old_session_file_without_fixtures_field(ws_root):
     ws_root.mkdir(parents=True, exist_ok=True)
-    (ws_root / "session.json").write_text(json.dumps({"dataset": "openpii_nano", "n": 5, "seed": 1}))
+    (ws_root / "session.json").write_text(
+        json.dumps({"dataset": "openpii_nano", "n": 5, "seed": 1})
+    )
     s = nb.load_session(quiet=True)
     assert s.fixtures is None and s.dataset == "openpii_nano"
 
@@ -164,7 +171,9 @@ class _EmailDetector:
 
 register_vocab("nb07vocab", {"mail": "EMAIL"}, kind="detector", overwrite=True)
 registry.register_detector(
-    registry.DetectorSpec(name="nb07_email", vocab="nb07vocab", factory=lambda ctx: _EmailDetector()),
+    registry.DetectorSpec(
+        name="nb07_email", vocab="nb07vocab", factory=lambda ctx: _EmailDetector()
+    ),
     overwrite=True,
 )
 
@@ -282,7 +291,8 @@ def test_allow_remote_parses_env(monkeypatch, value, expected):
 
 
 @pytest.mark.parametrize(
-    "value", [None, "", "  ", "1", "true", "TRUE", " yes ", "on", "0", "false", "no", "off", "ture", "2"]
+    "value",
+    [None, "", "  ", "1", "true", "TRUE", " yes ", "on", "0", "false", "no", "off", "ture", "2"],
 )
 def test_allow_remote_matches_the_llm_clients(monkeypatch, value):
     # nb and opf_eval.llm share one env var, one default and one parser.
@@ -409,7 +419,11 @@ def test_private_folders_are_ignored_by_git_inside_a_checkout(tmp_path, monkeypa
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("Jane Doe")
     status = subprocess.run(
-        [git, "status", "--porcelain", "--untracked-files=all"], cwd=repo, capture_output=True, text=True, check=True
+        [git, "status", "--porcelain", "--untracked-files=all"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout
     assert status == ""
     # Calling workspace() again keeps an edited .gitignore as it is.
@@ -471,11 +485,15 @@ def test_upload_files_leaves_no_copies(ws_root, tmp_path, monkeypatch, target_di
     cwd.mkdir()
     monkeypatch.chdir(cwd)
     files = types.ModuleType("google.colab.files")
-    files.upload = _colab_like_upload({"notes.txt": b"call 555-0101"}, target_dir_arg=target_dir_arg)
+    files.upload = _colab_like_upload(
+        {"notes.txt": b"call 555-0101"}, target_dir_arg=target_dir_arg
+    )
     _fake_colab(monkeypatch, files=files)
     assert nb.upload_files() == [ws_root / "inputs" / "notes.txt"]
     # Uploading the same file again replaces it instead of adding "notes (1).txt".
-    files.upload = _colab_like_upload({"notes.txt": b"call 555-0199"}, target_dir_arg=target_dir_arg)
+    files.upload = _colab_like_upload(
+        {"notes.txt": b"call 555-0199"}, target_dir_arg=target_dir_arg
+    )
     assert nb.upload_files() == [ws_root / "inputs" / "notes.txt"]
     assert sorted(p.name for p in (ws_root / "inputs").iterdir()) == ["notes.txt"]
     assert (ws_root / "inputs" / "notes.txt").read_bytes() == b"call 555-0199"
@@ -507,7 +525,8 @@ def test_drive_folder_mounts_once_and_resolves(tmp_path, monkeypatch):
     assert nb.drive_folder("pii-inputs") == mount / "MyDrive" / "pii-inputs"
     assert calls == [str(mount)]
     # Already mounted: no second mount; a full path and a leading slash work too.
-    assert nb.drive_folder(str(mount / "MyDrive" / "pii-inputs")) == mount / "MyDrive" / "pii-inputs"
+    full = mount / "MyDrive" / "pii-inputs"
+    assert nb.drive_folder(str(full)) == full
     assert nb.drive_folder("/pii-inputs") == mount / "MyDrive" / "pii-inputs"
     assert calls == [str(mount)]
     with pytest.raises(FileNotFoundError, match="missing"):
@@ -623,7 +642,9 @@ def test_gpu_summary_cuda_with_fake_torch(monkeypatch):
     )
     monkeypatch.setitem(sys.modules, "torch", types.SimpleNamespace(cuda=cuda))
     monkeypatch.setattr(nb, "device", lambda prefer=None: "cuda")
-    assert nb.gpu_summary() == {"device": "cuda", "name": "NVIDIA L4", "vram_gb": 22.5, "bf16": True}
+    assert nb.gpu_summary() == {
+        "device": "cuda", "name": "NVIDIA L4", "vram_gb": 22.5, "bf16": True,
+    }
 
 
 def _fake_cuda(monkeypatch, capability, names=("NVIDIA L4",), with_capability=True):
@@ -696,7 +717,9 @@ def _rows(md: str) -> list[list[str]]:
 
 
 def test_spans_in_context_basic_table():
-    md = nb.spans_in_context(TEXT, [_span("PHONE", "555-0101"), _span("EMAIL", "jane.doe@example.com")], width=10)
+    md = nb.spans_in_context(
+        TEXT, [_span("PHONE", "555-0101"), _span("EMAIL", "jane.doe@example.com")], width=10
+    )
     rows = _rows(md)
     assert rows[0] == ["label", "span", "context"]
     # Sorted by position, span in bold, ellipses where the context is cut.
@@ -771,7 +794,9 @@ def test_spans_in_context_bold_renders_next_to_punctuation():
     text = "Ref ID#4521-88 and Mail<jane@x.com> or (Ann) then Bob."
     spans = [
         {"label": label, "start": text.index(v), "end": text.index(v) + len(v)}
-        for label, v in [("ID", "#4521-88"), ("EMAIL", "<jane@x.com>"), ("NAME", "Ann"), ("NAME", "Bob.")]
+        for label, v in [
+            ("ID", "#4521-88"), ("EMAIL", "<jane@x.com>"), ("NAME", "Ann"), ("NAME", "Bob.")
+        ]
     ]
     md = nb.spans_in_context(text, spans, width=100)
     contexts = [row[-1] for row in _rows(md)[1:]]
@@ -826,7 +851,8 @@ def test_spans_in_context_places_review_rows_by_document_offsets():
         "start": i, "end": i + 12,
         "doc_id": "d", "doc_start": chunk_start + i, "doc_end": chunk_start + i + 12,
     }
-    assert [r[1] for r in _rows(nb.spans_in_context(doc, [row], doc_id="d"))[1:]] == ["bob@corp.org"]
+    by_doc = _rows(nb.spans_in_context(doc, [row], doc_id="d"))
+    assert [r[1] for r in by_doc[1:]] == ["bob@corp.org"]
     assert [r[1] for r in _rows(nb.spans_in_context(doc, [row]))[1:]] == ["bob@corp.org"]
     # A row without a doc_id still uses start/end against the chunk text.
     plain = {k: v for k, v in row.items() if not k.startswith("doc_")}
@@ -867,7 +893,10 @@ def test_show_spans_in_context_prints_without_ipython(monkeypatch, capsys):
         ({"paragraph": 12}, "paragraph 12"),
         ({"table": 0, "row": 1, "col": 2}, "table 0 row 1 col 2"),
         ({"content_control": 0, "paragraph": 3}, "content control 0 › paragraph 3"),
-        ({"content_control": 1, "table": 0, "row": 1, "col": 2}, "content control 1 › table 0 row 1 col 2"),
+        (
+            {"content_control": 1, "table": 0, "row": 1, "col": 2},
+            "content control 1 › table 0 row 1 col 2",
+        ),
         ({"part": "header", "section": 0, "variant": "first"}, "header, section 0, variant first"),
         ({"line": 7}, "line 7"),
         ({"attachment": "x.pdf", "page": 1}, "x.pdf › page 1"),

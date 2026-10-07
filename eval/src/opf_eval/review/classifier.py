@@ -184,8 +184,10 @@ def _is_abbreviation(text: str, stop: int) -> bool:
     return word in _ABBREVIATIONS or (len(word) == 1 and word.isalpha())
 
 
-def _sentences(text: str, a: int, b: int, avoid: Sequence[tuple[int, int]]) -> list[tuple[int, int]]:
-    """Split `text[a:b]` after every sentence end that is outside `avoid` and not an abbreviation."""
+def _sentences(
+    text: str, a: int, b: int, avoid: Sequence[tuple[int, int]]
+) -> list[tuple[int, int]]:
+    """Split `text[a:b]` after every sentence end outside `avoid` that is not an abbreviation."""
     out, start = [], a
     for m in _SPLIT_END.finditer(text, a, b):
         cut = m.end()
@@ -319,7 +321,10 @@ def segment_requests(
     `spans`.
     """
     spans = list(spans)
-    bounds = segments if segments is not None else split_segments(text, max_chars=max_chars, avoid=spans)
+    bounds = (
+        segments if segments is not None
+        else split_segments(text, max_chars=max_chars, avoid=spans)
+    )
     criteria = _criteria(labels, (NONE, "No personal data is left"))
     out = []
     for a, b in bounds:
@@ -328,7 +333,11 @@ def segment_requests(
             "state": {"text": mask(text, a, b, spans)},
             "questions": {
                 "residual": {"type": "noul", "instructions": RESIDUAL_Q},
-                "residual_type": {"type": "choice", "instructions": RESIDUAL_TYPE_Q, "criteria": dict(criteria)},
+                "residual_type": {
+                    "type": "choice",
+                    "instructions": RESIDUAL_TYPE_Q,
+                    "criteria": dict(criteria),
+                },
             },
         }))
     return out
@@ -377,7 +386,10 @@ def _default_answers(request: dict) -> dict:
         if q["type"] == "noul":
             answers[qid] = noul_answer(0.5)
         else:
-            options = list(q["criteria"]) if isinstance(q["criteria"], Mapping) else [str(i) for i in range(len(q["criteria"]))]
+            options = (
+                list(q["criteria"]) if isinstance(q["criteria"], Mapping)
+                else [str(i) for i in range(len(q["criteria"]))]
+            )
             answers[qid] = choice_answer({o: 1 / len(options) for o in options})
     return answers
 
@@ -463,7 +475,9 @@ def _answer_all(
         try:
             res = backend.answer(chunk)
             if len(res) != len(chunk):
-                raise RuntimeError(f"{backend.name} returned {len(res)} answers for {len(chunk)} requests")
+                raise RuntimeError(
+                    f"{backend.name} returned {len(res)} answers for {len(chunk)} requests"
+                )
             out.extend(res)
         except Exception as batch_exc:  # noqa: BLE001 — isolate the failing request
             if len(chunk) == 1:
@@ -473,11 +487,14 @@ def _answer_all(
                 try:
                     single = backend.answer([req])
                     if len(single) != 1:
-                        raise RuntimeError(f"{backend.name} returned {len(single)} answers for 1 request")
+                        raise RuntimeError(
+                            f"{backend.name} returned {len(single)} answers for 1 request"
+                        )
                     out.append(single[0])
                 except Exception as exc:  # noqa: BLE001
                     out.append(exc)
-    if len(out) != len(requests):  # pragma: no cover — a bug here must never truncate the review silently
+    # A bug here must never truncate the review silently.
+    if len(out) != len(requests):  # pragma: no cover
         raise RuntimeError(f"{len(out)} results for {len(requests)} requests")
     return out
 
@@ -503,7 +520,11 @@ def _span_answers(res: dict) -> dict:
 
 def _segment_answers(res: dict) -> dict:
     kind, p_kind = _choice(res, "residual_type")
-    return {"p_residual": _p_noul(res, "residual"), "residual_type": kind, "p_residual_type": p_kind}
+    return {
+        "p_residual": _p_noul(res, "residual"),
+        "residual_type": kind,
+        "p_residual_type": p_kind,
+    }
 
 
 # ------------------------------------------------------------------- review
@@ -565,10 +586,15 @@ def review_run(
         for span in pooled[ex["id"]]
         if span["canonical"]
     ]
-    span_reqs = [span_request(ex["text"], s, labels, window=window, model=model) for ex, s in span_items]
-    span_res = _answer_all(backend, span_reqs, batch_size=batch_size, desc=f"{backend.name} spans", show=progress)
+    span_reqs = [
+        span_request(ex["text"], s, labels, window=window, model=model) for ex, s in span_items
+    ]
+    span_res = _answer_all(
+        backend, span_reqs, batch_size=batch_size, desc=f"{backend.name} spans", show=progress
+    )
     rows: list[dict] = []
-    for (ex, span), res in zip(span_items, span_res):
+    # _answer_all returns exactly one result per request, so the lengths match.
+    for (ex, span), res in zip(span_items, span_res, strict=True):
         base = {"id": ex["id"], "start": span["start"], "end": span["end"]}
         if not isinstance(res, Exception):
             try:
@@ -576,7 +602,13 @@ def review_run(
             except _PARSE_ERRORS as exc:
                 res = exc
         if isinstance(res, Exception):
-            rows.append({**base, "kind": "error", "pass": "span", "detectors": span["detectors"], "error": _error(res)})
+            rows.append({
+                **base,
+                "kind": "error",
+                "pass": "span",
+                "detectors": span["detectors"],
+                "error": _error(res),
+            })
             continue
         rows.append({
             **base,
@@ -615,10 +647,14 @@ def review_run(
                 else:
                     seg_items.append((ex["id"], det, a, b, req))
     seg_res = _answer_all(
-        backend, [it[4] for it in seg_items], batch_size=batch_size, desc=f"{backend.name} segments", show=progress
+        backend,
+        [it[4] for it in seg_items],
+        batch_size=batch_size,
+        desc=f"{backend.name} segments",
+        show=progress,
     )
     seg_rows: list[dict] = []
-    for (rid, det, a, b, _), res in zip(seg_items, seg_res):
+    for (rid, det, a, b, _), res in zip(seg_items, seg_res, strict=True):
         base = {"id": rid, "detector": det, "start": a, "end": b}
         if not isinstance(res, Exception):
             try:
@@ -674,11 +710,15 @@ def _load(run_dir: str | Path, review_file: str | Path) -> tuple[list[dict], dic
 def _detectors_of(rows: list[dict], meta: dict) -> list[str]:
     if meta.get("detectors"):
         return list(meta["detectors"])
-    found = {d for r in rows for d in r.get("detectors") or []} | {r["detector"] for r in rows if r.get("detector")}
+    found = {d for r in rows for d in r.get("detectors") or []} | {
+        r["detector"] for r in rows if r.get("detector")
+    }
     return sorted(found)
 
 
-def summarize(run_dir: str | Path, review_file: str | Path, *, threshold: float | None = None) -> list[dict]:
+def summarize(
+    run_dir: str | Path, review_file: str | Path, *, threshold: float | None = None
+) -> list[dict]:
     """Per-detector estimates at `threshold` (default: the one stored at review time).
 
     Rows: `{"detector", "n_spans", "precision", "precision_any_label",
@@ -703,7 +743,9 @@ def summarize(run_dir: str | Path, review_file: str | Path, *, threshold: float 
         out.append({
             "detector": det,
             "n_spans": n,
-            "precision": ratio(sum(1 for r in spans if r["p_pii"] >= t and r["p_label_ok"] >= t), n),
+            "precision": ratio(
+                sum(1 for r in spans if r["p_pii"] >= t and r["p_label_ok"] >= t), n
+            ),
             "precision_any_label": ratio(sum(1 for r in spans if r["p_pii"] >= t), n),
             "mean_p_pii": ratio(sum(r["p_pii"] for r in spans), n),
             "n_segments": len(segs),
@@ -784,7 +826,9 @@ def threshold_sweep(
         for det in dets:
             info = truth[det]
             spans, segs = info["spans"], info["segs"]
-            est_p = ratio(sum(1 for r in spans if r["p_pii"] >= t and r["p_label_ok"] >= t), len(spans))
+            est_p = ratio(
+                sum(1 for r in spans if r["p_pii"] >= t and r["p_label_ok"] >= t), len(spans)
+            )
             est_r = ratio(sum(1 for r in segs if r["p_residual"] >= t), len(segs))
             out.append({
                 "threshold": t,
