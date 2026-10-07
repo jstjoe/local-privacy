@@ -7,6 +7,14 @@ import json
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 
+# Values of the "gold" key in a fixtures sidecar. Fixtures written from your
+# own text or files have no gold spans (GOLD_NONE). Fixtures whose gold spans
+# are LLM silver labels say GOLD_SILVER. A sidecar without the key belongs to
+# a dataset sample with real gold. fixtures, silver, report and nb all read
+# these names so the value is spelled in one place.
+GOLD_NONE = "none"
+GOLD_SILVER = "silver"
+
 
 def iter_jsonl(path: str | Path) -> Iterator[dict]:
     with Path(path).open(encoding="utf-8") as f:
@@ -21,12 +29,23 @@ def read_jsonl(path: str | Path) -> list[dict]:
 
 
 def write_jsonl(path: str | Path, rows: Iterable[dict]) -> int:
+    """Write one JSON object per line in UTF-8 and return the row count.
+
+    A row holding a lone UTF-16 surrogate (text read from a JSON file with a
+    stray "\\ud83d" escape) cannot be written as UTF-8. That row is written
+    with ASCII escapes instead, so it reads back exactly as it was.
+    """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     n = 0
     with path.open("w", encoding="utf-8") as f:
         for row in rows:
-            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+            line = json.dumps(row, ensure_ascii=False)
+            try:
+                line.encode("utf-8")
+            except UnicodeEncodeError:
+                line = json.dumps(row)
+            f.write(line + "\n")
             n += 1
     return n
 

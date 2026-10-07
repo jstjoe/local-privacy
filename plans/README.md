@@ -17,6 +17,7 @@ Side-quest specs for extending the OPF vs Skyflow benchmark. Each plan is brief
 | 10 | [Redaction + tokenization demo](10-redaction-tokenization-demo.md) | shipped | "what does sanitized text look like under each mode?" |
 | 11 | [Use: search over sanitized text](11-use-section.md) | shipped | "which sanitization modes keep search working?" |
 | 12 | [Roadmap: benchmarks, datasets, models, notebooks](12-roadmap.md) | multi-PR | "public benchmarks (PrivacyBench, Nemotron-PII, TAB…), newer open-weight detectors, cross-benchmark report" |
+| 13 | [Evaluate on your own data without gold labels](13-unlabeled-data-notebook.md) | PRs 1–4 are implemented. Bedrock (PR 5) and Jev are parked. | "how good is each detector on my files, with LLM silver labels or LLM review or Clef-flash review?" |
 
 ## Suggested order
 

@@ -2,7 +2,7 @@
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/jstjoe/local-privacy/blob/main/notebooks/00_start_here.ipynb)
 
-Benchmark harness comparing PII detectors against the built-in ai4privacy datasets (PII-Masking-200k/300k/400k, OpenPII nano/mini) or **your own labelled data**. The [notebook series](notebooks/README.md) walks through detection, scoring, composites, sanitization, and search over sanitized text.
+Benchmark harness comparing PII detectors against the built-in ai4privacy datasets (PII-Masking-200k/300k/400k, OpenPII nano/mini) or **your own labelled data**. It can also estimate how well each detector does on **your own unlabelled files** (see [Evaluate on your own data without labels](#evaluate-on-your-own-data-without-labels)). The [notebook series](notebooks/README.md) walks through detection, scoring, composites, sanitization, search over sanitized text and evaluation without labels.
 
 See [**RESULTS.md**](RESULTS.md) for headline numbers (overall + per-category + per-language F1 and latency at n=1000 on PII-Masking-300k).
 
@@ -111,6 +111,57 @@ python -m opf_eval.runner --fixtures eval/data/tickets.jsonl --detectors opf,gli
 ```
 
 `materialize` writes a `.meta.json` sidecar next to the fixtures, recording the dataset, seed, and annotated labels. The runner and report read it, so `--dataset` is optional once fixtures exist. See [notebooks/01_datasets.ipynb](notebooks/01_datasets.ipynb) for CSV, `label_map`, and BIO examples.
+
+## Evaluate on your own data without labels
+
+The harness can estimate precision and recall on your own text and files even though they have no gold spans. It parses each file to plain text with a map from every character back to its place in the file, such as a PDF page or a spreadsheet cell. It reads these file types:
+
+1. PDF files with a text layer.
+2. Word documents (`.docx`).
+3. Excel workbooks and CSV or TSV files.
+4. Plain text and Markdown.
+5. HTML pages.
+6. Emails (`.eml`) with their supported attachments.
+
+The parsed text becomes unlabeled fixtures with `gold_spans: []` and `"gold": "none"` in the sidecar. The detectors run on them as usual. The harness then offers three estimates that you can mix:
+
+1. **Silver labels.** One or more LLMs annotate each record with `silver.generate`. The harness finds the character offsets itself and merges several labelers by `union`, `majority` or `intersection`. The normal report then scores the detectors against these labels and reports the pairwise agreement between labelers.
+2. **LLM review.** `review.llm.review_run` has an LLM judge every pooled span as `correct`, `wrong_label`, `boundary` or `not_pii` and list the PII that every detector missed. Estimated recall is an upper bound because PII that every detector and the reviewer overlooked is invisible.
+3. **Classifier review.** `review.classifier.review_run` with `review.clef.ClefBackend` runs Cloudflare's [Clef-flash](https://huggingface.co/Cloudflare/clef-flash) locally. It answers yes/no and choice questions about each span and about each sentence with the detector's spans masked. That gives a precision estimate and a residual-PII rate per detector. It needs a GPU with about 24 GB of memory such as a Colab L4, or 8-bit weights on a T4.
+
+Each method can first be calibrated on a `pii_masking_200k` sample with real gold to show how far its estimate lands from the true score. [Notebook 07](notebooks/07_evaluate_without_labels.ipynb) runs the whole flow and the [your-own-data guide](eval/docs/your-own-data.md) documents every function, file format and number.
+
+Install the extras for file parsing, LLM clients and Clef-flash:
+
+```sh
+uv sync --all-packages --all-extras         # in this repo
+pip install 'opf-eval[files,llm,clef]'      # anywhere else
+```
+
+The LLM clients label every provider by who sees the data:
+
+| provider | who sees the text | default model | credentials |
+| --- | --- | --- | --- |
+| `anthropic` | Anthropic | `claude-opus-5-5` | `ANTHROPIC_API_KEY` |
+| `anthropic_vertex` | your GCP project (Vertex AI, `us` multi-region) | `claude-opus-5-5` | `GOOGLE_CLOUD_PROJECT` and `gcloud auth application-default login` |
+| `openai` | OpenAI | `gpt-6.1-sol` | `OPENAI_API_KEY` |
+| `openai_vertex` | your GCP project (Vertex AI, `us-central1`) | `openai/gpt-oss-120b-maas` | `GOOGLE_CLOUD_PROJECT` and `gcloud auth application-default login` |
+| `openai_compatible` | the server at `base_url`, which stays local for localhost | the model you name | `OPENAI_COMPATIBLE_API_KEY` if the server needs one |
+| Clef-flash | nobody because it runs on your machine | `Cloudflare/clef-flash` | none |
+
+`PII_BENCH_ALLOW_REMOTE` gates every hosted call. Hosted providers are allowed by default during internal development and setting the variable to `0` or `false` switches them off. Amazon Bedrock backends wait until an AWS account exists. LLM answers can be cached on disk with `cache_dir`. The cache holds the PII values that the models quoted back, so keep it as private as the data.
+
+The report CLI reads the fixtures sidecar to decide what to print:
+
+```sh
+# Unlabeled fixtures: a note with span counts and coverage and no precision or recall.
+python -m opf_eval.report --run eval/results/runs/mine/
+
+# Silver fixtures: a "Silver-label report" with a callout naming the labelers.
+python -m opf_eval.report --run eval/results/runs/mine/ --fixtures eval/data/mine.silver.jsonl
+```
+
+Pass the silver file with `--fixtures` because the run's manifest records the unlabeled file the detectors ran on. Records that every labeler failed on are left out of the silver scores. Add `--detectors presidio,gliner` to limit either report to some of the run's detectors. Notebook 07 passes its `DETECTORS` list to `report.build_report` in the same way. The design and its status are in [plan 13](plans/13-unlabeled-data-notebook.md).
 
 ## Adding Skyflow
 
@@ -289,14 +340,23 @@ The previously-shipped `skyflow_minimal` detector was a hand-tuned 24-entity all
 
 ## Fixtures and reports
 
-- `python -m opf_eval.fixtures --dataset NAME --n N --out path` — materialize N examples (deterministic seed)
-- `python -m opf_eval.runner --dataset NAME --detectors X,Y --fixtures path --out dir` — run detectors; manifest carries dataset name + vocab
-- `python -m opf_eval.runner ... --device cuda` — run local PyTorch detectors (opf, gliner*, ai4privacy_modernbert, openmed) on GPU. `auto` picks cuda > mps > cpu. Skyflow + Presidio ignore this.
-- `python -m opf_eval.report --run dir --fixtures path` — emit `report.md` with both fair (per-detector scope) + raw (full dataset vocab) views
-- `python -m opf_eval.report ... --canonical-labels DATE` — override both views to a single explicit label set (one-category drilldowns)
-- `python -m opf_eval.report ... --level fine` — score fine sub-types (GOV_ID vs BANK_ACCOUNT, GIVEN_NAME vs FAMILY_NAME, …)
-- `python -m opf_eval.fixtures validate path` — check a fixtures file (ids, offsets, labels) and print its label distribution
-- `python -m opf_eval.runner ... --fresh` — clear a run dir first. A run dir is tied to its fixtures (sha256), so pointing it at different fixtures is refused rather than mixing stale results into the report.
+1. `python -m opf_eval.fixtures --dataset NAME --n N --out path` materializes N examples with a deterministic seed.
+2. `python -m opf_eval.runner --dataset NAME --detectors X,Y --fixtures path --out dir` runs the detectors. The run manifest carries the dataset name and its vocabulary.
+3. `python -m opf_eval.runner ... --device cuda` runs the local PyTorch detectors on a GPU. The value `auto` picks cuda when it is available and falls back to mps and then to cpu. Skyflow and Presidio ignore this flag. These are the local PyTorch detectors:
+   1. `opf`
+   2. `gliner*`
+   3. `ai4privacy_modernbert`
+   4. `openmed`
+4. `python -m opf_eval.report --run dir --fixtures path` emits `report.md` with two views. The fair view scores each detector within its own scope. The raw view scores each detector against the full dataset vocabulary.
+5. `python -m opf_eval.report ... --canonical-labels DATE` overrides both views with one explicit label set so you can drill down into a single category.
+6. `python -m opf_eval.report ... --level fine` scores the fine sub-types. It tells GOV_ID apart from BANK_ACCOUNT and it tells GIVEN_NAME apart from FAMILY_NAME.
+7. `python -m opf_eval.report ... --detectors X,Y` limits every section of the report to the named detectors. `report.build_report(run_dir, detectors=[...])` does the same in Python. A name the run has no predictions for is refused with a message that lists the run's detectors.
+8. `python -m opf_eval.fixtures validate path` checks a fixtures file and prints its label distribution. The check covers these fields of every record:
+   1. The ids.
+   2. The offsets.
+   3. The labels.
+9. `python -m opf_eval.report --run dir --fixtures <silver file>` writes a "Silver-label report" that scores the detectors against LLM silver labels. Unlabeled fixtures get a note instead of scores. [Evaluate on your own data without labels](#evaluate-on-your-own-data-without-labels) explains both.
+10. `python -m opf_eval.runner ... --fresh` clears a run dir first. A run dir is tied to its fixtures by their sha256 so the runner refuses a run dir that points at different fixtures rather than mix stale results into the report.
 
 ### Two scoring views
 
@@ -309,7 +369,7 @@ The greedy per-category breakdown stays under the raw view (single per-label tab
 
 ## Notebooks
 
-A seven-part, Colab-ready series. Each part runs on its own and shares a saved session with the others. See [notebooks/README.md](notebooks/README.md).
+An eight-part, Colab-ready series. Each part runs on its own and shares a saved session with the others. See [notebooks/README.md](notebooks/README.md).
 
 | notebook | topic |
 | --- | --- |
@@ -320,6 +380,7 @@ A seven-part, Colab-ready series. Each part runs on its own and shares a saved s
 | [04_composite_detectors](notebooks/04_composite_detectors.ipynb) | best-per-category ensembles with an honest holdout |
 | [05_sanitization](notebooks/05_sanitization.ipynb) | redact / label / label_number / label_token |
 | [06_search_on_sanitized_data](notebooks/06_search_on_sanitized_data.ipynb) | BM25 search over sanitized text |
+| [07_evaluate_without_labels](notebooks/07_evaluate_without_labels.ipynb) | your own files without gold labels: silver labels, LLM review, Clef-flash review |
 
 To share a fork, edit `HARNESS_REPO` in the setup cell.
 
@@ -327,16 +388,20 @@ To share a fork, edit `HARNESS_REPO` in the setup cell.
 
 [plans/](plans/) — see [plans/README.md](plans/README.md) for the full index. Highlights:
 
-- 01: Microsoft Presidio baseline (shipped)
-- 03: GLiNER baseline (shipped)
-- 06: Unified privacy-detection API (shipped)
-- 08: SemEval scoring via nervaluate (shipped)
-- 05: Additional PII-focused models (shipped)
-- 09: Multi-dataset fixtures + per-detector scoring (shipped)
-- 10, 11: Sanitization + search demos (shipped)
-- 12: [Roadmap](plans/12-roadmap.md): public benchmarks, newer open-weight models, cross-benchmark report
-- 02, 04: model & training experiments (not yet shipped)
-- 07: Cloud Run hardening (planned)
+1. Plan 01 is the Microsoft Presidio baseline and it has shipped.
+2. Plan 03 is the GLiNER baseline and it has shipped.
+3. Plan 06 is the unified privacy-detection API and it has shipped.
+4. Plan 08 is SemEval scoring via nervaluate and it has shipped.
+5. Plan 05 adds more PII-focused models and it has shipped.
+6. Plan 09 adds multi-dataset fixtures and per-detector scoring and it has shipped.
+7. Plans 10 and 11 are the sanitization and search demos and they have shipped.
+8. Plan 12 is the [roadmap](plans/12-roadmap.md) and it covers these topics:
+   1. Public benchmarks.
+   2. Newer open-weight models.
+   3. A cross-benchmark report.
+9. Plan 13 is [Evaluate on your own data without gold labels](plans/13-unlabeled-data-notebook.md). Its PRs 1 to 4 are implemented and its Bedrock work is parked.
+10. Plans 02 and 04 cover model and training experiments and they have not shipped yet.
+11. Plan 07 is Cloud Run hardening and it is planned.
 
 ## API server
 

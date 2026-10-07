@@ -208,3 +208,33 @@ def test_report_fine_level_renders(scored_run):
     assert "label level: `fine`" in md
     assert "GOV_ID" in md
     assert "## Coverage" in md
+
+
+def test_report_limits_to_selected_detectors(scored_run):
+    md = build_report(scored_run.dir, detectors=["kw_coarse"])
+    assert "- detectors: kw_coarse\n" in md
+    assert "| kw_coarse |" in md
+    assert "kw_fine" not in md
+    # Duplicates collapse and the run's detector order wins over the request's.
+    both = build_report(scored_run.dir, detectors=("kw_coarse", "kw_fine", "kw_coarse"))
+    assert both == build_report(scored_run.dir)
+
+
+def test_report_rejects_unknown_or_empty_detector_selection(scored_run):
+    with pytest.raises(ValueError, match="nope; the run has kw_coarse, kw_fine"):
+        build_report(scored_run.dir, detectors=["kw_fine", "nope"])
+    with pytest.raises(ValueError, match="empty"):
+        build_report(scored_run.dir, detectors=[])
+
+
+def test_report_cli_detectors_flag(scored_run, monkeypatch):
+    from opf_eval import report
+
+    out = scored_run.dir / "only_fine.md"
+    monkeypatch.setattr(sys, "argv", [
+        "report", "--run", str(scored_run.dir), "--out", str(out), "--detectors", " kw_fine ,",
+    ])
+    report.main()
+    md = out.read_text()
+    assert "- detectors: kw_fine\n" in md
+    assert "kw_coarse" not in md

@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import gc
 import json
+import os
 import shutil
 import time
 import warnings
@@ -95,9 +96,34 @@ def _is_remote(name: str) -> bool:
 
 
 def _clear_run_dir(out_dir: Path) -> None:
-    for p in list(out_dir.glob("raw_*.jsonl")) + [out_dir / "manifest.json", out_dir / "report.md"]:
-        if p.exists():
-            p.unlink()
+    """Delete every result in `out_dir` that was computed from its fixtures.
+
+    These files are removed:
+
+    1. The detectors' `raw_<detector>.jsonl` files and any `.raw_*.tmp` file
+       that a killed run left behind.
+    2. `manifest.json` and `report.md`.
+    3. The reviewers' `review_*.jsonl` files (`review_llm_*` from
+       `review.llm` and `review_<backend>` from `review.classifier`) and
+       their `.meta.json` sidecars, even a sidecar whose review file is gone.
+
+    Review files have to go too because they judge the spans in the old raw
+    files and a summary would otherwise match them against the new ones.
+    Any other file in `out_dir` is kept.
+    """
+    from .review.pool import review_meta_path
+
+    doomed = [
+        *out_dir.glob("raw_*.jsonl"),
+        *out_dir.glob(".raw_*.tmp"),
+        out_dir / "manifest.json",
+        out_dir / "report.md",
+        *out_dir.glob("review_*.meta.json"),
+    ]
+    for review in out_dir.glob("review_*.jsonl"):
+        doomed += [review, review_meta_path(review)]
+    for p in doomed:
+        p.unlink(missing_ok=True)
 
 
 def _check_reused_coverage(out_dir: Path, copied: list[str], ids: set[str]) -> None:
@@ -288,29 +314,46 @@ def _run_one(
     workers: int,
     min_interval_ms: float,
 ) -> None:
+    """Write one row per example to `out_path`.
+
+    The rows go to a temp file in the same directory that replaces
+    `out_path` only once every example is done. An interrupted run therefore
+    never leaves a partial `raw_<name>.jsonl` that a later run would take as
+    finished. The temp file is deleted when the run raises. A run killed
+    outright can leave it behind, but its `.raw_*.tmp` name matches no
+    reader and `_clear_run_dir` removes it.
+    """
+
     def row(ex_: dict, result: dict) -> str:
         return json.dumps({"id": ex_["id"], "detector": name, **result}, ensure_ascii=False) + "\n"
 
     t0 = time.perf_counter()
-    with out_path.open("w") as f:
-        if remote and workers > 1:
-            with ThreadPoolExecutor(max_workers=workers) as ex:
-                futures = {
-                    ex.submit(det.detect, ex_["text"], language=ex_.get("language")): ex_
-                    for ex_ in examples
-                }
-                for fut in futures:  # submission order
-                    f.write(row(futures[fut], fut.result()))
-        else:
-            throttle_s = min_interval_ms / 1000.0 if remote else 0.0
-            last_call = 0.0
-            for ex_ in examples:
-                if throttle_s:
-                    wait = throttle_s - (time.perf_counter() - last_call)
-                    if wait > 0:
-                        time.sleep(wait)
-                last_call = time.perf_counter()
-                f.write(row(ex_, det.detect(ex_["text"], language=ex_.get("language"))))
+    # A plain open() rather than mkstemp keeps the usual umask permissions.
+    tmp = out_path.with_name(f".{out_path.name}.{os.getpid()}.tmp")
+    try:
+        with tmp.open("w", encoding="utf-8") as f:
+            if remote and workers > 1:
+                with ThreadPoolExecutor(max_workers=workers) as ex:
+                    futures = {
+                        ex.submit(det.detect, ex_["text"], language=ex_.get("language")): ex_
+                        for ex_ in examples
+                    }
+                    for fut in futures:  # submission order
+                        f.write(row(futures[fut], fut.result()))
+            else:
+                throttle_s = min_interval_ms / 1000.0 if remote else 0.0
+                last_call = 0.0
+                for ex_ in examples:
+                    if throttle_s:
+                        wait = throttle_s - (time.perf_counter() - last_call)
+                        if wait > 0:
+                            time.sleep(wait)
+                    last_call = time.perf_counter()
+                    f.write(row(ex_, det.detect(ex_["text"], language=ex_.get("language"))))
+        os.replace(tmp, out_path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
     elapsed = time.perf_counter() - t0
     print(f"[{name}] {len(examples)} examples in {elapsed:.1f}s -> {out_path}")
 

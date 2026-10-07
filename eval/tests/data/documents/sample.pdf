@@ -1,0 +1,60 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [5 0 R 7 0 R 9 0 R] /Count 3 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+4 0 obj
+<< /Length 93 >>
+stream
+BT /F1 12 Tf 72 720 Td 14 TL
+(Patient: Jane Doe) Tj T*
+(Email: jane.doe@example.com) Tj T*
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 4 0 R >>
+endobj
+6 0 obj
+<< /Length 83 >>
+stream
+BT /F1 12 Tf 72 720 Td 14 TL
+(Phone: 555-867-5309) Tj T*
+(SSN 123-45-6789) Tj T*
+ET
+endstream
+endobj
+7 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 6 0 R >>
+endobj
+8 0 obj
+<< /Length 28 >>
+stream
+0 0 1 rg 72 600 100 100 re f
+endstream
+endobj
+9 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 8 0 R >>
+endobj
+xref
+0 10
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000127 00000 n 
+0000000197 00000 n 
+0000000340 00000 n 
+0000000466 00000 n 
+0000000599 00000 n 
+0000000725 00000 n 
+0000000803 00000 n 
+trailer
+<< /Size 10 /Root 1 0 R >>
+startxref
+929
+%%EOF

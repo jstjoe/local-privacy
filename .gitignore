@@ -10,6 +10,11 @@ dist/
 eval/data/*.jsonl
 eval/data/finetuning/
 eval/results/runs/
+# notebook 07: your own files, LLM response cache, unlabeled/silver fixtures (all may hold real PII)
+eval/inputs/
+eval/llm_cache/
+eval/data/custom/
+eval/data/calibration/
 
 # OPF source — clone separately, do not vendor
 privacy-filter/
