@@ -13,7 +13,6 @@ import pytest
 
 from opf_eval.taxonomy import presidio_to_canonical
 
-
 # Default Presidio v2 entities present in
 # presidio_analyzer/predefined_recognizers/. Updated 2026-05-14. If
 # Presidio adds a recognizer the test below will fail loudly — at which

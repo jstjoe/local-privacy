@@ -14,7 +14,6 @@ from .registry import build_default_registry  # noqa: E402
 from .routes import router  # noqa: E402
 from .vault_tokens import TokenVaultClient  # noqa: E402
 
-
 logger = logging.getLogger("opf_api")
 logging.basicConfig(level=logging.INFO)
 

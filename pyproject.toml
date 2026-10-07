@@ -18,3 +18,28 @@ members = ["eval", "api", "privacy-filter"]
 opf = { workspace = true }
 opf-eval = { workspace = true }
 opf-api = { workspace = true }
+
+# Tools for tests, lint and notebook smoke runs. `uv sync` installs this
+# group by default, and CI uses the same versions through uv.lock.
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",   # api/tests use @pytest.mark.asyncio
+    "ruff==0.16.10",
+    "nbclient>=0.10",
+    "nbformat>=5.10",
+    "ipykernel>=6.29",
+]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+# privacy-filter is a separate clone. Notebooks are linted later.
+extend-exclude = ["privacy-filter", "*.ipynb"]
+
+[tool.ruff.lint]
+# pycodestyle, pyflakes, warnings, import order, pyupgrade, bugbear.
+select = ["E", "F", "W", "I", "UP", "B"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["opf", "opf_api", "opf_eval"]

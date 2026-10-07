@@ -214,12 +214,16 @@ def setup(
                 gpu = f" ({torch.cuda.get_device_name(index)})"
             except Exception:  # noqa: BLE001
                 pass
-        print(f"environment: {'Colab' if in_colab() else 'local'} · python {sys.version.split()[0]}")
+        env = "Colab" if in_colab() else "local"
+        print(f"environment: {env} · python {sys.version.split()[0]}")
         print(f"device:      {dev}{gpu}")
         where = " (Google Drive)" if str(ws.root).startswith(DRIVE_MOUNT) else ""
         print(f"workspace:   {ws.root}{where}")
         if dev == "cpu":
-            print("no GPU: detectors run slowly here, but the default sample is scored from saved results")
+            print(
+                "no GPU: detectors run slowly here, "
+                "but the default sample is scored from saved results"
+            )
     return ws
 
 
@@ -407,7 +411,7 @@ class Session:
 
         return (read_meta(self.fixtures_path) or {}).get("gold")
 
-    def save(self) -> "Session":
+    def save(self) -> Session:
         path = self.ws.session_file
         path.write_text(json.dumps(dataclasses.asdict(self), indent=2))
         return self

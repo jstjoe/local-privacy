@@ -1,9 +1,7 @@
 """Dump one raw PII-Masking-300k record so we can see what columns + label names exist."""
 
-import json
 
 from datasets import load_dataset
-
 
 ds = load_dataset("ai4privacy/pii-masking-300k", split="train", streaming=False)
 

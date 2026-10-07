@@ -32,7 +32,6 @@ import httpx
 
 from opf_eval.taxonomy import CANONICAL_LABELS
 
-
 logger = logging.getLogger("opf_api.vault_tokens")
 
 
@@ -76,7 +75,7 @@ class TokenVaultClient:
         )
 
     @classmethod
-    def from_env(cls) -> "TokenVaultClient | None":
+    def from_env(cls) -> TokenVaultClient | None:
         """Build from SKYFLOW_TOKEN_VAULT_* env vars. Returns None when any
         required value (URL, vault ID, bearer token) is missing — treating a
         partial config as "not configured" so callers get a clear 400

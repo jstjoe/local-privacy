@@ -101,7 +101,8 @@ def main() -> None:
             "headroom in your account; throughput tests can issue many requests/sec."
         )
     detector_cls = _build(args.detector)
-    texts = [json.loads(l)["text"] for l in args.fixtures.read_text().splitlines() if l.strip()][:50]
+    lines = args.fixtures.read_text().splitlines()
+    texts = [json.loads(line)["text"] for line in lines if line.strip()][:50]
     print(f"loaded {len(texts)} sample texts")
 
     print(f"\n=== cold start: {args.detector} ===")

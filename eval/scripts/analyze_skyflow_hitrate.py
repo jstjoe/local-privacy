@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import sys
-from collections import Counter, defaultdict
+from collections import Counter
 from pathlib import Path
 
 
@@ -20,8 +20,12 @@ def _iou(a, b):
 
 
 def main(skyflow_jsonl: Path, fixtures_jsonl: Path, min_count: int = 5):
-    fixtures = {json.loads(l)["id"]: json.loads(l) for l in fixtures_jsonl.open() if l.strip()}
-    sky_records = [json.loads(l) for l in skyflow_jsonl.open() if l.strip()]
+    fixtures = {
+        json.loads(line)["id"]: json.loads(line)
+        for line in fixtures_jsonl.open()
+        if line.strip()
+    }
+    sky_records = [json.loads(line) for line in skyflow_jsonl.open() if line.strip()]
 
     total: Counter = Counter()
     matched: Counter = Counter()  # canonical-label match against gold

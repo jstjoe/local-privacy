@@ -59,7 +59,13 @@ class _EmailDetector:
     def detect(self, text, **_):
         return {
             "spans": [
-                {"label": "EMAIL", "raw_label": "e", "start": m.start(), "end": m.end(), "text": m.group()}
+                {
+                    "label": "EMAIL",
+                    "raw_label": "e",
+                    "start": m.start(),
+                    "end": m.end(),
+                    "text": m.group(),
+                }
                 for m in _EMAIL.finditer(text)
             ],
             "latency_ms": 0.0,
@@ -71,7 +77,8 @@ def test_search_corpus_shape():
     corpus, queries = search.build_corpus()
     assert len(corpus) == 130
     assert [sorted(q.relevant) for q in queries] == [[0, 1, 2, 3, 4], [5, 6, 7]]
-    assert search.tokenize("see [EMAIL_u8UBDWQ] and [EMAIL].") == ["see", "[email_u8ubdwq]", "and", "email"]
+    tokens = search.tokenize("see [EMAIL_u8UBDWQ] and [EMAIL].")
+    assert tokens == ["see", "[email_u8ubdwq]", "and", "email"]
 
 
 def test_search_demo_end_to_end():

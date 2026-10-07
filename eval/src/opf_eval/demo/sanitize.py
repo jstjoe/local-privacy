@@ -31,6 +31,9 @@ def side_by_side(
         "|" + "|".join(["---"] * (len(modes) + 1)) + "|",
     ]
     for detector, spans in predictions.items():
-        rendered = render_modes(fixture["text"], list(spans), modes=modes, token_vault_client=token_vault)
-        parts.append("| " + " | ".join([detector] + [esc(rendered.get(m, "")) for m in modes]) + " |")
+        rendered = render_modes(
+            fixture["text"], list(spans), modes=modes, token_vault_client=token_vault
+        )
+        cells = [detector] + [esc(rendered.get(m, "")) for m in modes]
+        parts.append("| " + " | ".join(cells) + " |")
     return "\n".join(parts)

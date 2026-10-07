@@ -52,7 +52,7 @@ class OpenMedDetector:
         self._openmed = openmed
         self._loader_cls = openmed.ModelLoader
         self._config_cls = openmed.OpenMedConfig
-        self._loaders: dict[str, "ModelLoader"] = {}
+        self._loaders: dict[str, ModelLoader] = {}
         self._threshold = confidence_threshold
         self._default_lang = default_lang
         self._device = device
@@ -63,7 +63,7 @@ class OpenMedDetector:
         VRAM."""
         self._loaders.clear()
 
-    def _get_loader(self, lang: str) -> "ModelLoader":
+    def _get_loader(self, lang: str) -> ModelLoader:
         if lang not in self._loaders:
             cfg = self._config_cls(device=self._device) if self._device != "cpu" else None
             self._loaders[lang] = self._loader_cls(config=cfg)

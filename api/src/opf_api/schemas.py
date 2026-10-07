@@ -7,7 +7,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from opf_eval.taxonomy import CANONICAL_LABELS
 
-
 DecodeMode = Literal["viterbi", "argmax"]
 
 # Four replacement modes, in increasing strength of identity preservation:

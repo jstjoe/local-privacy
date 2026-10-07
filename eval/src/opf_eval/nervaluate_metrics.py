@@ -20,11 +20,10 @@ Each schema has 5 error counters (per the SemEval spec):
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
 
 from nervaluate import Evaluator
-
 
 SCHEMAS: tuple[str, ...] = ("strict", "exact", "partial", "ent_type")
 ERROR_KEYS: tuple[str, ...] = ("correct", "incorrect", "partial", "missed", "spurious")
@@ -36,7 +35,8 @@ class SemEvalResult:
 
     detector: str
     n_examples: int
-    # by_schema[schema] -> {precision, recall, f1, correct, incorrect, partial, missed, spurious, possible, actual}
+    # by_schema[schema] -> {precision, recall, f1, correct, incorrect, partial,
+    #                       missed, spurious, possible, actual}
     by_schema: dict[str, dict[str, float | int]]
     # by_label[tag][schema] -> same shape as above
     by_label: dict[str, dict[str, dict[str, float | int]]]
