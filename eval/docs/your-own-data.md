@@ -143,6 +143,8 @@ run_dir = nb.ensure_run(S)
 
 The `fixtures` override applies only to the notebook that sets it. `nb.session(fixtures=...)` saves every other field but never `fixtures`, so notebooks 02, 03 and 05 keep loading their labeled dataset sample. `ensure_run` notices when the fixtures file changes and runs the detectors again.
 
+Skyflow reads `SKYFLOW_VAULT_URL` and `SKYFLOW_VAULT_ID` and `SKYFLOW_BEARER_TOKEN` from the environment. Notebook 07 calls `nb.load_secrets(*nb.SKYFLOW_SECRETS)` when its `DETECTORS` list holds `skyflow` or `skyflow_full`, which copies them from Colab Secrets or `.env`, and it stops with the missing names before any detector runs. Outside the notebook call `load_secrets` yourself before `ensure_run`.
+
 ## Read the report
 
 `report.build_report` and `python -m opf_eval.report` read the `gold` value in the fixtures sidecar:
